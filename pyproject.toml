@@ -1,0 +1,62 @@
+[project]
+name = "alex-memory"
+version = "0.1.0"
+description = "Local, source-backed operational memory for personal operations."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=2.19.0",
+    "groq>=1.6.0",
+    "python-dotenv>=1.2.3",
+    "rapidfuzz>=3.14.3",
+    "rich>=15.0.0",
+    "telethon>=1.44.0",
+    "textual>=6.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "deptry>=0.25.1",
+    "mypy>=2.3.1",
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.4",
+    "uv>=0.12.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["alex_memory"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = ["data", "backups", ".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP035"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+exclude = ["^data/", "^backups/"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[tool.deptry]
+known_first_party = ["alex_memory"]

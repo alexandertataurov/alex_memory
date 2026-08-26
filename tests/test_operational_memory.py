@@ -1,0 +1,763 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from alex_memory.ai.repository import save_ai_success
+from alex_memory.ai.context import add_contextual_preamble
+from alex_memory.classification import classify_message, save_classification
+from alex_memory.context.refresh import refresh_pending_context
+from alex_memory.database import connect
+from alex_memory.models import AIBatch, AIMessage
+from alex_memory.operational import (
+    EntityResolver,
+    TaskReconciler,
+    backfill_direct_chat_identities,
+    backfill_task_project_links,
+    direct_chat_person,
+    generate_daily_brief,
+    load_daily_brief,
+    manually_update_task,
+    normalize_alias,
+    process_ai_batch,
+    resolve_review_item,
+    resolve_task_project,
+)
+
+from test_ai_pipeline import make_settings
+
+
+class OperationalMemoryTests(unittest.TestCase):
+    def test_load_daily_brief_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            try:
+                created = generate_daily_brief(conn, "2026-08-25")
+                before = conn.total_changes
+                self.assertEqual(created, load_daily_brief(conn, "2026-08-25"))
+                self.assertEqual(before, conn.total_changes)
+                self.assertIsNone(load_daily_brief(conn, "2026-08-26"))
+            finally:
+                conn.close()
+
+    def test_entity_identity_and_ambiguous_aliases_are_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            first = resolver.person(
+                "Ilya Guttovsky", telegram_user_id=42, telegram_username="ilya"
+            )
+            self.assertEqual(
+                first, resolver.person("Different spelling", telegram_user_id=42)
+            )
+            self.assertEqual(first, resolver.person("Ilya", telegram_username="@ilya"))
+            resolver._alias("person", first, "Ilya", "test", 1.0)
+            second = resolver.person("Another Ilya")
+            resolver._alias("person", second, "Ilya", "test", 1.0)
+            self.assertIsNone(resolver.person("Ilya"))
+            self.assertEqual(normalize_alias(" @Ілля   Guttovsky "), "ілля guttovsky")
+            self.assertEqual(
+                1,
+                conn.execute("SELECT COUNT(*) FROM entity_merge_candidates").fetchone()[
+                    0
+                ],
+            )
+
+    def test_direct_chat_peer_id_is_canonical_and_title_matches_are_reviewed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            historical = resolver.person("Alice", source="manual")
+            assert historical is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,username,chat_type) VALUES (77,'Alice','alice','user')"
+            )
+
+            peer = direct_chat_person(conn, 77)
+
+            self.assertNotEqual(historical, peer)
+            self.assertEqual(
+                77,
+                conn.execute(
+                    "SELECT telegram_user_id FROM people WHERE person_id=?", (peer,)
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    "SELECT COUNT(*) FROM entity_merge_candidates WHERE normalized_alias='alice'"
+                ).fetchone()[0],
+            )
+
+    def test_unique_username_claims_an_existing_person(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            person_id = resolver.person(
+                "Alice Cooper", telegram_username="@alicec", source="manual"
+            )
+            assert person_id is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,username,chat_type) VALUES (78,'A. C.','alicec','user')"
+            )
+
+            self.assertEqual(person_id, direct_chat_person(conn, 78))
+            self.assertEqual(
+                78,
+                conn.execute(
+                    "SELECT telegram_user_id FROM people WHERE person_id=?",
+                    (person_id,),
+                ).fetchone()[0],
+            )
+
+    def test_direct_identity_backfill_is_bounded_and_refreshes_only_processed_chats(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.executemany(
+                """INSERT INTO chats(chat_id,title,chat_type,updated_at)
+                   VALUES (?,?,'user',?)""",
+                [(79, "Alice", "2026-08-20"), (80, "Bob", "2026-08-21")],
+            )
+
+            self.assertEqual(
+                1, backfill_direct_chat_identities(conn, settings, limit=1)
+            )
+            self.assertEqual(
+                [79],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT telegram_user_id FROM people ORDER BY telegram_user_id"
+                    ).fetchall()
+                ],
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    "SELECT COUNT(*) FROM current_conversation_context WHERE conversation_id='79'"
+                ).fetchone()[0],
+            )
+            with self.assertRaises(ValueError):
+                backfill_direct_chat_identities(conn, settings, limit=0)
+
+    def test_direct_chat_uses_peer_owner_for_prompt_and_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            resolver = EntityResolver(conn)
+            third_party = resolver.person("Chris", source="manual")
+            assert third_party is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,username,chat_type) VALUES (88,'Alice','alice','user')"
+            )
+            conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+                   VALUES (1,'fact','Chris update','Third-party mention','informational','unknown',0.9,
+                   88,1,'2026-08-22T09:00:00+00:00',?,'now','direct-owner')""",
+                (third_party,),
+            )
+            batch = AIBatch(
+                88,
+                "Alice",
+                [
+                    AIMessage(
+                        88,
+                        2,
+                        None,
+                        "2026-08-22T10:00:00+00:00",
+                        "Hello",
+                        False,
+                        "Alice",
+                        "user",
+                    )
+                ],
+                "prompt",
+            )
+
+            add_contextual_preamble(conn, batch, settings)
+            peer = direct_chat_person(conn, 88)
+
+            self.assertIsNotNone(peer)
+            self.assertNotEqual(third_party, peer)
+            self.assertEqual(
+                1,
+                conn.execute(
+                    """SELECT COUNT(*) FROM current_conversation_context
+                       WHERE person_id=? AND conversation_id='88'""",
+                    (peer,),
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                0,
+                conn.execute(
+                    """SELECT COUNT(*) FROM current_conversation_context
+                       WHERE person_id=? AND conversation_id='88'""",
+                    (third_party,),
+                ).fetchone()[0],
+            )
+            summary = conn.execute(
+                """SELECT recent_summary FROM current_conversation_context
+                   WHERE person_id=? AND conversation_id='88'""",
+                (peer,),
+            ).fetchone()[0]
+            self.assertIn("Chris update", summary)
+
+    def test_tasks_memory_and_brief_are_created_from_successful_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id, title, chat_type, updated_at) VALUES (100, 'Ilya', 'user', 'now')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id, message_id, date, text, is_outgoing, has_media) VALUES (100, 1, '2026-08-22T09:00:00+00:00', 'Send the invoice tomorrow', 0, 0)"
+            )
+            batch = AIBatch(
+                100,
+                "Ilya",
+                [
+                    AIMessage(
+                        100,
+                        1,
+                        2,
+                        "2026-08-22T09:00:00+00:00",
+                        "Send the invoice tomorrow",
+                        False,
+                        "Ilya",
+                        "user",
+                    )
+                ],
+                "prompt",
+            )
+            item = {
+                "kind": "promise_by_me",
+                "title": "Send invoice",
+                "details": "Promised to Ilya.",
+                "status": "open",
+                "owner": "me",
+                "due_date": "2026-08-23",
+                "person": "Chris",
+                "company": None,
+                "project_name": None,
+                "amount": None,
+                "currency": None,
+                "confidence": 0.96,
+                "source_chat_id": 100,
+                "source_message_id": 1,
+            }
+            saved = save_ai_success(
+                conn,
+                batch,
+                {"summary": "I will send Ilya the invoice.", "items": [item]},
+                settings,
+            )
+            with conn:
+                process_ai_batch(conn, saved.batch_id, settings)
+            self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
+            asyncio.run(refresh_pending_context(conn, settings))
+            self.assertEqual(
+                1,
+                conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE status='open'"
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM memory_chunks").fetchone()[0]
+            )
+            direct_person = conn.execute(
+                "SELECT person_id FROM people WHERE telegram_user_id=100"
+            ).fetchone()[0]
+            mentioned_person = conn.execute(
+                "SELECT person_id FROM ai_items WHERE batch_id=?", (saved.batch_id,)
+            ).fetchone()[0]
+            self.assertNotEqual(direct_person, mentioned_person)
+            self.assertEqual(
+                1,
+                conn.execute(
+                    """SELECT COUNT(*) FROM current_conversation_context
+                       WHERE person_id=? AND conversation_id='100'""",
+                    (direct_person,),
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    """SELECT COUNT(*) FROM current_conversation_context
+                       WHERE person_id=? AND conversation_id='100'""",
+                    (mentioned_person,),
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1,
+                conn.execute("SELECT COUNT(*) FROM chat_daily_summaries").fetchone()[0],
+            )
+            # The task's current source pointer may later be replaced by an
+            # update. The Daily Brief must retain the creation evidence date.
+            conn.execute("UPDATE tasks SET source_item_id=NULL")
+            brief = generate_daily_brief(conn, "2026-08-22")
+            self.assertEqual("Send invoice", brief["new_tasks"][0]["title"])
+
+    def test_task_uses_same_message_project_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (101,'Work','group')"
+            )
+            conn.execute(
+                """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+                   VALUES (101,1,'2026-08-22T09:00:00+00:00','Georgia documents',0,0)"""
+            )
+            batch = AIBatch(
+                101,
+                "Work",
+                [
+                    AIMessage(
+                        101,
+                        1,
+                        None,
+                        "2026-08-22T09:00:00+00:00",
+                        "Georgia documents",
+                        False,
+                        "Work",
+                        "group",
+                    )
+                ],
+                "prompt",
+            )
+            saved = save_ai_success(
+                conn,
+                batch,
+                {
+                    "summary": "Georgia documents are needed.",
+                    "items": [
+                        {
+                            "kind": "project",
+                            "title": "Georgia LP",
+                            "details": "",
+                            "status": "informational",
+                            "owner": "unknown",
+                            "due_date": None,
+                            "person": None,
+                            "company": None,
+                            "project_name": None,
+                            "amount": None,
+                            "currency": None,
+                            "confidence": 0.96,
+                            "source_chat_id": 101,
+                            "source_message_id": 1,
+                        },
+                        {
+                            "kind": "task",
+                            "title": "Send documents",
+                            "details": "For the Georgia LP request.",
+                            "status": "open",
+                            "owner": "me",
+                            "due_date": None,
+                            "person": None,
+                            "company": None,
+                            "project_name": "Georgia LP",
+                            "amount": None,
+                            "currency": None,
+                            "confidence": 0.96,
+                            "source_chat_id": 101,
+                            "source_message_id": 1,
+                        },
+                    ],
+                },
+                settings,
+            )
+
+            with conn:
+                process_ai_batch(conn, saved.batch_id, settings)
+            asyncio.run(refresh_pending_context(conn, settings))
+
+            project_id = conn.execute(
+                "SELECT project_id FROM ai_items WHERE batch_id=? AND kind='project'",
+                (saved.batch_id,),
+            ).fetchone()[0]
+            self.assertEqual(
+                project_id,
+                conn.execute("SELECT related_project_id FROM tasks").fetchone()[0],
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    "SELECT COUNT(*) FROM conversation_segments WHERE chat_id=101"
+                ).fetchone()[0],
+            )
+
+    def test_single_batch_project_is_reviewed_without_stronger_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            resolver = EntityResolver(conn)
+            project_id = resolver.entity("project", "Georgia LP", source="manual")
+            assert project_id is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (102,'Work','group')"
+            )
+            conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+                   VALUES (2,'project','Georgia LP','','informational','unknown',0.96,
+                   102,1,'2026-08-22T09:00:00+00:00',?,'now','batch-project')""",
+                (project_id,),
+            )
+            reconciler = TaskReconciler(conn, settings)
+            resolution = resolve_task_project(
+                conn,
+                chat_id=102,
+                message_id=2,
+                occurred_at="2026-08-22T09:05:00+00:00",
+                title="Send documents",
+                details="Unrelated wording",
+                person_id=None,
+                company_id=None,
+                message_projects=set(),
+                batch_projects={project_id},
+            )
+            task_id = reconciler.process_item(
+                (3, "task", "Send documents", "", "open", "me", None, 0.96, 102),
+                None,
+                None,
+                None,
+            )
+            assert task_id is not None
+            self.assertTrue(
+                reconciler.queue_project_review(task_id, 3, resolution, 102)
+            )
+            self.assertFalse(
+                reconciler.queue_project_review(task_id, 3, resolution, 102)
+            )
+
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT related_project_id FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone()[0]
+            )
+            self.assertEqual(
+                "graph_task_link",
+                conn.execute("SELECT review_type FROM review_queue").fetchone()[0],
+            )
+
+    def test_matched_task_enriches_missing_project_without_replacing_existing_link(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            resolver = EntityResolver(conn)
+            first = resolver.entity("project", "Georgia LP", source="manual")
+            second = resolver.entity("project", "Dubai LP", source="manual")
+            assert first and second
+            task_id = conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,confidence,
+                   created_at,updated_at) VALUES ('Send documents','send documents','open','me',103,0.9,'now','now')"""
+            ).lastrowid
+            assert task_id is not None
+            reconciler = TaskReconciler(conn, settings)
+
+            reconciler.process_item(
+                (4, "task", "Send documents", "", "open", "me", None, 0.96, 103),
+                None,
+                None,
+                first,
+            )
+            self.assertEqual(
+                first,
+                conn.execute(
+                    "SELECT related_project_id FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone()[0],
+            )
+            reconciler.process_item(
+                (5, "task", "Send documents", "", "open", "me", None, 0.96, 103),
+                None,
+                None,
+                second,
+            )
+            self.assertEqual(
+                first,
+                conn.execute(
+                    "SELECT related_project_id FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone()[0],
+            )
+
+    def test_task_project_backfill_is_bounded_and_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            project_id = EntityResolver(conn).entity("project", "Georgia LP")
+            assert project_id is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (104,'Work','group')"
+            )
+            conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+                   VALUES (3,'project','Georgia LP','','informational','unknown',0.96,
+                   104,1,'2026-08-22T09:00:00+00:00',?,'now','repair-project')""",
+                (project_id,),
+            )
+            item_id = conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,created_at,dedupe_key)
+                   VALUES (3,'task','Send docs','','open','me',0.96,104,1,
+                   '2026-08-22T09:00:00+00:00','now','repair-task')"""
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                   source_item_id,confidence,created_at,updated_at)
+                   VALUES ('Send docs','send docs','open','me',104,?,0.96,'now','now')""",
+                (item_id,),
+            )
+
+            self.assertEqual(
+                (1, 0), backfill_task_project_links(conn, settings, limit=1)
+            )
+            self.assertEqual(
+                (0, 0), backfill_task_project_links(conn, settings, limit=1)
+            )
+            self.assertEqual(
+                project_id,
+                conn.execute("SELECT related_project_id FROM tasks").fetchone()[0],
+            )
+
+    def test_low_confidence_and_manual_task_are_queued_for_review(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO tasks(title, normalized_title, status, owner, source_chat_id, confidence, manual_status_locked, created_at, updated_at) VALUES ('Send invoice', 'send invoice', 'open', 'me', 100, 1, 1, '2026-08-20T00:00:00+00:00', '2026-08-20T00:00:00+00:00')"
+            )
+            # A low-confidence candidate is reviewable but cannot create a task.
+            from alex_memory.operational import TaskReconciler
+
+            reconciler = TaskReconciler(conn, settings)
+            reconciler.process_item(
+                (1, "task", "Send invoice", "", "done", "me", None, 0.70, 100),
+                None,
+                None,
+                None,
+            )
+            self.assertEqual(
+                "open", conn.execute("SELECT status FROM tasks").fetchone()[0]
+            )
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+            )
+            self.assertTrue(manually_update_task(conn, 1, "done"))
+            self.assertEqual(
+                ("done", 1),
+                conn.execute(
+                    "SELECT status, manual_status_locked FROM tasks"
+                ).fetchone(),
+            )
+
+    def test_unanchored_similar_tasks_do_not_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                   confidence,created_at,updated_at) VALUES
+                   ('Send invoice','send invoice','open','me',105,1.0,'now','now')"""
+            )
+            TaskReconciler(conn, settings).process_item(
+                (6, "task", "Send invoices", "", "open", "me", None, 0.96, 105),
+                None,
+                None,
+                None,
+            )
+            self.assertEqual(
+                2, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            )
+
+    def test_terminal_item_updates_the_matching_anchored_task(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            person_id = EntityResolver(conn).person("Michael")
+            assert person_id is not None
+            task_id = conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,related_person_id,
+                   source_chat_id,confidence,created_at,updated_at)
+                   VALUES ('Receive documents','receive documents','waiting','other',?,106,
+                   1.0,'now','now')""",
+                (person_id,),
+            ).lastrowid
+            TaskReconciler(conn, settings).process_item(
+                (
+                    7,
+                    "task",
+                    "Receive documents",
+                    "Confirmed",
+                    "done",
+                    "other",
+                    None,
+                    0.96,
+                    106,
+                ),
+                person_id,
+                None,
+                None,
+            )
+            self.assertEqual(
+                "done",
+                conn.execute(
+                    "SELECT status FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                "completed",
+                conn.execute(
+                    "SELECT event_type FROM task_events WHERE task_id=? ORDER BY event_id DESC",
+                    (task_id,),
+                ).fetchone()[0],
+            )
+
+    def test_generic_review_decision_is_durable_feedback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            cursor = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,subject_id,payload_json,created_at)
+                   VALUES ('task_update','task',12,'{"candidate":"done"}','2026-01-01')"""
+            )
+            resolve_review_item(conn, int(cursor.lastrowid), "reject")
+            self.assertEqual(
+                "rejected",
+                conn.execute("SELECT status FROM review_queue").fetchone()[0],
+            )
+            feedback = conn.execute(
+                "SELECT feedback_type,payload_json FROM user_feedback"
+            ).fetchone()
+            self.assertEqual("review:task_update", feedback[0])
+            self.assertIn('"action": "reject"', feedback[1])
+
+    def test_entity_merge_review_moves_canonical_references(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            keep = resolver.person("Ilya One")
+            discard = resolver.person("Ilya Two")
+            assert keep and discard
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,related_person_id,
+                   confidence,created_at,updated_at)
+                   VALUES ('Call Ilya','call ilya','open','me',?,1.0,'now','now')""",
+                (discard,),
+            )
+            entity_ids = json.dumps([keep, discard])
+            cursor = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                   VALUES ('entity_merge','person',?,'now')""",
+                (json.dumps({"alias": "ilya", "entity_ids": [keep, discard]}),),
+            )
+            conn.execute(
+                """INSERT INTO entity_merge_candidates(entity_type,normalized_alias,entity_ids_json,
+                   reason,created_at) VALUES ('person','ilya',?,'test','now')""",
+                (entity_ids,),
+            )
+
+            resolve_review_item(
+                conn,
+                int(cursor.lastrowid),
+                "accept",
+                edited_payload={"keep_entity_id": keep},
+            )
+
+            self.assertEqual(
+                keep,
+                conn.execute("SELECT related_person_id FROM tasks").fetchone()[0],
+            )
+            self.assertEqual(
+                "merged",
+                conn.execute(
+                    "SELECT status FROM people WHERE person_id=?", (discard,)
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                "resolved",
+                conn.execute("SELECT status FROM entity_merge_candidates").fetchone()[
+                    0
+                ],
+            )
+            conn.close()
+
+    def test_accepted_task_review_uses_the_task_reconciler(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Alice','user')"
+            )
+            item = conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,created_at,dedupe_key)
+                   VALUES (1,'task','Send invoice','Requested invoice','open','me',0.7,1,1,'now','review-task')"""
+            )
+            review = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,subject_id,payload_json,created_at)
+                   VALUES ('task_change','ai_item',?,?,'now')""",
+                (item.lastrowid, json.dumps({"item_id": item.lastrowid})),
+            )
+
+            resolve_review_item(
+                conn, int(review.lastrowid), "accept", settings=settings
+            )
+
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            )
+            self.assertEqual(
+                "approved",
+                conn.execute("SELECT status FROM review_queue").fetchone()[0],
+            )
+            conn.close()
+
+    def test_classification_review_edit_updates_the_routing_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Alice','user')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,text) VALUES (1,1,'Please send it')"
+            )
+            message = AIMessage(
+                1, 1, None, None, "Please send it", False, "Alice", "user"
+            )
+            save_classification(conn, message, classify_message(conn, message))
+            review = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,subject_id,payload_json,created_at)
+                   VALUES ('message_classification','message',1,?,'now')""",
+                (json.dumps({"chat_id": 1, "message_id": 1}),),
+            )
+
+            resolve_review_item(
+                conn,
+                int(review.lastrowid),
+                "edit",
+                edited_payload={
+                    "information_scope": "external_news",
+                    "content_type": "news",
+                },
+            )
+
+            self.assertEqual(
+                ("external_news", "external_news", "news"),
+                conn.execute(
+                    """SELECT information_scope,content_scope,content_type
+                       FROM message_classifications WHERE chat_id=1 AND message_id=1"""
+                ).fetchone(),
+            )
+            conn.close()

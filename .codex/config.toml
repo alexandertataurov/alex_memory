@@ -1,0 +1,5 @@
+# Project-local Codex configuration. Personal model and permission defaults stay
+# in ~/.codex/config.toml; this only bounds parallel project review work.
+
+[agents]
+max_concurrent_threads_per_session = 3

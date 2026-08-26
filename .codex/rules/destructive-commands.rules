@@ -1,0 +1,30 @@
+# These rules supplement the sandbox; they are not a security boundary.
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Pushing changes is an external write and requires explicit approval.",
+    match = ["git push origin main"],
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Do not discard worktree state; inspect the target and use a recoverable alternative.",
+    match = ["git reset --hard HEAD"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "forbidden",
+    justification = "Do not delete untracked files; inspect and remove only explicit, approved targets.",
+    match = ["git clean -fd"],
+)
+
+prefix_rule(
+    pattern = ["rm", ["-rf", "-fr"]],
+    decision = "forbidden",
+    justification = "Do not perform recursive deletion; use an explicit recoverable operation instead.",
+    match = ["rm -rf temporary-directory"],
+    not_match = ["rm report.txt"],
+)

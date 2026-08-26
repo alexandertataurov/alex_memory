@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Alex Memory",
+      "type": "shell",
+      "command": "make run",
+      "group": "build"
+    },
+    {
+      "label": "Run Daemon",
+      "type": "shell",
+      "command": "make daemon",
+      "group": "build"
+    },
+    {
+      "label": "Tests",
+      "type": "shell",
+      "command": "make test",
+      "group": "test",
+      "problemMatcher": "$pytest"
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "make lint",
+      "problemMatcher": "$ruff"
+    },
+    {
+      "label": "Format",
+      "type": "shell",
+      "command": "make format"
+    },
+    {
+      "label": "Type Check",
+      "type": "shell",
+      "command": "make typecheck",
+      "problemMatcher": "$mypy"
+    },
+    {
+      "label": "Full Check",
+      "type": "shell",
+      "command": "make check",
+      "group": "test"
+    },
+    {
+      "label": "Verify",
+      "type": "shell",
+      "command": "make verify",
+      "group": "test"
+    },
+    {
+      "label": "Dependency Check",
+      "type": "shell",
+      "command": "make deps"
+    },
+    {
+      "label": "Dependency Audit",
+      "type": "shell",
+      "command": "make audit"
+    },
+    {
+      "label": "Health Check",
+      "type": "shell",
+      "command": "make health"
+    },
+    {
+      "label": "DB Integrity Check",
+      "type": "shell",
+      "command": "make db-check"
+    },
+    {
+      "label": "DB Backup",
+      "type": "shell",
+      "command": "make db-backup"
+    },
+    {
+      "label": "Generate Docs",
+      "type": "shell",
+      "command": "make docs"
+    },
+    {
+      "label": "Check Docs",
+      "type": "shell",
+      "command": "make docs-check"
+    },
+    {
+      "label": "Update Changelog",
+      "type": "shell",
+      "command": "make changes"
+    }
+  ]
+}
