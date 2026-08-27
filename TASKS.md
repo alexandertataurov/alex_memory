@@ -35,8 +35,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   deterministic reducers or Review.
   - Plan: `docs/exec-plans/active/AM-120-semantic-graph-projection.md`.
   - Current increment: bounded accepted-graph query contract is implemented
-    and fixture-tested before any reader cutover; no relationship conversion,
-    replay, graph repair, migration, or live action is authorized.
+    and fixture-tested. Explicit manual relationship authority now has parity
+    for person/company/project edges; inferred compatibility rows remain
+    intentionally excluded until independently reviewed. The bounded
+    ContextBuilder parity-gap diagnostic is the first-reader readiness gate.
+    No reader cutover, relationship conversion, replay, graph repair,
+    migration, or live action is authorized.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

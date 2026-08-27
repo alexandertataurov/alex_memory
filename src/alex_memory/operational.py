@@ -1208,6 +1208,45 @@ def resolve_review_item(
                 "UPDATE ai_items SET project_id=? WHERE item_id=?",
                 (project_id, item_id),
             )
+            item = conn.execute(
+                """SELECT person_id,company_id,source_chat_id,source_message_id,
+                           source_date
+                   FROM ai_items WHERE item_id=?""",
+                (item_id,),
+            ).fetchone()
+            if item is not None:
+                from .context.graph import SemanticGraphProjector
+                from .context.repository import ensure_relationship
+
+                person_id, company_id, chat_id, message_id, source_date = item
+                projector = SemanticGraphProjector(conn)
+                valid_from = str(source_date or now)
+                for entity_type, entity_id in (
+                    ("person", person_id),
+                    ("company", company_id),
+                ):
+                    if entity_id is None:
+                        continue
+                    ensure_relationship(
+                        conn,
+                        entity_type,
+                        int(entity_id),
+                        "project",
+                        project_id,
+                        "involved_in",
+                        1.0,
+                        chat_id,
+                        message_id,
+                        valid_from,
+                    )
+                    projector.project_manual_relationship(
+                        from_type=entity_type,
+                        from_id=int(entity_id),
+                        to_type="project",
+                        to_id=project_id,
+                        relationship_type="involved_in",
+                        valid_from=valid_from,
+                    )
         if action == "accept" and review_type in {
             "graph_task_link",
             "graph_event_link",

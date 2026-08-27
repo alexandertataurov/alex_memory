@@ -1,5 +1,19 @@
 # Implementation Journal
 
+## 2026-08-27 — AM-120 manual-relationship authority parity
+
+An accepted `graph_link` review now writes a manual person/company-to-project
+graph edge alongside its compatibility row. `SemanticGraphProjector` also
+supports explicit manual person-company and company-project edges. Manual
+edges are bounded, temporal, and intentionally have no fabricated AI claim
+provenance. Existing compatibility rows inferred from model confidence remain
+excluded from accepted-graph reads. The bounded read-only ContextBuilder
+parity diagnostic reports only grouped missing kinds at an `as_of` boundary;
+it does not expose edge content or mutate either layer. No reader cutover,
+relationship conversion, migration, replay, repair, or live action ran.
+Temporary-SQLite tests cover all three relationship kinds, review acceptance,
+observed-edge exclusion, and temporal expiry.
+
 ## 2026-08-27 — AM-075 durable retry closure
 
 Migration 20 adds nullable `ai_jobs.retry_after_at` and an eligible-queue

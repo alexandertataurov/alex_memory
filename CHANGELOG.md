@@ -16,6 +16,12 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Added
 
+- AM-120 now projects explicitly accepted manual person/company/project
+  relationships into the temporal graph without fabricating AI claim lineage.
+  Unreviewed compatibility inference remains excluded from accepted-graph
+  reads. A bounded read-only ContextBuilder diagnostic reports grouped parity
+  gaps before any reader cutover; no migration, replay, or live action ran.
+
 - AM-075 completes durable failure-domain closure. Migration 20 adds a
   restart-safe schedule for retryable history work without changing exact job
   membership; malformed responses and local configuration failures remain

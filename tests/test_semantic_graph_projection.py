@@ -7,12 +7,17 @@ from pathlib import Path
 from alex_memory.ai.repository import save_ai_success
 from alex_memory.context.graph import (
     SemanticGraphProjector,
+    context_builder_relationship_parity_gaps,
     current_authoritative_edges,
 )
 from alex_memory.context.repository import ensure_relationship
 from alex_memory.database import connect
 from alex_memory.models import AIBatch
-from alex_memory.operational import EntityResolver, process_ai_batch
+from alex_memory.operational import (
+    EntityResolver,
+    process_ai_batch,
+    resolve_review_item,
+)
 from test_ai_pipeline import make_settings, message, valid_item
 
 
@@ -399,7 +404,7 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             ),
         )
 
-    def test_accepted_graph_has_no_parity_for_current_person_company_relationships(
+    def test_manual_person_company_relationships_have_accepted_graph_parity(
         self,
     ) -> None:
         batch = AIBatch(100, "Work", [message()], "prompt")
@@ -481,6 +486,170 @@ class SemanticGraphProjectionTests(unittest.TestCase):
         }
         self.assertEqual({("task", "belongs_to", "project")}, graph_types)
         self.assertTrue(legacy_types.isdisjoint(graph_types))
+        self.assertEqual(
+            [
+                {
+                    "accepted_graph_authority": "missing",
+                    "count": 1,
+                    "from_type": "company",
+                    "legacy_authority": "compatibility",
+                    "relationship_type": "delivers_for",
+                    "to_type": "project",
+                },
+                {
+                    "accepted_graph_authority": "missing",
+                    "count": 1,
+                    "from_type": "person",
+                    "legacy_authority": "compatibility",
+                    "relationship_type": "contributes_to",
+                    "to_type": "project",
+                },
+                {
+                    "accepted_graph_authority": "missing",
+                    "count": 1,
+                    "from_type": "person",
+                    "legacy_authority": "compatibility",
+                    "relationship_type": "works_for",
+                    "to_type": "company",
+                },
+            ],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", person_id)],
+                as_of,
+            )["gaps"],
+        )
+        projector = SemanticGraphProjector(self.conn)
+        for from_type, from_id, to_type, to_id, relationship_type in (
+            ("person", person_id, "company", company_id, "works_for"),
+            ("person", person_id, "project", project_id, "contributes_to"),
+            ("company", company_id, "project", project_id, "delivers_for"),
+        ):
+            projector.project_manual_relationship(
+                from_type=from_type,
+                from_id=from_id,
+                to_type=to_type,
+                to_id=to_id,
+                relationship_type=relationship_type,
+                valid_from="2026-08-24T10:00:00+00:00",
+            )
+
+        accepted = current_authoritative_edges(
+            self.conn,
+            [
+                ("person", person_id),
+                ("company", company_id),
+                ("project", project_id),
+            ],
+            as_of,
+        )
+        self.assertEqual(
+            legacy_types | {("task", "belongs_to", "project")},
+            {
+                (edge["from_type"], edge["relationship_type"], edge["to_type"])
+                for edge in accepted
+            },
+        )
+        self.assertEqual(
+            set(),
+            {
+                claim_id
+                for edge in accepted
+                if edge["authority_status"] == "manual"
+                for claim_id in edge["claim_ids"]
+            },
+        )
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", person_id)],
+                as_of,
+            )["gaps"],
+        )
+        self.conn.execute(
+            """UPDATE graph_edges SET authority_status='observed'
+               WHERE relationship_type='works_for'"""
+        )
+        self.assertEqual(
+            [
+                {
+                    "accepted_graph_authority": "missing",
+                    "count": 1,
+                    "from_type": "person",
+                    "legacy_authority": "compatibility",
+                    "relationship_type": "works_for",
+                    "to_type": "company",
+                }
+            ],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", person_id)],
+                as_of,
+            )["gaps"],
+        )
+        self.conn.execute(
+            """UPDATE relationships SET valid_to='2026-08-24T12:00:00+00:00'
+               WHERE relationship_type='works_for'"""
+        )
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", person_id)],
+                as_of,
+            )["gaps"],
+        )
+
+    def test_accepted_graph_link_review_projects_manual_person_relationship(
+        self,
+    ) -> None:
+        resolver = EntityResolver(self.conn)
+        person_id = resolver.entity("person", "Ari", source="manual")
+        project_id = resolver.entity("project", "Amber", source="manual")
+        assert person_id is not None
+        assert project_id is not None
+        item_id = self.conn.execute(
+            """INSERT INTO ai_items(
+                   batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,created_at,
+                   dedupe_key
+               ) VALUES (1,'event','Planning','','informational','unknown',0.9,
+                         100,1,'2026-08-24T10:00:00+00:00',?,'now','manual-link')""",
+            (person_id,),
+        ).lastrowid
+        assert item_id is not None
+        review_id = self.conn.execute(
+            """INSERT INTO review_queue(
+                   review_type,subject_type,subject_id,payload_json,confidence,created_at
+               ) VALUES ('graph_link','ai_item',?,json_object(
+                   'source_item_id',?,'candidate_project_id',?),0.9,'now')""",
+            (item_id, item_id, project_id),
+        ).lastrowid
+        assert review_id is not None
+
+        resolve_review_item(self.conn, int(review_id), "accept")
+
+        edges = current_authoritative_edges(
+            self.conn,
+            [("person", person_id)],
+            "2026-08-25T00:00:00+00:00",
+        )
+        self.assertEqual(
+            [("person", person_id, "project", project_id, "involved_in", "manual")],
+            [
+                (
+                    edge["from_type"],
+                    edge["from_id"],
+                    edge["to_type"],
+                    edge["to_id"],
+                    edge["relationship_type"],
+                    edge["authority_status"],
+                )
+                for edge in edges
+            ],
+        )
+        self.assertEqual((), edges[0]["claim_ids"])
 
 
 if __name__ == "__main__":

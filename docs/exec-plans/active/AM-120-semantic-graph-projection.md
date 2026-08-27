@@ -123,6 +123,22 @@ relationship kind has a deterministic/manual authority mapping and parity
 fixtures. This is a derived-projection/read-contract decision only; it changes
 no raw evidence, observation, canonical state, schema, or live data.
 
+Explicit Review acceptance is the authority mapping for non-task relationship
+kinds. A reviewed `graph_link` now writes a manual person/company-to-project
+graph edge alongside its compatibility row. The graph also exposes a bounded
+manual-edge API for person-company and company-project decisions. These edges
+have no invented claim lineage. Compatibility rows inferred from model
+confidence remain outside accepted-graph reads until they are independently
+reviewed; they are not backfilled or upgraded.
+
+`context_builder_relationship_parity_gaps` is the bounded, read-only
+readiness diagnostic for the first future reader cutover. It follows the
+current ContextBuilder relationship expansion depth, then reports only grouped
+compatibility relationship kinds that lack a current accepted/manual graph
+counterpart at the requested `as_of`. It does not expose relationship content,
+write either layer, or treat a zero-gap synthetic fixture as authorization for
+a live reader change.
+
 ### Progress
 
 - 2026-08-27: added `current_authoritative_edges`, a bounded read-only graph
@@ -133,3 +149,13 @@ no raw evidence, observation, canonical state, schema, or live data.
   observed/source-less exclusion, manual authority, and the current
   person/company relationship parity gap. No runtime reader, relationship
   conversion, migration, replay, repair, or live action changed.
+- 2026-08-27: explicit manual authority now has parity for person-company,
+  person-project, and company-project relationship kinds. Accepted graph-link
+  review writes the manual person/company-project edge, while direct manual
+  graph projection supports the remaining kinds without fabricated AI
+  provenance. Unreviewed compatibility inference remains excluded, so no
+  reader cutover, conversion, migration, replay, or live action is authorized.
+- 2026-08-27: added the bounded ContextBuilder parity-gap diagnostic. Fixtures
+  prove manual parity, observed-graph exclusion, and temporal expiry without
+  changing a runtime reader. A reader moves only after its own accepted/manual
+  fixture coverage reports no gaps.

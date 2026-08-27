@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import cast
 
 from ..utils import utc_now
 
@@ -110,6 +111,29 @@ class SemanticGraphProjector:
             ("review" if manual_task_project else "projected", utc_now(), claim_id),
         )
 
+    def project_manual_relationship(
+        self,
+        *,
+        from_type: str,
+        from_id: int,
+        to_type: str,
+        to_id: int,
+        relationship_type: str,
+        valid_from: str,
+        confidence: float = 1.0,
+    ) -> None:
+        """Record an explicitly accepted manual relationship without AI lineage."""
+        self._edge(
+            from_node_id=self._canonical_node(from_type, from_id),
+            to_node_id=self._canonical_node(to_type, to_id),
+            relationship_type=relationship_type,
+            valid_from=valid_from,
+            confidence=confidence,
+            authority_status="manual",
+            claim_id=None,
+            properties={"manual": True},
+        )
+
     def _resolve_claim_references(
         self, claim_id: int, resolved: dict[str, int | None]
     ) -> None:
@@ -214,7 +238,7 @@ class SemanticGraphProjector:
         valid_from: str,
         confidence: float,
         authority_status: str,
-        claim_id: int,
+        claim_id: int | None,
         properties: dict[str, object],
     ) -> None:
         row = self.conn.execute(
@@ -258,11 +282,12 @@ class SemanticGraphProjector:
                    WHERE edge_id=?""",
                 (valid_from, valid_from, now, edge_id),
             )
-        self.conn.execute(
-            """INSERT OR IGNORE INTO graph_edge_claims(edge_id,claim_id,created_at)
-               VALUES (?,?,?)""",
-            (edge_id, claim_id, now),
-        )
+        if claim_id is not None:
+            self.conn.execute(
+                """INSERT OR IGNORE INTO graph_edge_claims(edge_id,claim_id,created_at)
+                   VALUES (?,?,?)""",
+                (edge_id, claim_id, now),
+            )
 
 
 def current_authoritative_edges(
@@ -350,3 +375,94 @@ def current_authoritative_edges(
         }
         for row in rows
     ]
+
+
+def context_builder_relationship_parity_gaps(
+    conn: sqlite3.Connection,
+    seeds: list[tuple[str, int]],
+    as_of: str,
+    *,
+    max_depth: int = 2,
+    limit: int = 80,
+) -> dict[str, object]:
+    """Report bounded legacy ContextBuilder relationship inputs missing from graph.
+
+    This is a read-only cutover diagnostic. It intentionally reports grouped
+    gaps rather than returning relationship content or changing either layer.
+    """
+    bounded_limit = min(max(limit, 0), 80)
+    bounded_depth = min(max(max_depth, 0), 4)
+    frontier = list(dict.fromkeys(seeds))[:20]
+    seen_entities = set(frontier)
+    legacy_edges: set[tuple[str, int, str, int, str]] = set()
+    truncated = False
+    for depth in range(bounded_depth + 1):
+        if not frontier or len(legacy_edges) >= bounded_limit:
+            truncated = bool(frontier)
+            break
+        predicates = " OR ".join(
+            "(from_type=? AND from_id=?) OR (to_type=? AND to_id=?)" for _ in frontier
+        )
+        parameters: list[object] = []
+        for entity_type, entity_id in frontier:
+            parameters.extend((entity_type, entity_id, entity_type, entity_id))
+        rows = conn.execute(
+            f"""SELECT from_type,from_id,to_type,to_id,relationship_type
+                FROM relationships WHERE ({predicates}) AND valid_from<=?
+                  AND (valid_to IS NULL OR valid_to>?)
+                ORDER BY relationship_id LIMIT ?""",
+            [*parameters, as_of, as_of, bounded_limit - len(legacy_edges)],
+        ).fetchall()
+        next_frontier: list[tuple[str, int]] = []
+        for from_type, from_id, to_type, to_id, relationship_type in rows:
+            edge = (
+                str(from_type),
+                int(from_id),
+                str(to_type),
+                int(to_id),
+                str(relationship_type),
+            )
+            legacy_edges.add(edge)
+            if depth >= bounded_depth:
+                continue
+            for entity in ((edge[0], edge[1]), (edge[2], edge[3])):
+                if entity not in seen_entities and len(seen_entities) < 40:
+                    seen_entities.add(entity)
+                    next_frontier.append(entity)
+        frontier = next_frontier
+
+    graph_edges = current_authoritative_edges(
+        conn, list(seen_entities), as_of, limit=bounded_limit
+    )
+    accepted = {
+        (
+            str(edge["from_type"]),
+            cast(int, edge["from_id"]),
+            str(edge["to_type"]),
+            cast(int, edge["to_id"]),
+            str(edge["relationship_type"]),
+        )
+        for edge in graph_edges
+    }
+    groups: dict[tuple[str, str, str], int] = {}
+    for from_type, _from_id, to_type, _to_id, relationship_type in (
+        legacy_edges - accepted
+    ):
+        key = (from_type, relationship_type, to_type)
+        groups[key] = groups.get(key, 0) + 1
+    return {
+        "reader": "ContextBuilder",
+        "as_of": as_of,
+        "truncated": truncated,
+        "gaps": [
+            {
+                "from_type": from_type,
+                "relationship_type": relationship_type,
+                "to_type": to_type,
+                "legacy_authority": "compatibility",
+                "accepted_graph_authority": "missing",
+                "count": count,
+            }
+            for (from_type, relationship_type, to_type), count in sorted(groups.items())
+        ],
+    }

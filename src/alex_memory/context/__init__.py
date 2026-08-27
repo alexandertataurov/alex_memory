@@ -3,6 +3,7 @@ from .service import ContextService
 from .conversation import ConversationContextService
 from .improver import ContextGraphImprover, GraphImprovementReport, graph_diagnostics
 from .repository import list_temporal_conflicts, resolve_temporal_conflict
+from .graph import context_builder_relationship_parity_gaps
 
 __all__ = [
     "ContextBuilder",
@@ -15,4 +16,5 @@ __all__ = [
     "graph_diagnostics",
     "list_temporal_conflicts",
     "resolve_temporal_conflict",
+    "context_builder_relationship_parity_gaps",
 ]
