@@ -11,9 +11,11 @@ from ...models import AIAnalysisResult, AIAnswerResult, AIBatch
 from ..schema import AI_RESPONSE_SCHEMA, AI_SYSTEM_PROMPT
 from .base import (
     ProviderConnectionError,
+    ProviderConfigurationError,
     ProviderAnalysisRequest,
     ProviderError,
     ProviderQuotaError,
+    ProviderResponseError,
     ProviderTimeoutError,
     ProviderTransientError,
 )
@@ -53,10 +55,12 @@ class GeminiProvider:
                 requests_per_minute=self.settings.gemini_requests_per_minute,
             )
         if request.provider != self.name:
-            raise ProviderError(f"Gemini cannot execute provider {request.provider!r}")
+            raise ProviderConfigurationError(
+                f"Gemini cannot execute provider {request.provider!r}"
+            )
         batch, model = request.batch, request.model
         if not self.settings.gemini_api_key:
-            raise ProviderError("GEMINI_API_KEY is missing")
+            raise ProviderConfigurationError("GEMINI_API_KEY is missing")
         if (genai is None or types is None) and self._client is None:
             raise ProviderError("Google GenAI SDK is not installed; run uv sync")
 
@@ -68,11 +72,16 @@ class GeminiProvider:
         if parsed is None:
             text = getattr(response, "text", None)
             if not text:
-                raise ProviderError("Gemini returned an empty response")
-            parsed = json.loads(text)
+                raise ProviderResponseError("Gemini returned an empty response")
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError as error:
+                raise ProviderResponseError("Gemini returned invalid JSON") from error
         if hasattr(parsed, "model_dump"):
             parsed = parsed.model_dump()
         result = parsed
+        if not isinstance(result, dict):
+            raise ProviderResponseError("Gemini result is not a JSON object")
         return AIAnalysisResult(
             provider=self.name,
             model=model,
@@ -84,7 +93,7 @@ class GeminiProvider:
 
     async def answer(self, prompt: str, model: str) -> AIAnswerResult:
         if not self.settings.gemini_api_key:
-            raise ProviderError("GEMINI_API_KEY is missing")
+            raise ProviderConfigurationError("GEMINI_API_KEY is missing")
         if (genai is None or types is None) and self._client is None:
             raise ProviderError("Google GenAI SDK is not installed")
         try:
@@ -101,7 +110,7 @@ class GeminiProvider:
             raise _typed_error(error) from error
         text = getattr(response, "text", None)
         if not text:
-            raise ProviderError("Gemini returned an empty response")
+            raise ProviderResponseError("Gemini returned an empty response")
         return AIAnswerResult(
             self.name,
             model,
@@ -225,8 +234,10 @@ def _typed_error(error: Exception) -> ProviderError:
     if isinstance(error, ProviderError):
         return error
     if _is_quota_error(error):
-        message, retry_after = _quota_failure_details(error)
-        return ProviderQuotaError(message, retry_after_seconds=retry_after)
+        message, retry_after, dimension = _quota_failure_details(error)
+        return ProviderQuotaError(
+            message, retry_after_seconds=retry_after, dimension=dimension
+        )
     if _is_connection_error(error):
         return ProviderConnectionError(
             "Gemini network connection failed; provider temporarily unavailable"
@@ -257,6 +268,9 @@ def _is_retryable(error: Exception) -> bool:
 
 
 def _is_quota_error(error: Exception) -> bool:
+    status = getattr(error, "status_code", None)
+    if status == 429:
+        return True
     text = str(error).lower()
     return "429" in text and (
         "resource_exhausted" in text or "quota exceeded" in text or "quota" in text
@@ -308,15 +322,66 @@ def _is_transient_server_error(error: Exception) -> bool:
     )
 
 
-def _quota_failure_details(error: Exception) -> tuple[str, float | None]:
+def _quota_failure_details(error: Exception) -> tuple[str, float | None, str]:
     """Keep provider quota feedback useful without storing the raw API error."""
     text = str(error)
+    structured_quota, structured_retry = _structured_quota_details(error)
     quota = re.search(r"quotaId': '([^']+)", text)
     retry = re.search(r"(?:retry in |retryDelay': ')([0-9.]+)s", text, re.I)
-    retry_after = float(retry.group(1)) if retry else None
-    detail = quota.group(1) if quota else "Gemini provider quota"
+    retry_after = (
+        _header_retry_after(error)
+        or structured_retry
+        or (float(retry.group(1)) if retry else None)
+    )
+    detail = structured_quota or (quota.group(1) if quota else "Gemini provider quota")
+    normalized = detail.casefold()
+    dimension = next(
+        (
+            value
+            for marker, value in (
+                ("tokensperday", "tpd"),
+                ("requestsperday", "rpd"),
+                ("tokensperminute", "tpm"),
+                ("requestsperminute", "rpm"),
+            )
+            if marker in normalized
+        ),
+        "unknown",
+    )
     retry_text = f"; retry after {retry_after:g}s" if retry_after else ""
     return (
         f"Gemini quota limit reached ({detail}{retry_text}).",
         retry_after,
+        dimension,
     )
+
+
+def _header_retry_after(error: Exception) -> float | None:
+    headers = getattr(getattr(error, "response", None), "headers", None)
+    value = headers.get("retry-after") if headers else None
+    try:
+        return max(1.0, float(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _structured_quota_details(error: Exception) -> tuple[str | None, float | None]:
+    details = getattr(error, "details", None)
+    if not isinstance(details, list):
+        return None, None
+    quota_id: str | None = None
+    retry_after: float | None = None
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        candidate = detail.get("quotaId") or detail.get("quota_id")
+        if isinstance(candidate, str) and candidate:
+            quota_id = candidate
+        delay = detail.get("retryDelay") or detail.get("retry_delay")
+        if isinstance(delay, str):
+            match = re.fullmatch(r"([0-9.]+)s", delay.strip())
+            if match:
+                retry_after = float(match.group(1))
+        elif isinstance(delay, (int, float)):
+            retry_after = float(delay)
+    return quota_id, retry_after

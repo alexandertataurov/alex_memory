@@ -6,6 +6,7 @@ import asyncio
 import sqlite3
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from ..config import Settings
 from ..models import AIAnalysisResult, AIAnswerResult, AIBatch, AIRequest
@@ -17,6 +18,8 @@ from .providers import (
     ProviderConnectionError,
     ProviderError,
     ProviderQuotaError,
+    ProviderRetryableError,
+    ProviderResponseError,
     ProviderTimeoutError,
     ProviderTransientError,
 )
@@ -97,6 +100,7 @@ class AIRouter:
                 *[name for name in names if name != self.session_provider],
             ]
         errors: list[str] = []
+        retryable_failure = False
         for index, name in enumerate(names):
             unavailable = self._unavailable.get(name)
             if unavailable and self._clock() < unavailable[0]:
@@ -135,6 +139,15 @@ class AIRouter:
                     self.active_state = "response received"
                     return result
                 except Exception as error:
+                    retryable_failure = retryable_failure or isinstance(
+                        error,
+                        (
+                            ProviderQuotaError,
+                            ProviderConnectionError,
+                            ProviderTimeoutError,
+                            ProviderTransientError,
+                        ),
+                    )
                     reason = f"{type(error).__name__}: {error}"
                     self.last_error = f"{name}: {reason}"
                     errors.append(self.last_error)
@@ -164,7 +177,8 @@ class AIRouter:
                     break
         self.errors += 1
         self.active_state = "all providers failed"
-        raise ProviderError("All AI providers failed — " + " | ".join(errors))
+        error_type = ProviderRetryableError if retryable_failure else ProviderError
+        raise error_type("All AI providers failed — " + " | ".join(errors))
 
     async def analyze_request(self, request: AIRequest) -> AIAnalysisResult:
         workload, priority = (
@@ -178,6 +192,7 @@ class AIRouter:
             workload, requires_structured_output=request.requires_structured_output
         )
         errors: list[str] = []
+        retryable_failure = False
         candidates = self._candidates(
             workload, requires_structured_output=request.requires_structured_output
         )
@@ -186,6 +201,7 @@ class AIRouter:
             if provider_health and self._clock() < provider_health[0]:
                 self._set_active(profile, "model cooldown; trying next route")
                 errors.append(f"{profile.key}: {provider_health[1]}")
+                retryable_failure = True
                 continue
             self._provider_unavailable.pop(profile.provider, None)
             provider = self.providers.get(profile.provider)
@@ -198,12 +214,22 @@ class AIRouter:
                 )
                 if reason is None:
                     errors.append(f"{profile.key}: quota unavailable")
+                    retryable_failure = True
                     break
                 try:
                     result = await self._request_provider(
                         provider, request.batch, profile
                     )
                 except Exception as error:
+                    retryable_failure = retryable_failure or isinstance(
+                        error,
+                        (
+                            ProviderQuotaError,
+                            ProviderConnectionError,
+                            ProviderTimeoutError,
+                            ProviderTransientError,
+                        ),
+                    )
                     detail = self._record_failure(
                         workload, priority, profile, estimated, reason, error
                     )
@@ -247,7 +273,8 @@ class AIRouter:
             else "all eligible routes unavailable"
         )
         self.errors += 1
-        raise ProviderError(
+        error_type = ProviderRetryableError if retryable_failure else ProviderError
+        raise error_type(
             "All AI routes unavailable — "
             + " | ".join(errors)
             + (f" (tried: {route_chain})" if route_chain else "")
@@ -381,7 +408,9 @@ class AIRouter:
     ) -> str:
         detail = f"{type(error).__name__}: {error}"
         cooldown = (
-            error.retry_after_seconds if isinstance(error, ProviderQuotaError) else None
+            self._quota_cooldown(error)
+            if isinstance(error, ProviderQuotaError)
+            else None
         )
         self.quota.record_failure(profile, detail, cooldown)
         self.last_error = f"{profile.key}: {detail}"
@@ -392,12 +421,24 @@ class AIRouter:
 
     def _retry_delay(self, error: Exception, attempt: int) -> float | None:
         if isinstance(error, ProviderQuotaError):
+            if error.dimension in {"rpd", "tpd"}:
+                return None
             delay = error.retry_after_seconds
             return delay if delay is not None and delay <= 60 and attempt == 0 else None
         if isinstance(error, (ProviderConnectionError, ProviderTransientError)):
             if attempt + 1 < self.settings.ai_max_retries:
                 return min(60.0, self.settings.ai_retry_base_seconds * (2**attempt))
         return None
+
+    @staticmethod
+    def _quota_cooldown(error: ProviderQuotaError) -> float | None:
+        if error.dimension not in {"rpd", "tpd"}:
+            return error.retry_after_seconds
+        now = datetime.now(UTC)
+        next_day = datetime.combine(
+            now.date() + timedelta(days=1), datetime.min.time(), UTC
+        )
+        return max(1.0, (next_day - now).total_seconds())
 
     def _mark_provider_unavailable(
         self, profile: ModelProfile, error: Exception
@@ -463,7 +504,7 @@ class AIRouter:
             )
         )
         if result.provider != profile.provider or result.model != profile.model:
-            raise ProviderError(
+            raise ProviderResponseError(
                 "provider execution identity mismatch: selected "
                 f"{profile.provider}/{profile.model}, returned "
                 f"{result.provider}/{result.model}"

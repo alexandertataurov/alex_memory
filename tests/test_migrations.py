@@ -12,6 +12,7 @@ from alex_memory.database import (
     _bootstrap_schema,
     _apply_migrations,
     _add_profile_ai_lane,
+    _add_ai_job_retry_schedule,
     connect,
     migration_history,
     schema_version,
@@ -94,6 +95,40 @@ class MigrationLedgerTests(unittest.TestCase):
                        lane,chat_id,first_message_id,last_message_id,message_count,
                        analysis_version,selection_fingerprint,status,created_at
                    ) VALUES ('profile',6,1,1,1,2,'profile-lane','pending','now')"""
+            )
+        finally:
+            conn.close()
+
+    def test_retry_schedule_upgrade_preserves_membership_and_requeues_history(
+        self,
+    ) -> None:
+        conn = connect(self.settings)
+        try:
+            job_id = conn.execute(
+                """INSERT INTO ai_jobs(
+                       lane,chat_id,first_message_id,last_message_id,message_count,
+                       analysis_version,selection_fingerprint,status,created_at
+                   ) VALUES ('history',5,1,1,1,2,'retry-schedule','failed','now')"""
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO ai_job_messages(job_id,ordinal,chat_id,message_id) VALUES (?,0,5,1)",
+                (job_id,),
+            )
+            with conn:
+                _add_ai_job_retry_schedule(conn)
+            self.assertEqual(
+                ("pending", None),
+                conn.execute(
+                    "SELECT status,retry_after_at FROM ai_jobs WHERE job_id=?",
+                    (job_id,),
+                ).fetchone(),
+            )
+            self.assertEqual(
+                [(5, 1)],
+                conn.execute(
+                    "SELECT chat_id,message_id FROM ai_job_messages WHERE job_id=?",
+                    (job_id,),
+                ).fetchall(),
             )
         finally:
             conn.close()

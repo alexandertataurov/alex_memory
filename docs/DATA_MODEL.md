@@ -79,8 +79,10 @@ manual merge but cannot assign direct-chat ownership.
 `ai_jobs` records `analysis_version` and a deterministic selection fingerprint;
 `ai_job_messages` stores each job's exact ordered message membership. Historic
 range jobs remain visible, but unfinished rows without recoverable membership
-are `superseded`. `ai_batches` separately records provider acceptance,
-projection attempt/status/error, and context integration completion.
+are `superseded`. `retry_after_at` is a derived, durable schedule for temporary
+history failures; it never alters job membership or source evidence. `ai_batches`
+separately records provider acceptance, projection attempt/status/error, and
+context integration completion.
 
 `ai_items.project_name` preserves the explicit project name cited by an
 observation. `ai_item_rejections` retains individually invalid model items.

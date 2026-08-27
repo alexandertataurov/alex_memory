@@ -6,7 +6,7 @@ import re
 import math
 import sqlite3
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 from ..config import Settings
 from ..classification import CLASSIFICATION_VERSION, classify_pending_messages
@@ -20,6 +20,7 @@ from .extraction_contract import (
     validate_item_shape,
     validate_response,
 )
+from .providers import ProviderRetryableError
 
 
 def _context_graph_version(conn: sqlite3.Connection) -> int:
@@ -537,17 +538,20 @@ def claim_ai_jobs(
     profile_person_id: int | None = None,
     profile_extractor_version: int | None = None,
 ) -> list[tuple[int, AIBatch]]:
+    claimable_at = utc_now()
     rows = conn.execute(
         """
         SELECT job_id FROM ai_jobs
-        WHERE lane=? AND analysis_version=? AND status IN ('pending','failed')
+        WHERE lane=? AND analysis_version=? AND status='pending'
+          AND (retry_after_at IS NULL OR retry_after_at <= ?)
           AND ((? IS NULL AND profile_person_id IS NULL) OR profile_person_id=?)
           AND (? IS NULL OR profile_extractor_version=?)
-        ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, job_id LIMIT ?
+        ORDER BY job_id LIMIT ?
         """,
         (
             lane,
             ANALYSIS_VERSION,
+            claimable_at,
             profile_person_id,
             profile_person_id,
             profile_extractor_version,
@@ -563,7 +567,7 @@ def claim_ai_jobs(
                 UPDATE ai_jobs
                 SET status = 'running', attempt_count = attempt_count + 1,
                     started_at = ?
-                WHERE job_id = ? AND status IN ('pending', 'failed')
+                WHERE job_id = ? AND status = 'pending'
                 """,
                 (utc_now(), job_id),
             )
@@ -583,14 +587,15 @@ def claim_ai_jobs(
                 batch = add_history_context(conn, batch, settings)
         except Exception as error:
             with conn:
-                conn.execute(
-                    """UPDATE ai_jobs SET status='failed',last_error=?
-                       WHERE job_id=? AND status='running'""",
-                    (
-                        f"context assembly: {type(error).__name__}: {error}"[:2000],
-                        job_id,
-                    ),
-                )
+                detail = f"context assembly: {type(error).__name__}: {error}"
+                if lane == "history":
+                    _defer_history_job(conn, int(job_id), detail)
+                else:
+                    conn.execute(
+                        """UPDATE ai_jobs SET status='failed',last_error=?
+                           WHERE job_id=? AND status='running'""",
+                        (detail[:2000], job_id),
+                    )
             continue
         claimed.append((int(job_id), batch))
     return claimed
@@ -599,7 +604,9 @@ def claim_ai_jobs(
 def release_ai_job(conn: sqlite3.Connection, job_id: int) -> None:
     with conn:
         conn.execute(
-            "UPDATE ai_jobs SET status = 'pending' WHERE job_id = ? AND status = 'running'",
+            """UPDATE ai_jobs
+               SET status = 'pending', retry_after_at = NULL
+               WHERE job_id = ? AND status = 'running'""",
             (job_id,),
         )
 
@@ -1017,13 +1024,37 @@ def save_ai_success(
                 """
                 UPDATE ai_jobs
                 SET status = 'done', provider = ?, model = ?,
-                    fallback_used = ?, last_error = NULL, completed_at = ?
+                    fallback_used = ?, last_error = NULL, retry_after_at = NULL,
+                    completed_at = ?
                 WHERE job_id = ?
                 """,
                 (provider, model, fallback_used, now, job_id),
             )
 
     return save_result
+
+
+def _history_retry_after(attempt_count: int) -> str:
+    """Return a bounded retry time derived only from durable attempt count."""
+    seconds = min(300, 5 * (2 ** min(6, max(0, attempt_count - 1))))
+    return (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()
+
+
+def _defer_history_job(conn: sqlite3.Connection, job_id: int, error: str) -> None:
+    row = conn.execute(
+        "SELECT attempt_count FROM ai_jobs WHERE job_id=? AND status='running'",
+        (job_id,),
+    ).fetchone()
+    if row is None:
+        return
+    conn.execute(
+        """
+        UPDATE ai_jobs
+        SET status='pending', last_error=?, retry_after_at=?
+        WHERE job_id=? AND status='running'
+        """,
+        (error[:2000], _history_retry_after(int(row[0])), job_id),
+    )
 
 
 def save_ai_failure(
@@ -1059,14 +1090,18 @@ def save_ai_failure(
             ),
         )
         if job_id is not None:
-            conn.execute(
-                """
-                UPDATE ai_jobs
-                SET status = 'failed', last_error = ?
-                WHERE job_id = ?
-                """,
-                (f"{type(error).__name__}: {error}"[:2000], job_id),
-            )
+            detail = f"{type(error).__name__}: {error}"[:2000]
+            if lane == "history" and isinstance(error, ProviderRetryableError):
+                _defer_history_job(conn, job_id, detail)
+            else:
+                conn.execute(
+                    """
+                    UPDATE ai_jobs
+                    SET status = 'failed', last_error = ?, retry_after_at = NULL
+                    WHERE job_id = ?
+                    """,
+                    (detail, job_id),
+                )
 
 
 def _save_ai_item(

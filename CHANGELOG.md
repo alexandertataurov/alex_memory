@@ -16,6 +16,45 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Added
 
+- AM-075 completes durable failure-domain closure. Migration 20 adds a
+  restart-safe schedule for retryable history work without changing exact job
+  membership; malformed responses and local configuration failures remain
+  terminal. Structured Gemini retry headers now take precedence over textual
+  delay parsing. No live migration or repair ran.
+
+- AM-075 now preserves quota dimension through normalization. Daily request/
+  token exhaustion is model-local until the next UTC reset, while minute-scale
+  quotas retain bounded short retry. No migration or live action ran.
+
+- AM-075 also clears expired quota cooldowns deterministically from in-memory
+  and persisted current-UTC usage state. No schema or live action ran.
+
+- AM-075 prefers structured Gemini HTTP 429 quota metadata to text heuristics,
+  retaining quota dimension and retry delay. No integration, schema, or live
+  action ran.
+
+- AM-075 adds explicit permanent configuration and response-contract failure
+  types; malformed/empty responses are rejected locally before persistence.
+  No schema or live action ran.
+
+- AM-071 completes its code-verifiable task lifecycle scope: source-aware,
+  bounded reconciliation protects entity/project anchors; terminal lifecycle
+  evidence links to the canonical task; and repeated manual/rejection actions
+  are idempotent. Historical repair remains AM-074 work. No migration, replay,
+  backfill, or live action ran.
+
+- AM-072 project health now uses dated canonical task evidence, project-linked
+  observations, temporal events, and conversation intervals. A real overdue
+  open/waiting task is critical; missing task links alone are not. No migration,
+  backfill, or live recomputation ran.
+
+- AM-071 begins conservative task reconciliation: same-chat matching now
+  rejects conflicting populated person/company/project anchors before title
+  similarity can merge records, while exact-title continuation with a matching
+  anchor remains supported. Candidate reads are bounded to 50 rows. Temporary
+  fixtures retain the shared manual update/rejection audit contract. No
+  migration, replay, backfill, or live action ran.
+
 - AM-120 adds a bounded, read-only graph query contract for current canonical
   relationships. It admits the existing accepted task-to-project projection
   only with immutable claim evidence, excludes observed, source-less, and

@@ -1418,6 +1418,20 @@ def _add_profile_claim_metadata(conn: sqlite3.Connection) -> None:
     )
 
 
+def _add_ai_job_retry_schedule(conn: sqlite3.Connection) -> None:
+    """Add restart-safe history retry scheduling without changing job evidence."""
+    _add_column_if_missing(conn, "ai_jobs", "retry_after_at TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ai_jobs_retry_schedule "
+        "ON ai_jobs(lane,status,retry_after_at,job_id)"
+    )
+    conn.execute(
+        """UPDATE ai_jobs
+           SET status='pending', retry_after_at=NULL
+           WHERE lane='history' AND status='failed'"""
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "bootstrap_schema", _bootstrap_schema),
     Migration(2, "compatibility_columns", _apply_compatibility_columns),
@@ -1448,6 +1462,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(17, "person_profile_enrichment", _add_person_profile_enrichment),
     Migration(18, "profile_ai_lane", _add_profile_ai_lane),
     Migration(19, "profile_claim_metadata", _add_profile_claim_metadata),
+    Migration(20, "ai_job_retry_schedule", _add_ai_job_retry_schedule),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 

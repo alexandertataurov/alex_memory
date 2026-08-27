@@ -13,8 +13,10 @@ from .base import (
     ANSWER_SYSTEM_PROMPT,
     ProviderAnalysisRequest,
     ProviderConnectionError,
+    ProviderConfigurationError,
     ProviderError,
     ProviderQuotaError,
+    ProviderResponseError,
     ProviderTimeoutError,
     ProviderTransientError,
     extraction_input_parts,
@@ -45,9 +47,11 @@ class GroqProvider:
                 requests_per_minute=None,
             )
         if request.provider != self.name:
-            raise ProviderError(f"Groq cannot execute provider {request.provider!r}")
+            raise ProviderConfigurationError(
+                f"Groq cannot execute provider {request.provider!r}"
+            )
         if not self.settings.groq_api_key:
-            raise ProviderError("GROQ_API_KEY is missing")
+            raise ProviderConfigurationError("GROQ_API_KEY is missing")
         if self._client is not None:
             client = self._client
         else:
@@ -80,7 +84,7 @@ class GroqProvider:
 
     async def answer(self, prompt: str, model: str) -> AIAnswerResult:
         if not self.settings.groq_api_key:
-            raise ProviderError("GROQ_API_KEY is missing")
+            raise ProviderConfigurationError("GROQ_API_KEY is missing")
         client = self._client or (
             AsyncGroqClient(api_key=self.settings.groq_api_key)
             if AsyncGroqClient is not None
@@ -106,7 +110,7 @@ class GroqProvider:
             )
             content = completion.choices[0].message.content
             if not content:
-                raise ProviderError("Groq returned an empty response")
+                raise ProviderResponseError("Groq returned an empty response")
             return AIAnswerResult(
                 self.name,
                 model,
@@ -169,10 +173,13 @@ async def _request_json_object(
 def _parse_completion(completion: Any) -> dict:
     content = completion.choices[0].message.content
     if not content:
-        raise ProviderError("Groq returned an empty response")
-    parsed = json.loads(content)
+        raise ProviderResponseError("Groq returned an empty response")
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ProviderResponseError("Groq returned invalid JSON") from error
     if not isinstance(parsed, dict):
-        raise ProviderError("Groq result is not a JSON object")
+        raise ProviderResponseError("Groq result is not a JSON object")
     return parsed
 
 
@@ -181,7 +188,7 @@ def normalize_result(result: dict) -> dict:
     try:
         return validate_response(result)
     except ExtractionContractError as error:
-        raise ProviderError(f"invalid extraction response: {error}") from error
+        raise ProviderResponseError(f"invalid extraction response: {error}") from error
 
 
 def _is_quota_error(error: Exception) -> bool:
@@ -200,7 +207,7 @@ def _is_quota_error(error: Exception) -> bool:
     )
 
 
-def _quota_failure_details(error: Exception) -> tuple[str, float | None]:
+def _quota_failure_details(error: Exception) -> tuple[str, float | None, str]:
     headers = getattr(getattr(error, "response", None), "headers", None)
     retry_after = None
     if headers and headers.get("retry-after"):
@@ -223,11 +230,25 @@ def _quota_failure_details(error: Exception) -> tuple[str, float | None]:
 
     if retry_after is None:
         retry_after = 60.0
-    if "tokens per day" in message.lower() or "tpd" in message.lower():
+    dimension = _quota_dimension(message)
+    if dimension == "tpd":
         sanitized = "Groq daily token quota reached; please try again later."
     else:
         sanitized = "Groq rate limit reached; please try again later."
-    return sanitized, retry_after
+    return sanitized, retry_after, dimension
+
+
+def _quota_dimension(message: str) -> str:
+    normalized = message.casefold()
+    if "tokens per day" in normalized or "tpd" in normalized:
+        return "tpd"
+    if "requests per day" in normalized or "rpd" in normalized:
+        return "rpd"
+    if "tokens per minute" in normalized or "tpm" in normalized:
+        return "tpm"
+    if "requests per minute" in normalized or "rpm" in normalized:
+        return "rpm"
+    return "unknown"
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -265,8 +286,10 @@ def _typed_error(error: Exception) -> ProviderError:
     if isinstance(error, ProviderError):
         return error
     if _is_quota_error(error):
-        message, retry_after = _quota_failure_details(error)
-        return ProviderQuotaError(message, retry_after_seconds=retry_after)
+        message, retry_after, dimension = _quota_failure_details(error)
+        return ProviderQuotaError(
+            message, retry_after_seconds=retry_after, dimension=dimension
+        )
     if _is_connection_error(error):
         return ProviderConnectionError("Groq network connection failed")
     if _is_retryable(error):

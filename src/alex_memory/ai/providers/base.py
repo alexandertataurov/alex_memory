@@ -39,12 +39,31 @@ class ProviderError(RuntimeError):
     """A provider request failed and the router may try another provider."""
 
 
+class ProviderConfigurationError(ProviderError):
+    """A local provider configuration cannot execute a request."""
+
+
+class ProviderResponseError(ProviderError):
+    """A reachable provider returned an invalid or unusable response."""
+
+
+class ProviderRetryableError(ProviderError):
+    """All attempted routes failed temporarily; durable work may be deferred."""
+
+
 class ProviderQuotaError(ProviderError):
     """A provider has rejected requests until its quota recovers."""
 
-    def __init__(self, message: str, retry_after_seconds: float | None = None):
+    def __init__(
+        self,
+        message: str,
+        retry_after_seconds: float | None = None,
+        *,
+        dimension: str = "unknown",
+    ):
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+        self.dimension = dimension
 
 
 class ProviderTimeoutError(ProviderError):

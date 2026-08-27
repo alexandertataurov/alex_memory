@@ -56,6 +56,15 @@ def normalize_task_title(value: str | None) -> str:
     return re.sub(r"[^\w\s]", "", value, flags=re.UNICODE).strip()
 
 
+def _source_day(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
 class EntityResolver:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
@@ -386,6 +395,7 @@ class TaskReconciler:
         project_id: int | None,
         *,
         source_claim_id: int | None = None,
+        source_at: str | None = None,
         force: bool = False,
     ) -> int | None:
         item_id, kind, title, details, status, owner, due_date, confidence, chat_id = (
@@ -422,7 +432,13 @@ class TaskReconciler:
             self._review("task_change", item_id, payload, float(confidence))
             return None
         task = self._find_match(
-            normalized, int(chat_id), person_id, company_id, project_id
+            normalized,
+            str(kind),
+            source_at,
+            int(chat_id),
+            person_id,
+            company_id,
+            project_id,
         )
         now = utc_now()
         if task is None and terminal:
@@ -537,44 +553,82 @@ class TaskReconciler:
     def _find_match(
         self,
         title: str,
+        kind: str,
+        source_at: str | None,
         chat_id: int,
         person_id: int | None,
         company_id: int | None,
         project_id: int | None,
-    ) -> tuple | None:
+    ) -> sqlite3.Row | tuple | None:
         anchors = [
-            ("related_person_id", person_id),
-            ("related_company_id", company_id),
-            ("related_project_id", project_id),
+            ("tasks.related_person_id", person_id),
+            ("tasks.related_company_id", company_id),
+            ("tasks.related_project_id", project_id),
         ]
         known = [(column, value) for column, value in anchors if value is not None]
-        predicates = ["source_chat_id=?", "status IN ('open','waiting')"]
+        predicates = ["tasks.source_chat_id=?", "tasks.status IN ('open','waiting')"]
         params: list[object] = [chat_id]
         if known:
             predicates.append(
                 "("
                 + " OR ".join(f"{column}=?" for column, _ in known)
-                + " OR normalized_title=?)"
+                + " OR tasks.normalized_title=?)"
             )
             params.extend(value for _, value in known)
             params.append(title)
             threshold = 0.78
         else:
-            predicates.append("normalized_title=?")
+            predicates.append("tasks.normalized_title=?")
             params.append(title)
             threshold = 0.92
         rows = self.conn.execute(
-            f"SELECT task_id,manual_status_locked,normalized_title FROM tasks WHERE {' AND '.join(predicates)}",
+            f"""SELECT task_id,manual_status_locked,normalized_title,
+                       related_person_id,related_company_id,related_project_id,
+                       source_item.kind,
+                       COALESCE(source_item.source_date,tasks.created_at)
+                FROM tasks
+                LEFT JOIN ai_items AS source_item
+                  ON source_item.item_id=tasks.source_item_id
+                WHERE {" AND ".join(predicates)}
+                ORDER BY tasks.updated_at DESC,tasks.task_id DESC LIMIT 50""",
             params,
         ).fetchall()
-        best = max(
-            rows, key=lambda r: SequenceMatcher(None, title, r[2]).ratio(), default=None
-        )
-        return (
-            best
-            if best and SequenceMatcher(None, title, best[2]).ratio() >= threshold
-            else None
-        )
+        incoming_day = _source_day(source_at)
+        candidates: list[tuple[float, float, sqlite3.Row | tuple]] = []
+        for row in rows:
+            candidate_anchors = row[3:6]
+            anchor_matches = sum(
+                value is not None and value == candidate_anchors[index]
+                for index, (_, value) in enumerate(anchors)
+            )
+            has_conflict = any(
+                value is not None
+                and candidate_anchors[index] is not None
+                and value != candidate_anchors[index]
+                for index, (_, value) in enumerate(anchors)
+            )
+            if has_conflict:
+                continue
+            similarity = SequenceMatcher(None, title, row[2]).ratio()
+            candidate_threshold = threshold
+            if known and anchor_matches == 0:
+                # A known incoming anchor does not make a sparse historical row
+                # an identity match. Only an exact normalized title can bridge it.
+                candidate_threshold = 1.0
+            if similarity >= candidate_threshold:
+                candidate_day = _source_day(row[7])
+                is_exact_title = similarity == 1.0
+                if not is_exact_title and (
+                    row[6] != kind
+                    or incoming_day is None
+                    or candidate_day is None
+                    or abs((incoming_day - candidate_day).days) > 180
+                ):
+                    continue
+                candidates.append((anchor_matches, similarity, row))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda candidate: candidate[:2])[2]
 
     def _event(
         self, task_id: int, event_type: str, source: str, item_id: int, payload: dict
@@ -803,6 +857,7 @@ def _project_ai_batch(
             company_id,
             project_id,
             source_claim_id=source_claim_id,
+            source_at=source_date,
         )
         if (
             task_id is not None
@@ -1091,10 +1146,12 @@ def manually_update_task(conn: sqlite3.Connection, task_id: int, status: str) ->
     if status not in {"open", "waiting", "done", "canceled"}:
         raise ValueError("status must be open, waiting, done, or canceled")
     row = conn.execute(
-        "SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)
+        "SELECT status,manual_status_locked FROM tasks WHERE task_id = ?", (task_id,)
     ).fetchone()
     if not row:
         return False
+    if row[0] == status and row[1]:
+        return True
     now = utc_now()
     conn.execute(
         "UPDATE tasks SET status=?, manual_updated_at=?, manual_status_locked=1, updated_at=? WHERE task_id=?",
@@ -1241,7 +1298,7 @@ def resolve_review_item(
                 raise ValueError("Task review lacks a source AI item.")
             item = conn.execute(
                 """SELECT item_id,kind,title,details,status,owner,due_date,confidence,
-                           source_chat_id,person_id,company_id,project_id
+                           source_chat_id,person_id,company_id,project_id,source_date
                    FROM ai_items WHERE item_id=?""",
                 (item_id,),
             ).fetchone()
@@ -1250,7 +1307,12 @@ def resolve_review_item(
                     "The source AI item for this task review is unavailable."
                 )
             TaskReconciler(conn, settings).process_item(
-                item[:9], item[9], item[10], item[11], force=True
+                item[:9],
+                item[9],
+                item[10],
+                item[11],
+                source_at=item[12],
+                force=True,
             )
         if action in {"accept", "edit"} and review_type == "message_classification":
             chat_id, message_id = payload.get("chat_id"), payload.get("message_id")

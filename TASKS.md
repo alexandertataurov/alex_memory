@@ -38,7 +38,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     and fixture-tested before any reader cutover; no relationship conversion,
     replay, graph repair, migration, or live action is authorized.
 
-
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
   - Plan: `docs/exec-plans/active/AM-118-application-remediation.md`.
@@ -80,7 +79,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     against the current source and ordered 1–19 migration ledger. Historical
     findings already addressed by extraction lifecycle, canonical projection,
     invalidation ownership, configuration/routing, and AM-096 are now labelled
-    as completed controls; AM-053, AM-071, AM-075, and AM-120 remain open under
+    as completed controls; AM-053 and AM-120 remain open under
     their existing bounded scopes. No runtime or live-state action ran.
   - Progress 2026-08-26: current-source audit reconfirmed the remaining
     lifecycle, provider-request, failure-taxonomy, materialization-ownership,
@@ -215,49 +214,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
 
-- [ ] AM-071 [P0] [Task lifecycle / Reconciliation] — Fix task matching and historical lifecycle reconciliation so old one-off work does not remain permanently open or merge incorrectly.
-  - Evidence from live DB: 650/652 tasks are `open` or `waiting`, only 2 are `done`; 396 current-open tasks originate before 2026. There are 49 `task_completed` context events with no `task_id`, plus 38 pending `task_completion` review items.
-  - Code evidence: `_find_match()` selects same-chat candidates with `(related_person_id IS ? OR related_company_id IS ?)`. When either requested entity is `NULL`, this can admit many unrelated tasks merely because their corresponding column is also `NULL`.
-  - Code evidence: after that broad candidate query, identity is decided mainly by `SequenceMatcher(normalized_title) >= 0.78`; project identity, chronology, task kind, and explicit completion evidence do not participate strongly enough.
-  - Acceptance:
-    - construct candidate predicates dynamically: known person/company/project constrain or strongly score matching; `NULL` must not behave as a broad wildcard;
-    - use chronology, task kind, source evidence, project scope, entity scope, and normalized title together;
-    - use a stricter fallback when no entity/project anchor is available;
-    - link later completion/cancellation evidence back to the existing canonical task;
-    - preserve manual task locks and never close solely because a task is old.
-  - UX: add/derive a `current actionable` view so unresolved historical records do not dominate today's operational task list while review is pending.
-  - Verification: synthetic long-history lifecycle tests, false-positive same-chat matching tests, completion-event linking, manual-status authority, entity/project-aware matching, and idempotent backfill.
-  - Code evidence: manual lifecycle mutations are split: `manually_update_task()` writes a `task_events` audit row, while `reject_task()` cancels/locks the task and writes feedback but no task lifecycle event. Manual state changes must have one authoritative audit contract.
-  - Additional acceptance: all manual status/reject actions go through one lifecycle mutation path that always records the authoritative task event and feedback semantics exactly once.
-
-- [ ] AM-075 [P0] [AI routing / Failure taxonomy] — Make quota, provider health, cooldown recovery, and retryability match the actual failure domain.
-  - Evidence from live DB: 19 history jobs are `failed`; previous runs showed model-specific daily capacity remaining while other routes were suppressed.
-  - Code evidence: quota-aware `AIRouter` distinguishes model-local quota
-    cooldowns from provider-scoped transport health. The remaining taxonomy
-    work must keep reachable server errors out of the latter scope.
-  - Code evidence: `QuotaTracker.record_failure()` persists `cooldown_until` to `ai_model_usage`, but a new `QuotaTracker` never reloads that persisted cooldown.
-  - Progress 2026-08-26: reproduced the restart cooldown regression in the
-    quality baseline. Usage rows are written with a UTC date but cooldown
-    reload used the host-local date; reload now uses UTC consistently. The
-    existing temporary-SQLite restart regression passes. Remaining typed
-    failure-taxonomy work is unchanged; no migration or provider request ran.
-  - Progress 2026-08-26: Gemini now distinguishes a reachable HTTP 500/502/503/504
-    server failure from a DNS/transport failure. The former is typed, boundedly
-    retried, and may fall back without applying the five-minute provider-health
-    cooldown; the latter remains provider-scoped. Temporary-SQLite router and
-    provider regressions pass. No migration or provider request ran.
-  - Provider evidence: `ProviderQuotaError` carries only a retry delay, not the quota dimension (`RPM`, `TPM`, `RPD`, `TPD`), so the router cannot make reason-aware cooldown decisions. Groq defaults unknown quota retry to 60 seconds even for daily-token exhaustion.
-  - Provider evidence: Gemini classifies failures using broad string matching; markers such as `service unavailable` / `temporarily unavailable` can turn a transient 503/server error into `ProviderConnectionError`, which should not necessarily poison the whole provider.
-  - Acceptance:
-    - typed failure taxonomy distinguishes configuration, response/validation, timeout, transient server, transport/network, and quota by dimension;
-    - model quota/RPD/RPM/TPM/TPD exhaustion is model-specific with a reset/cooldown appropriate to the dimension;
-    - true provider transport/DNS/TLS/connectivity health is provider-scoped and suppresses sibling models for a bounded cooldown;
-    - structured status/error/header fields are preferred over string heuristics; string parsing is a fallback only;
-    - persisted cooldown state is restored on restart and expired state is cleared deterministically;
-    - retryable quota/network failures are distinguishable from permanent validation/programming/storage failures;
-    - temporarily failed history work returns to retryable/pending with bounded backoff rather than undifferentiated forever-`failed`.
-  - Verification: RPM/TPM/RPD/TPD errors, model daily exhaustion, sibling availability, provider DNS outage, transient 503, malformed response, missing key/config, restart during cooldown, expiry, and no duplicate side effects.
-
 - [ ] AM-053 [P0] [Context runtime] — Add a persistent context invalidation/dirty queue and move expensive derived refresh out of the per-batch canonical projection path.
   - Historical evidence: the original review found no dedicated invalidation ledger
     and synchronous downstream refresh after canonical projection. That is no
@@ -322,6 +278,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Acceptance: project state derives from real recent activity, linked open/waiting/overdue tasks, temporal events, conversation segments, and explicit project state—not absence of task links. Support `active`, `waiting`, `stale`, `critical`, `completed`, and `archived` where current domain rules allow.
   - Backfill: recompute all project health only after AM-070/AM-071 repair.
   - Verification: active recent project is not stale; historical project can be archived/completed; real overdue blockers can still become critical.
+  - Plan: `docs/exec-plans/active/AM-072-project-health.md`.
+  - Progress 2026-08-27: health now uses dated task evidence, project-linked
+    observations, temporal events, and conversation intervals. Only a real
+    overdue open/waiting task is `critical`; no activity is `stale`, while
+    recent non-task evidence can be `active`. No recomputation/backfill/live
+    action ran.
 
 ## Next
 
@@ -697,6 +659,22 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 - [ ] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
 
 ## Completed
+
+- [x] AM-075 [P0] [AI routing / Failure taxonomy] — Completed 2026-08-27.
+  Migration 20 adds a durable retry schedule for temporary history work.
+  It keeps the exact membership unchanged and distinguishes terminal local
+  failures from scheduled temporary failures. Temporary SQLite coverage passes.
+
+- [x] AM-071 [P0] [Task lifecycle / Reconciliation] — Completed 2026-08-27.
+  Same-chat candidate matching is bounded and rejects conflicting populated
+  entity/project anchors; fuzzy matches require compatible task kind and
+  source evidence within 180 days, while exact-title lifecycle continuity stays
+  supported. Terminal completion/cancellation links retain their task event,
+  and unchanged manual actions/rejections are idempotent with exactly one
+  lifecycle event and rejection feedback record. Historical repair remains
+  explicitly owned by AM-074. No migration, replay, backfill, or live action
+  ran. Verification: temporary-SQLite matching, terminal lifecycle, authority,
+  and idempotency coverage.
 
 - [x] AM-106 [P0] [Retry / Rate limit / Usage accounting] — Completed
   2026-08-26. Providers perform one cancellable transport attempt while the

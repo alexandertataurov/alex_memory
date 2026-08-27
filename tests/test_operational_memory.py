@@ -582,6 +582,138 @@ class OperationalMemoryTests(unittest.TestCase):
                 2, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             )
 
+    def test_conflicting_known_anchor_prevents_same_title_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            resolver = EntityResolver(conn)
+            first = resolver.person("Ari", source="manual")
+            second = resolver.person("Mariam", source="manual")
+            assert first is not None
+            assert second is not None
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,
+                   related_person_id,source_chat_id,confidence,created_at,updated_at)
+                   VALUES ('Send invoice','send invoice','open','me',?,107,1.0,'now','now')""",
+                (first,),
+            )
+
+            TaskReconciler(conn, settings).process_item(
+                (8, "task", "Send invoice", "", "open", "me", None, 0.96, 107),
+                second,
+                None,
+                None,
+            )
+
+            self.assertEqual(
+                2, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            )
+            self.assertEqual(
+                {first, second},
+                {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT related_person_id FROM tasks WHERE source_chat_id=107"
+                    ).fetchall()
+                },
+            )
+
+    def test_matching_known_anchor_permits_terminal_title_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            person_id = EntityResolver(conn).person("Ari", source="manual")
+            assert person_id is not None
+            task_id = conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,
+                   related_person_id,source_chat_id,confidence,created_at,updated_at)
+                   VALUES ('Send invoice','send invoice','waiting','me',?,108,1.0,'now','now')""",
+                (person_id,),
+            ).lastrowid
+            assert task_id is not None
+
+            TaskReconciler(conn, settings).process_item(
+                (9, "task", "Send invoice", "Paid", "done", "me", None, 0.96, 108),
+                person_id,
+                None,
+                None,
+            )
+
+            self.assertEqual(
+                "done",
+                conn.execute(
+                    "SELECT status FROM tasks WHERE task_id=?", (task_id,)
+                ).fetchone()[0],
+            )
+
+    def test_conflicting_company_or_project_anchor_prevents_merge(self) -> None:
+        for anchor_type, column in (
+            ("company", "related_company_id"),
+            ("project", "related_project_id"),
+        ):
+            with (
+                self.subTest(anchor_type=anchor_type),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                settings = make_settings(Path(directory))
+                conn = connect(settings)
+                resolver = EntityResolver(conn)
+                first = resolver.entity(anchor_type, "First", source="manual")
+                second = resolver.entity(anchor_type, "Second", source="manual")
+                assert first is not None
+                assert second is not None
+                conn.execute(
+                    f"""INSERT INTO tasks(title,normalized_title,status,owner,{column},
+                       source_chat_id,confidence,created_at,updated_at)
+                       VALUES ('Send invoice','send invoice','open','me',?,109,1.0,'now','now')""",
+                    (first,),
+                )
+
+                TaskReconciler(conn, settings).process_item(
+                    (10, "task", "Send invoice", "", "open", "me", None, 0.96, 109),
+                    None,
+                    second if anchor_type == "company" else None,
+                    second if anchor_type == "project" else None,
+                )
+
+                self.assertEqual(
+                    2, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+                )
+
+    def test_distant_fuzzy_anchored_task_does_not_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            person_id = EntityResolver(conn).person("Ari", source="manual")
+            assert person_id is not None
+            source_item_id = conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,created_at,dedupe_key)
+                   VALUES (1,'task','Send invoice','','open','me',0.96,110,1,
+                   '2026-01-01T10:00:00+00:00','now','old-task-evidence')"""
+            ).lastrowid
+            assert source_item_id is not None
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,
+                   related_person_id,source_chat_id,source_item_id,confidence,
+                   created_at,updated_at)
+                   VALUES ('Send invoice','send invoice','open','me',?,110,?,1.0,
+                   '2026-01-01T10:00:00+00:00','2026-01-01T10:00:00+00:00')""",
+                (person_id, source_item_id),
+            )
+
+            TaskReconciler(conn, settings).process_item(
+                (11, "task", "Send invoices", "", "open", "me", None, 0.96, 110),
+                person_id,
+                None,
+                None,
+                source_at="2026-08-01T10:00:00+00:00",
+            )
+
+            self.assertEqual(
+                2, conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            )
+
     def test_terminal_item_updates_the_matching_anchored_task(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))
@@ -623,6 +755,47 @@ class OperationalMemoryTests(unittest.TestCase):
                     "SELECT event_type FROM task_events WHERE task_id=? ORDER BY event_id DESC",
                     (task_id,),
                 ).fetchone()[0],
+            )
+
+    def test_terminal_cancellation_links_to_matching_anchored_task(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            project_id = EntityResolver(conn).entity("project", "Amber")
+            assert project_id is not None
+            task_id = conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,
+                   related_project_id,source_chat_id,confidence,created_at,updated_at)
+                   VALUES ('Send invoice','send invoice','open','me',?,111,1.0,'now','now')""",
+                (project_id,),
+            ).lastrowid
+            assert task_id is not None
+
+            TaskReconciler(conn, settings).process_item(
+                (
+                    12,
+                    "task",
+                    "Send invoice",
+                    "Cancelled",
+                    "canceled",
+                    "me",
+                    None,
+                    0.96,
+                    111,
+                ),
+                None,
+                None,
+                project_id,
+            )
+
+            self.assertEqual(
+                ("canceled", "canceled"),
+                conn.execute(
+                    """SELECT t.status,e.event_type FROM tasks AS t
+                       JOIN task_events AS e ON e.task_id=t.task_id
+                       WHERE t.task_id=? ORDER BY e.event_id DESC LIMIT 1""",
+                    (task_id,),
+                ).fetchone(),
             )
 
     def test_generic_review_decision_is_durable_feedback(self) -> None:

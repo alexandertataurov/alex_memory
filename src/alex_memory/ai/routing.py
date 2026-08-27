@@ -255,12 +255,13 @@ class QuotaTracker:
         self._write(profile, error=reason, cooldown_until=until, at=datetime.now(UTC))
 
     def cooldown(self, profile: ModelProfile) -> tuple[float, str] | None:
+        now = datetime.now(UTC)
         value = self._cooldowns.get(profile.key)
         if value is None and self.conn is not None:
             row = self.conn.execute(
                 """SELECT cooldown_until,last_error FROM ai_model_usage
                    WHERE usage_date=? AND model_key=?""",
-                (datetime.now(UTC).date().isoformat(), profile.key),
+                (now.date().isoformat(), profile.key),
             ).fetchone()
             if row and row[0]:
                 try:
@@ -269,11 +270,20 @@ class QuotaTracker:
                     ).timestamp()
                 except ValueError:
                     until = 0.0
-                if until > datetime.now(UTC).timestamp():
+                if until > now.timestamp():
                     value = (until, str(row[1] or "persisted cooldown"))
                     self._cooldowns[profile.key] = value
-        if value and datetime.now(UTC).timestamp() < value[0]:
+        if value and now.timestamp() < value[0]:
             return value
+        self._cooldowns.pop(profile.key, None)
+        if self.conn is not None:
+            self.conn.execute(
+                """UPDATE ai_model_usage SET cooldown_until=NULL
+                   WHERE usage_date=? AND model_key=? AND cooldown_until IS NOT NULL
+                     AND cooldown_until<=?""",
+                (now.date().isoformat(), profile.key, now.isoformat()),
+            )
+            self.conn.commit()
         return None
 
     def status_rows(

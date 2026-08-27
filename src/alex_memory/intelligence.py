@@ -285,11 +285,35 @@ def evaluate_project_health(
     changed = 0
     for project_id, name in projects:
         row = conn.execute(
-            """SELECT MAX(updated_at), SUM(CASE WHEN status IN ('open','waiting') THEN 1 ELSE 0 END),
+            """SELECT
+                      (
+                          SELECT MAX(activity_at) FROM (
+                              SELECT COALESCE(item.source_date,task.created_at) AS activity_at
+                              FROM tasks AS task
+                              LEFT JOIN ai_items AS item ON item.item_id=task.source_item_id
+                              WHERE task.related_project_id=?
+                              UNION ALL
+                              SELECT source_date FROM ai_items WHERE project_id=?
+                              UNION ALL
+                              SELECT COALESCE(occurred_at,observed_at)
+                              FROM context_events WHERE project_id=?
+                              UNION ALL
+                              SELECT COALESCE(ended_at,started_at)
+                              FROM conversation_segments WHERE project_id=?
+                          )
+                      ),
+                      SUM(CASE WHEN status IN ('open','waiting') THEN 1 ELSE 0 END),
                       SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END),
                       SUM(CASE WHEN due_date IS NOT NULL AND due_date < ? AND status IN ('open','waiting') THEN 1 ELSE 0 END)
                FROM tasks WHERE related_project_id=?""",
-            (today.isoformat(), project_id),
+            (
+                project_id,
+                project_id,
+                project_id,
+                project_id,
+                today.isoformat(),
+                project_id,
+            ),
         ).fetchone()
         last_activity, open_count, waiting_count, overdue = row
         activity_day = (last_activity or "")[:10]
@@ -300,9 +324,9 @@ def evaluate_project_health(
         )
         status = (
             "critical"
-            if age >= settings.project_critical_stale_days
+            if overdue
             else "stale"
-            if age >= settings.project_stale_days and (open_count or 0)
+            if not activity_day or age >= settings.project_stale_days
             else "waiting"
             if waiting_count
             else "active"
@@ -480,6 +504,13 @@ def reject_task(conn: sqlite3.Connection, task_id: int) -> bool:
     ).fetchone()
     if not row:
         return False
+    existing_feedback = conn.execute(
+        """SELECT 1 FROM user_feedback WHERE feedback_type='reject_task'
+           AND entity_type='task' AND entity_id=? LIMIT 1""",
+        (task_id,),
+    ).fetchone()
+    if existing_feedback is not None:
+        return True
     from .operational import manually_update_task
 
     if not manually_update_task(conn, task_id, "canceled"):

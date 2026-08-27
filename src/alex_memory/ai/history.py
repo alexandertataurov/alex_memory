@@ -329,7 +329,8 @@ class FullHistoryAnalyzer:
     def _release(self, job_id: int) -> None:
         with self.conn:
             self.conn.execute(
-                "UPDATE ai_jobs SET status='pending' WHERE job_id=? AND status='running'",
+                """UPDATE ai_jobs SET status='pending',retry_after_at=NULL
+                   WHERE job_id=? AND status='running'""",
                 (job_id,),
             )
 

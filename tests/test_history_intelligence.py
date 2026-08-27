@@ -11,6 +11,7 @@ from unittest.mock import patch
 from rich.console import Console
 
 from alex_memory.ai.history import FullHistoryAnalyzer
+from alex_memory.ai.providers import ProviderRetryableError
 from alex_memory.ai.repository import history_coverage
 from alex_memory.classification import (
     _context_signals,
@@ -41,7 +42,7 @@ class FakeRouter:
     async def analyze(self, _batch):
         self.requests += 1
         if self.requests <= self.failures:
-            raise RuntimeError("provider temporarily unavailable")
+            raise ProviderRetryableError("provider temporarily unavailable")
         return AIAnalysisResult("test", "test", "No durable change.", [])
 
 
@@ -144,9 +145,18 @@ class HistoryIntelligenceTests(unittest.IsolatedAsyncioTestCase):
             first = await FullHistoryAnalyzer(
                 conn, settings, console, FakeRouter(1)
             ).analyze_all()
-            self.assertTrue(first.complete)
+            self.assertFalse(first.complete)
             self.assertEqual(5, first.coverage["classified"])
-            self.assertEqual(5, first.coverage["semantic"])
+            self.assertEqual(3, first.coverage["semantic"])
+            conn.execute(
+                """UPDATE ai_jobs SET retry_after_at='2000-01-01T00:00:00+00:00'
+                   WHERE lane='history' AND status='pending'"""
+            )
+            second = await FullHistoryAnalyzer(
+                conn, settings, console, FakeRouter()
+            ).analyze_all()
+            self.assertTrue(second.complete)
+            self.assertEqual(5, second.coverage["semantic"])
             self.assertEqual(
                 5, conn.execute("SELECT COUNT(*) FROM ai_message_state").fetchone()[0]
             )

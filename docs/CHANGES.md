@@ -1,5 +1,61 @@
 # Implementation Journal
 
+## 2026-08-27 — AM-075 durable retry closure
+
+Migration 20 adds nullable `ai_jobs.retry_after_at` and an eligible-queue
+index. It preserves every job and its ordered source-message membership, then
+requeues only existing failed history jobs for the forward retry policy. Future
+temporary all-route and context failures return history work to pending with
+capped backoff; configuration and response-contract failures remain terminal.
+Structured Gemini retry headers now win over textual delay parsing. Temporary
+SQLite migration, retry, restart, route, and terminal-failure tests pass. No
+live migration, repair, or provider request ran.
+
+## 2026-08-27 — AM-075 quota-domain normalization
+
+Normalized quota errors retain RPM/TPM/RPD/TPD dimension. Daily quota
+exhaustion no longer takes the short retry path and instead sets a model-local
+cooldown through the next UTC reset. No schema migration or live action ran.
+
+Expired cooldown state now clears from both the in-memory tracker and the
+current UTC usage row. Failed history jobs remain durably reclaimable; delayed
+retry is intentionally deferred until it has a dedicated persisted schedule.
+
+Gemini now classifies structured HTTP 429 metadata before text heuristics,
+retaining the quota dimension and retry delay even when the response text is
+unhelpful. No integration, schema, or live action ran.
+
+Configuration and malformed/empty response failures are now explicit permanent
+types. Invalid provider JSON is rejected before persistence and does not enter a
+retry path. No schema or live action ran.
+
+## 2026-08-27 — AM-071 task lifecycle closure
+
+Task reconciliation now has bounded, source-aware candidate matching and
+idempotent manual/rejection authority. Conflicting anchors cannot merge by
+title similarity; fuzzy matches require compatible task kind and temporally
+near evidence; exact-title terminal lifecycle updates remain linked. Historical
+repair remains explicitly AM-074 work. No migration, replay, backfill, or live
+action ran.
+
+## 2026-08-27 — AM-072 source-backed project health
+
+Project health now derives activity from dated canonical task evidence,
+project-linked observations, temporal events, and conversation intervals. A
+real overdue open/waiting task is critical; a project without activity is stale,
+and recent project evidence can be active without a task link. No migration,
+backfill, or live recomputation ran.
+
+## 2026-08-27 — AM-071 conservative task candidate matching
+
+Task reconciliation now excludes a same-chat candidate whenever a populated
+incoming person, company, or project anchor conflicts with that candidate's
+populated anchor. Matching anchors are preferred; a sparse historical candidate
+must have an exact normalized title. Candidate selection is bounded to 50 rows.
+Temporary-SQLite coverage proves conflict prevention, anchored terminal update,
+the existing unanchored boundary, and the shared manual rejection lifecycle
+audit. No schema migration, historical replay, backfill, or live action ran.
+
 ## 2026-08-27 — AM-120 bounded graph reader contract
 
 `current_authoritative_edges` now provides a bounded, read-only future-reader

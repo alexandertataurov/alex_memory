@@ -494,6 +494,10 @@ class IntelligenceTests(unittest.TestCase):
         )
 
     def test_stale_project_creates_notification(self) -> None:
+        self.conn.execute(
+            "UPDATE tasks SET due_date=NULL,related_project_id=NULL WHERE task_id=?",
+            (self.task_id,),
+        )
         evaluate_project_health(self.conn, self.settings, date(2026, 9, 5))
         self.assertEqual(
             "stale",
@@ -508,7 +512,46 @@ class IntelligenceTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_recent_project_evidence_is_active_without_task_link(self) -> None:
+        self.conn.execute(
+            "UPDATE tasks SET due_date=NULL,related_project_id=NULL WHERE task_id=?",
+            (self.task_id,),
+        )
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+               VALUES (1,'project','Georgia LP','','informational','unknown',0.96,
+               100,1,'2026-09-04T12:00:00+00:00',?,'now','recent-project-evidence')""",
+            (self.project_id,),
+        )
+
+        evaluate_project_health(self.conn, self.settings, date(2026, 9, 5))
+
+        self.assertEqual(
+            "active",
+            self.conn.execute(
+                "SELECT status FROM projects WHERE project_id=?", (self.project_id,)
+            ).fetchone()[0],
+        )
+
+    def test_real_overdue_project_task_is_critical(self) -> None:
+        evaluate_project_health(self.conn, self.settings, date(2026, 9, 5))
+
+        self.assertEqual(
+            "critical",
+            self.conn.execute(
+                "SELECT status FROM projects WHERE project_id=?", (self.project_id,)
+            ).fetchone()[0],
+        )
+        self.assertEqual(
+            1,
+            self.conn.execute(
+                "SELECT COUNT(*) FROM notification_outbox WHERE event_type='project_critical'"
+            ).fetchone()[0],
+        )
+
     def test_manual_rejection_locks_task(self) -> None:
+        self.assertTrue(reject_task(self.conn, self.task_id))
         self.assertTrue(reject_task(self.conn, self.task_id))
         self.assertEqual(
             ("canceled", 1),

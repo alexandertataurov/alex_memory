@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import date
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -13,9 +14,12 @@ from rich.console import Console
 
 from alex_memory.ai.providers.base import (
     ProviderAnalysisRequest,
+    ProviderConfigurationError,
     ProviderConnectionError,
     ProviderError,
     ProviderQuotaError,
+    ProviderRetryableError,
+    ProviderResponseError,
     ProviderTimeoutError,
     ProviderTransientError,
 )
@@ -24,6 +28,7 @@ from alex_memory.ai.providers.gemini import (
     _is_connection_error,
     _is_transient_server_error,
     _quota_failure_details,
+    _typed_error as gemini_typed_error,
     gemini_schema,
 )
 from alex_memory.ai.providers.groq import GroqProvider
@@ -301,6 +306,31 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIsNotNone(restored)
             self.assertEqual("quota", restored[1])
+
+    def test_expired_persisted_cooldown_is_cleared(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory), ai_routing_mode="quota_aware")
+            conn = connect(settings)
+            profile = next(
+                profile
+                for profile in ModelRegistry(settings).profiles
+                if profile.key == "gemini_35"
+            )
+            QuotaTracker(conn).record_failure(profile, "quota", 60)
+            conn.execute(
+                """UPDATE ai_model_usage SET cooldown_until='2000-01-01T00:00:00+00:00'
+                   WHERE usage_date=? AND model_key=?""",
+                (date.today().isoformat(), profile.key),
+            )
+            conn.commit()
+
+            self.assertIsNone(QuotaTracker(conn).cooldown(profile))
+            self.assertIsNone(
+                conn.execute(
+                    "SELECT cooldown_until FROM ai_model_usage WHERE usage_date=? AND model_key=?",
+                    (date.today().isoformat(), profile.key),
+                ).fetchone()[0]
+            )
 
     async def test_quota_aware_simple_work_prefers_primary_gemini_route(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -700,6 +730,19 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(1, client.models.calls)
 
+    async def test_gemini_configuration_and_invalid_response_are_typed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory), gemini_api_key="")
+            with self.assertRaises(ProviderConfigurationError):
+                await GeminiProvider(settings, FakeGeminiClient([])).analyze(batch())
+
+            settings = settings_for(Path(directory))
+            invalid = type("Response", (), {"parsed": None, "text": "{invalid"})()
+            with self.assertRaises(ProviderResponseError):
+                await GeminiProvider(settings, FakeGeminiClient([invalid])).analyze(
+                    batch()
+                )
+
     async def test_gemini_quota_error_keeps_retry_delay_without_raw_error(self) -> None:
         error = RuntimeError(
             "429 RESOURCE_EXHAUSTED: {'quotaId': "
@@ -707,11 +750,45 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             "'retryDelay': '55s'}"
         )
 
-        message, retry_after = _quota_failure_details(error)
+        message, retry_after, dimension = _quota_failure_details(error)
 
         self.assertEqual(55.0, retry_after)
+        self.assertEqual("rpd", dimension)
         self.assertIn("GenerateRequestsPerDayPerProjectPerModel-FreeTier", message)
         self.assertNotIn("RESOURCE_EXHAUSTED", message)
+
+    async def test_gemini_structured_quota_metadata_beats_text_heuristics(self) -> None:
+        class StructuredQuotaError(RuntimeError):
+            status_code = 429
+            details = [
+                {
+                    "quotaId": "GenerateTokensPerDayPerProjectPerModel-FreeTier",
+                    "retryDelay": "75s",
+                }
+            ]
+
+        typed = gemini_typed_error(StructuredQuotaError("unhelpful response"))
+
+        self.assertIsInstance(typed, ProviderQuotaError)
+        assert isinstance(typed, ProviderQuotaError)
+        self.assertEqual("tpd", typed.dimension)
+        self.assertEqual(75.0, typed.retry_after_seconds)
+
+    async def test_gemini_retry_header_beats_text_delay(self) -> None:
+        class HeaderQuotaError(RuntimeError):
+            status_code = 429
+            response = type("Response", (), {"headers": {"retry-after": "41"}})()
+
+        typed = gemini_typed_error(
+            HeaderQuotaError(
+                "quotaId': 'GenerateRequestsPerMinutePerProject'; retryDelay': '2s'"
+            )
+        )
+
+        self.assertIsInstance(typed, ProviderQuotaError)
+        assert isinstance(typed, ProviderQuotaError)
+        self.assertEqual("rpm", typed.dimension)
+        self.assertEqual(41.0, typed.retry_after_seconds)
 
     async def test_gemini_request_timeout_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -824,6 +901,16 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("gemini", result.provider)
             self.assertEqual(2, gemini.calls)
             self.assertEqual(1, groq.calls)
+
+    async def test_daily_quota_uses_model_cooldown_without_short_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            router = AIRouter(settings_for(Path(directory)))
+            error = ProviderQuotaError(
+                "daily quota", retry_after_seconds=5, dimension="tpd"
+            )
+
+            self.assertIsNone(router._retry_delay(error, 0))
+            self.assertGreater(router._quota_cooldown(error) or 0, 60.0)
 
     async def test_router_honors_short_gemini_retry_delay_before_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1156,6 +1243,23 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ProviderError):
                 await router.analyze(batch())
 
+    async def test_all_temporary_routes_raise_retryable_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            router = AIRouter(
+                settings,
+                {
+                    "gemini": FakeProvider(
+                        "gemini", ProviderConnectionError("DNS unavailable")
+                    ),
+                    "groq": FakeProvider(
+                        "groq", ProviderTransientError("server unavailable")
+                    ),
+                },
+            )
+            with self.assertRaises(ProviderRetryableError):
+                await router.analyze(batch())
+
 
 class JobPersistenceTests(unittest.TestCase):
     def test_classify_only_policy_never_creates_semantic_work(self) -> None:
@@ -1286,7 +1390,7 @@ class JobPersistenceTests(unittest.TestCase):
             )
             conn.close()
 
-    def test_failed_job_is_retryable_and_does_not_mark_messages(self) -> None:
+    def test_retryable_history_failure_defers_exact_job_until_due(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory))
             conn = connect(settings)
@@ -1302,7 +1406,7 @@ class JobPersistenceTests(unittest.TestCase):
             save_ai_failure(
                 conn,
                 work,
-                RuntimeError("both providers unavailable"),
+                ProviderRetryableError("both providers unavailable"),
                 settings,
                 lane="history",
                 job_id=job_id,
@@ -1314,9 +1418,50 @@ class JobPersistenceTests(unittest.TestCase):
                 conn.execute(
                     "SELECT status FROM ai_jobs WHERE job_id = ?", (job_id,)
                 ).fetchone()[0],
-                "failed",
+                "pending",
+            )
+            self.assertIsNotNone(
+                conn.execute(
+                    "SELECT retry_after_at FROM ai_jobs WHERE job_id = ?", (job_id,)
+                ).fetchone()[0]
+            )
+            self.assertEqual([], claim_ai_jobs(conn, "history", 1, settings))
+            conn.execute(
+                "UPDATE ai_jobs SET retry_after_at='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+                (job_id,),
             )
             self.assertEqual(len(claim_ai_jobs(conn, "history", 1, settings)), 1)
+            conn.close()
+
+    def test_permanent_history_failure_is_not_reclaimed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Alice','user')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,text) VALUES (1,1,'One')"
+            )
+            conn.commit()
+            ensure_history_jobs(conn, settings)
+            job_id, work = claim_ai_jobs(conn, "history", 1, settings)[0]
+            save_ai_failure(
+                conn,
+                work,
+                ProviderConfigurationError("missing key"),
+                settings,
+                lane="history",
+                job_id=job_id,
+            )
+            self.assertEqual(
+                ("failed", None),
+                conn.execute(
+                    "SELECT status,retry_after_at FROM ai_jobs WHERE job_id=?",
+                    (job_id,),
+                ).fetchone(),
+            )
+            self.assertEqual([], claim_ai_jobs(conn, "history", 1, settings))
             conn.close()
 
     def test_interrupted_running_job_returns_to_pending(self) -> None:
