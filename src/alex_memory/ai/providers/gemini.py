@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
-import time
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ...config import Settings
-from ...models import AIAnalysisResult, AIBatch
+from ...models import AIAnalysisResult, AIAnswerResult, AIBatch
 from ..schema import AI_RESPONSE_SCHEMA, AI_SYSTEM_PROMPT
 from .base import (
     ProviderConnectionError,
+    ProviderAnalysisRequest,
     ProviderError,
     ProviderQuotaError,
     ProviderTimeoutError,
     ProviderTransientError,
 )
+from .base import ANSWER_SYSTEM_PROMPT
 
 genai: Any
 types: Any
@@ -35,101 +36,60 @@ class GeminiProvider:
         self,
         settings: Settings,
         client: Any | None = None,
-        *,
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ):
         self.settings = settings
         self.model = settings.gemini_primary_model
         self._client = client
-        self._clock = clock
-        self._sleep = sleep
-        self._next_request_at: dict[str, float] = {}
-        self._rate_lock = asyncio.Lock()
+        self._owned_client: Any | None = None
 
-    async def analyze(self, batch: AIBatch) -> AIAnalysisResult:
-        return await self.analyze_model(
-            batch, self.model, self.settings.gemini_requests_per_minute
-        )
-
-    async def analyze_model(
-        self, batch: AIBatch, model: str, requests_per_minute: float | None
+    async def analyze(
+        self, request: ProviderAnalysisRequest | AIBatch
     ) -> AIAnalysisResult:
+        if isinstance(request, AIBatch):
+            request = ProviderAnalysisRequest(
+                batch=request,
+                provider=self.name,
+                model=self.model,
+                requests_per_minute=self.settings.gemini_requests_per_minute,
+            )
+        if request.provider != self.name:
+            raise ProviderError(f"Gemini cannot execute provider {request.provider!r}")
+        batch, model = request.batch, request.model
         if not self.settings.gemini_api_key:
             raise ProviderError("GEMINI_API_KEY is missing")
         if (genai is None or types is None) and self._client is None:
             raise ProviderError("Google GenAI SDK is not installed; run uv sync")
 
-        last_error: Exception | None = None
-        for attempt in range(self.settings.ai_max_retries):
-            try:
-                await self._wait_for_request_slot(model, requests_per_minute)
-                response = await self._request_with_timeout(batch, model)
-                parsed = getattr(response, "parsed", None)
-                if parsed is None:
-                    text = getattr(response, "text", None)
-                    if not text:
-                        raise ProviderError("Gemini returned an empty response")
-                    parsed = json.loads(text)
-                if hasattr(parsed, "model_dump"):
-                    parsed = parsed.model_dump()
-                result = parsed
-                usage = _usage(getattr(response, "usage_metadata", None))
-                return AIAnalysisResult(
-                    provider=self.name,
-                    model=model,
-                    summary=result.get("summary", "")
-                    if isinstance(result, dict)
-                    else "",
-                    items=result.get("items", []) if isinstance(result, dict) else [],
-                    usage=usage,
-                    raw_payload=result,
-                )
-            except Exception as error:
-                last_error = error
-                if _is_quota_error(error):
-                    message, retry_after = _quota_failure_details(error)
-                    raise ProviderQuotaError(
-                        message, retry_after_seconds=retry_after
-                    ) from error
-                if _is_connection_error(error):
-                    if attempt + 1 >= self.settings.ai_max_retries:
-                        raise ProviderConnectionError(
-                            "Gemini network connection failed; provider temporarily unavailable"
-                        ) from error
-                    await self._sleep(
-                        min(60, self.settings.ai_retry_base_seconds * (2**attempt))
-                    )
-                    continue
-                if _is_transient_server_error(error):
-                    if attempt + 1 >= self.settings.ai_max_retries:
-                        raise ProviderTransientError(
-                            "Gemini server temporarily unavailable"
-                        ) from error
-                    await self._sleep(
-                        min(60, self.settings.ai_retry_base_seconds * (2**attempt))
-                    )
-                    continue
-                if attempt + 1 >= self.settings.ai_max_retries or not _is_retryable(
-                    error
-                ):
-                    break
-                await self._sleep(
-                    min(60, self.settings.ai_retry_base_seconds * (2**attempt))
-                )
-        raise ProviderError(
-            f"Gemini failed: {type(last_error).__name__}: {last_error}"
-        ) from last_error
+        try:
+            response = await self._request_with_timeout(batch, model)
+        except Exception as error:
+            raise _typed_error(error) from error
+        parsed = getattr(response, "parsed", None)
+        if parsed is None:
+            text = getattr(response, "text", None)
+            if not text:
+                raise ProviderError("Gemini returned an empty response")
+            parsed = json.loads(text)
+        if hasattr(parsed, "model_dump"):
+            parsed = parsed.model_dump()
+        result = parsed
+        return AIAnalysisResult(
+            provider=self.name,
+            model=model,
+            summary=result.get("summary", "") if isinstance(result, dict) else "",
+            items=result.get("items", []) if isinstance(result, dict) else [],
+            usage=_usage(getattr(response, "usage_metadata", None)),
+            raw_payload=result,
+        )
 
-    async def answer(self, prompt: str, model: str) -> str:
+    async def answer(self, prompt: str, model: str) -> AIAnswerResult:
         if not self.settings.gemini_api_key:
             raise ProviderError("GEMINI_API_KEY is missing")
         if (genai is None or types is None) and self._client is None:
             raise ProviderError("Google GenAI SDK is not installed")
-        await self._wait_for_request_slot(model, None)
         try:
             response = await asyncio.wait_for(
-                asyncio.to_thread(self._answer_request, prompt, model),
+                self._answer_request(prompt, model),
                 timeout=self.settings.ai_request_timeout_seconds,
             )
         except asyncio.TimeoutError as error:
@@ -137,18 +97,23 @@ class GeminiProvider:
                 "Gemini request timed out after "
                 f"{self.settings.ai_request_timeout_seconds} seconds"
             ) from error
+        except Exception as error:
+            raise _typed_error(error) from error
         text = getattr(response, "text", None)
         if not text:
             raise ProviderError("Gemini returned an empty response")
-        return str(text)
+        return AIAnswerResult(
+            self.name,
+            model,
+            str(text),
+            _usage(getattr(response, "usage_metadata", None)),
+        )
 
     async def _request_with_timeout(self, batch: AIBatch, model: str | None = None):
-        """Bound one blocking SDK call so a history job cannot remain running."""
+        """Bound a cancellable SDK request so fallback never overlaps it."""
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(self._request, batch)
-                if model is None
-                else asyncio.to_thread(self._request, batch, model),
+                self._request(batch, model),
                 timeout=self.settings.ai_request_timeout_seconds,
             )
         except asyncio.TimeoutError as error:
@@ -157,30 +122,22 @@ class GeminiProvider:
                 f"{self.settings.ai_request_timeout_seconds} seconds"
             ) from error
 
-    async def _wait_for_request_slot(
-        self, model: str, requests_per_minute: float | None
-    ) -> None:
-        """Space all Gemini attempts so one router stays within the configured RPM."""
-        # A provider can count both endpoints of a rolling 60-second window.
-        # Dividing by RPM would schedule requests at 0s and 60s, which can be
-        # observed as an extra request at the rolling-window endpoint. The
-        # configured 14.5 RPM leaves a fractional-request safety margin, while
-        # the subtraction still avoids counting both endpoints as a full slot.
-        rpm = requests_per_minute or self.settings.gemini_requests_per_minute
-        # Preserve the established 14.5 RPM safety margin for the primary model.
-        if model == self.settings.gemini_primary_model:
-            rpm = min(rpm, self.settings.gemini_requests_per_minute)
-        interval = 60.0 / max(1, rpm - 1)
-        async with self._rate_lock:
-            now = self._clock()
-            slot = max(now, self._next_request_at.get(model, 0.0))
-            delay = slot - now
-            if delay > 0:
-                await self._sleep(delay)
-            self._next_request_at[model] = slot + interval
+    async def close(self) -> None:
+        """Release the async transport owned by this provider, if any."""
+        if self._owned_client is None:
+            return
+        await self._owned_client.aio.aclose()
+        self._owned_client = None
 
-    def _request(self, batch: AIBatch, model: str | None = None):
-        client = self._client or genai.Client(api_key=self.settings.gemini_api_key)
+    def _client_for_request(self) -> Any:
+        if self._client is not None:
+            return self._client
+        if self._owned_client is None:
+            self._owned_client = genai.Client(api_key=self.settings.gemini_api_key)
+        return self._owned_client
+
+    async def _request(self, batch: AIBatch, model: str | None = None):
+        client = self._client_for_request()
         config_values: dict[str, Any] = {
             "system_instruction": AI_SYSTEM_PROMPT,
             "response_mime_type": "application/json",
@@ -198,19 +155,17 @@ class GeminiProvider:
             if types is not None
             else config_values
         )
-        return client.models.generate_content(
+        result = getattr(client, "aio", client).models.generate_content(
             model=model or self.model,
             contents=batch.prompt,
             config=config,
         )
+        return await result if inspect.isawaitable(result) else result
 
-    def _answer_request(self, prompt: str, model: str):
-        client = self._client or genai.Client(api_key=self.settings.gemini_api_key)
+    async def _answer_request(self, prompt: str, model: str):
+        client = self._client_for_request()
         config_values: dict[str, Any] = {
-            "system_instruction": (
-                "You are Alex Memory's grounded question-answering assistant. "
-                "Never invent evidence or citations."
-            ),
+            "system_instruction": ANSWER_SYSTEM_PROMPT,
             "temperature": 0,
             "max_output_tokens": self.settings.ai_max_output_tokens,
             "automatic_function_calling": (
@@ -224,9 +179,10 @@ class GeminiProvider:
             if types is not None
             else config_values
         )
-        return client.models.generate_content(
+        result = getattr(client, "aio", client).models.generate_content(
             model=model, contents=prompt, config=config
         )
+        return await result if inspect.isawaitable(result) else result
 
 
 def gemini_schema(schema: object) -> object:
@@ -265,6 +221,21 @@ def _usage(metadata: object) -> dict[str, int | str]:
     return result
 
 
+def _typed_error(error: Exception) -> ProviderError:
+    if isinstance(error, ProviderError):
+        return error
+    if _is_quota_error(error):
+        message, retry_after = _quota_failure_details(error)
+        return ProviderQuotaError(message, retry_after_seconds=retry_after)
+    if _is_connection_error(error):
+        return ProviderConnectionError(
+            "Gemini network connection failed; provider temporarily unavailable"
+        )
+    if _is_transient_server_error(error):
+        return ProviderTransientError("Gemini server temporarily unavailable")
+    return ProviderError(f"Gemini failed: {type(error).__name__}: {error}")
+
+
 def _is_retryable(error: Exception) -> bool:
     if isinstance(error, ProviderTimeoutError):
         return False
@@ -299,6 +270,7 @@ def _is_connection_error(error: Exception) -> bool:
         for marker in (
             "connecterror",
             "connection error",
+            "connection timeout",
             "connection failed",
             "failed to connect",
             "failed to establish connection",

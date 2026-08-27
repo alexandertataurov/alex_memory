@@ -1,5 +1,6 @@
 from .base import (
     AIProvider,
+    ProviderAnalysisRequest,
     ProviderConnectionError,
     ProviderError,
     ProviderQuotaError,
@@ -11,6 +12,7 @@ from .groq import GroqProvider
 
 __all__ = [
     "AIProvider",
+    "ProviderAnalysisRequest",
     "ProviderConnectionError",
     "GeminiProvider",
     "GroqProvider",

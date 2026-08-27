@@ -29,11 +29,15 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Now
 
-- [ ] AM-099 [P0] [AI router / Anti-slop] — Make workload/capability-aware
-  routing real with the existing models and quota/health/fallback path. Keep
-  automatic Daily work `BACKGROUND`; retain `INTERACTIVE` only for user work;
-  filter or remove decorative workload/capability fields; expose deterministic
-  eligibility reasons. No provider/model/framework expansion or live action.
+- [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
+  semantic claims into one temporal graph with explicit authority and exact
+  edge evidence; derive canonical operational state only through allowlisted
+  deterministic reducers or Review.
+  - Plan: `docs/exec-plans/active/AM-120-semantic-graph-projection.md`.
+  - Current increment: bounded accepted-graph query contract is implemented
+    and fixture-tested before any reader cutover; no relationship conversion,
+    replay, graph repair, migration, or live action is authorized.
+
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
@@ -210,27 +214,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Deep Scan coverage by scoping visible counts, audit rows, and profile-job
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
-
-- [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
-  semantic claims into one temporal graph with explicit authority and exact
-  edge evidence; derive canonical operational state only through allowlisted
-  deterministic reducers or Review.
-  - Plan: `docs/exec-plans/active/AM-120-semantic-graph-projection.md`.
-  - Progress 2026-08-24: migration 15 links new compatibility observations to
-    immutable claims and records projection state. `SemanticGraphProjector` is
-    the sole writer of new graph rows; it writes observed claim links and the
-    allowlisted accepted task-to-project edge after canonical resolution.
-  - Remaining: inventory and replace legacy relationship-table callers before
-    a bounded compatibility conversion and read-only cutover. No historical
-    conversion, graph repair, or live action has run.
-  - Progress 2026-08-26: caller inventory is complete. Legacy writes remain in
-    `ContextService`, `ContextGraphImprover`, and Review acceptance; active
-    readers include bounded context traversal, project resolution, Person
-    Profile/scan evidence closure, People discovery, and diagnostics. The
-    graph's accepted authority currently covers only task-to-project, so no
-    safe one-for-one reader conversion exists yet. Define bounded query and
-    authority parity before moving consumers; no conversion, replay, repair,
-    migration, or live action ran.
 
 - [ ] AM-071 [P0] [Task lifecycle / Reconciliation] — Fix task matching and historical lifecycle reconciliation so old one-off work does not remain permanently open or merge incorrectly.
   - Evidence from live DB: 650/652 tasks are `open` or `waiting`, only 2 are `done`; 396 current-open tasks originate before 2026. There are 49 `task_completed` context events with no `task_id`, plus 38 pending `task_completion` review items.
@@ -439,55 +422,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Safety: do not rewrite migration history already recorded in the live database; introduce forward-only fixes.
   - Verification: fresh DB, pre-ledger DB, each representative legacy schema, interrupted migration/reopen, and schema-diff tests.
 
-- [ ] AM-099 [P0] [AI router / Anti-slop] — Make “workload-aware/capability-aware routing” real or remove the decorative API.
-  - Code evidence: `ModelRegistry.candidates(workload)` ignores `workload` and returns the exact same chain `gemini_35 → gemini_31 → gemma → groq` for every workload.
-  - Code evidence: `AIRequest.requires_structured_output`, `ModelProfile.structured_output`, and `ModelProfile.long_context` are defined but not used in candidate filtering/admission.
-  - Code evidence: almost every current semantic caller passes `AIWorkload.CONTEXT_EXTRACTION`; the rich workload enum therefore does not currently drive meaningful routing.
-  - Code evidence: automatic Daily analysis calls the same `analyze_daily_messages()` path as manual analysis, and `_run_lane()` always marks Daily requests `RequestPriority.INTERACTIVE`. Background auto-analysis can therefore consume the primary reserve intended for interactive work.
-  - Acceptance:
-    - define an explicit policy matrix from workload → eligible ordered model keys;
-    - enforce structured-output, long-context/input-size, provider/tooling and future external-research capabilities in candidate selection;
-    - use `BACKGROUND` for unattended auto-analysis and `INTERACTIVE` only for user-triggered work;
-    - if a field/workload does not affect routing, delete it rather than retaining architecture-by-name;
-    - diagnostics expose why a model is eligible/ineligible for the current workload.
-  - Verification: short extraction, long context extraction, memory QA, Deep Dive, reconciliation, graph work, background vs interactive reserve, structured-output requirement, and unsupported-capability rejection.
-
-
-
-- [ ] AM-101 [P0] [AI persistence / Canonical projection] — Make post-AI projection durable, idempotent, and retryable without re-calling the model.
-  - Current flow: `save_ai_success()` commits `ai_batches`, `ai_items`, `ai_message_state`, and marks the job `done`; only afterwards does the caller run `process_ai_batch()`.
-  - Failure mode: if canonical projection then raises, callers record a generic AI failure even though provider output already succeeded; retry can skip the already-analyzed messages and never redo projection.
-  - Context code evidence: `add_event()` always inserts and has no idempotency key. Replaying a saved batch can therefore duplicate `context_events`.
-  - Context code evidence: repeated conflicting `set_temporal_fact()` projection can create repeated pending conflict records for the same source observation unless explicitly deduplicated.
-  - Context code evidence: `ContextService.process_ai_item()` creates task/promise lifecycle events without receiving the reconciled canonical `task_id`, explaining task-completion events that cannot be joined back to the task lifecycle.
-  - Acceptance:
-    - provider success, validated observation persistence, canonical projection, and materialized refresh have distinct durable states;
-    - projection replays from the saved batch and is idempotent by batch/item/source semantics;
-    - semantic events/conflicts/relationships have deterministic dedupe keys or equivalent idempotent upserts;
-    - task lifecycle projection receives the reconciled canonical task ID;
-    - a projection/storage bug is never recorded as a provider/model failure;
-    - semantic coverage distinguishes model-analyzed, canonicalized, and context-integrated.
-  - Verification: replay same batch twice, injected entity/task/event/fact failure, duplicate conflict observation, restart after saved provider result, task-completion linkage, deterministic retry, and no second LLM call.
-
-- [ ] AM-102 [P0] [AI schema / Validation / Anti-slop] — Make provider output, schema, validator, prompt, and canonical projection one strict semantic contract with no silent “repair”.
-  - Code evidence: strict `AI_RESPONSE_SCHEMA.status` allows `open/waiting/done/informational` but `_validate_ai_item()` also accepts `canceled`; the model can never emit one state the local validator claims to support.
-  - Code evidence: schema gives `confidence` no minimum/maximum, while both `groq.normalize_result()` and repository validation clamp out-of-range confidence. A malformed confidence such as `7` can become `1.0`, upgrading broken output to maximum trust.
-  - Code evidence: `groq.normalize_result()` silently drops non-dict/unknown-kind items, converts invalid status to `informational`, invalid owner to `unknown`, missing fields to `None`, malformed confidence to `0.5`, and a non-list `items` value to an empty list.
-  - Consequence: a structurally bad Groq response can become a “successful” empty/softened analysis; `save_ai_success()` then marks every message in the batch analyzed, and rejected-item diagnostics never see the dropped items.
-  - Code evidence: Gemini imports `normalize_result` from the Groq module, so provider-neutral semantic normalization is hidden inside a provider-specific file.
-  - Code evidence: `operational.DURABLE_KINDS` contains `commitment`, but `commitment` is not an allowed schema/item kind.
-  - Structural gap: task/follow-up items have no explicit optional `project` field, forcing project linkage to be guessed later even though task→project is a core canonical relationship.
-  - Acceptance:
-    - one shared response-contract module defines allowed result shape, item kinds/statuses/owners, confidence range, and cross-field rules;
-    - providers parse transport JSON only; they do **not** semantically repair, downgrade, clamp, invent defaults, or silently drop invalid items;
-    - malformed top-level shape (`summary`, `items`) fails the request and never marks messages analyzed;
-    - individual invalid items reach one central validator and are rejected with durable reasons/counts;
-    - confidence outside `[0,1]` is rejected, never clamped upward/downward;
-    - remove unreachable/dead kinds or add them consistently end-to-end;
-    - add only fields with real canonical consumers, including project association if AM-070 requires model evidence;
-    - validate kind/status combinations so informational facts do not masquerade as open tasks and vice versa;
-    - schema/prompt/validator version changes participate in AM-100 re-analysis semantics.
-  - Verification: malformed `items`, unknown kind, invalid owner/status, out-of-range confidence, canceled task, invalid kind/status combination, project-linked task, unknown extra field, and provider/schema/repository parity tests.
 
 - [ ] AM-103 [P1] [Analytics / Diagnostics truthfulness] — Stop diagnostics from presenting guessed, stale, or dimensionally invalid metrics as system health.
   - Existing evidence: AI failure rows can be stored with `provider=NULL` / Groq model fallback and analytics `COALESCE(provider,'groq')`, falsely attributing unknown/router failures to Groq.
@@ -504,47 +438,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - remove any metric that cannot be defined coherently rather than inventing a percentage.
   - Verification: stale/versioned rows, provider/router failures, canonical-vs-observation counts, graph coverage fixture, overlapping routing categories, Gemma/session-pinned route, and zero-data state.
 
-- [ ] AM-104 [P0] [Provider contract / Multi-model] — Make router-selected model execution explicit; remove duck-typed provider behavior.
-  - Code evidence: `AIProvider` protocol exposes only `analyze(batch)`.
-  - Code evidence: `AIRouter._request_provider()` secretly checks `getattr(provider, "analyze_model", None)`. Gemini implements this hidden method; Groq does not.
-  - Consequence: if the registry adds multiple Groq model profiles (`gpt-oss-120b`, Qwen, etc.), selecting a profile does not guarantee that model is called — current `GroqProvider.analyze()` always uses `settings.groq_model`.
-  - Anti-slop rule: a router decision is not real unless the provider invocation is contractually required to execute that exact model/profile.
-  - Acceptance:
-    - replace hidden optional `analyze_model` duck typing with one explicit provider request contract that carries selected model and relevant request limits/capabilities;
-    - Gemini and Groq both implement the same contract;
-    - result reports the exact model actually invoked and router verifies it matches the selected profile;
-    - unsupported model/provider capability fails before network I/O;
-    - AM-061 new Groq/Qwen/120B routes cannot merge until this invariant is covered.
-  - Verification: two Gemini models, two Groq models, forced model override, unsupported model, result-model mismatch, and fake-provider protocol tests.
 
-
-
-- [ ] AM-105 [P0] [Provider request lifecycle] — Prevent timed-out Gemini calls from continuing invisibly while fallback/retry starts a second paid request.
-  - Code evidence: Gemini performs the synchronous SDK request through `asyncio.to_thread(...)` and wraps it in `asyncio.wait_for`.
-  - Python cancellation cannot stop a blocking worker thread already inside the SDK/network call. After timeout the thread may continue consuming provider resources/quota and may complete later while the router has already retried or fallen back.
-  - Consequence: one logical batch can have multiple overlapping physical requests, duplicate cost/quota consumption, and uncertain provider state even though the first attempt is reported simply as timed out.
-  - Acceptance:
-    - use a genuinely cancellable async provider path or an underlying HTTP/client timeout that terminates the network request itself;
-    - never start retry/fallback while a previous physical request is still known to be executing unless the state is explicitly classified as uncertain and policy allows it;
-    - timeout state is observable in diagnostics and physical request accounting;
-    - provider client lifecycle is explicit/reused/closed appropriately rather than constructing hidden per-request clients without ownership.
-  - Verification: hung Gemini SDK/network call, timeout then fallback, no overlapping physical request, cancellation during shutdown, client cleanup, and no late unhandled result.
-
-
-
-- [ ] AM-106 [P0] [Retry / Rate limit / Usage accounting] — Give every physical provider request one owner for retry, pacing, quota accounting, and usage.
-  - Code evidence: the router records **one** quota attempt before calling a provider, but both Gemini and Groq providers can internally perform up to `AI_MAX_RETRIES` physical API requests.
-  - Consequence: durable `attempt_count`, local RPM/TPM windows, and estimated token usage can undercount real provider requests by multiple times during failures.
-  - Code evidence: Gemini also has its own `_wait_for_request_slot()` pacing while `QuotaTracker` independently enforces an RPM window; there are two competing rate-control layers.
-  - Code evidence: Groq success returns no normalized usage metadata, so `QuotaTracker.record_success()` records zero actual input/output tokens for Groq even when the SDK response contains usage.
-  - Code evidence: router token estimation uses only `batch.prompt`; provider-transmitted system instructions and structured schema are omitted, and Groq additionally appends the full JSON schema to the user prompt. Local TPM/input guards therefore underestimate the real request.
-  - Acceptance:
-    - choose one layer to own retries and physical request pacing (prefer router/scheduler with typed provider errors, or expose a per-physical-attempt callback if provider retries remain);
-    - every physical API call increments durable/local attempt and estimated-token counters exactly once;
-    - actual usage is normalized for Gemini and Groq into one provider-neutral usage contract;
-    - token estimation includes all provider-transmitted content: system prompt, schema/JSON instructions, memory preamble, prior context, and message batch;
-    - one authoritative RPM policy replaces duplicate router/provider pacing while preserving model-specific limits.
-  - Verification: retry storm, connection retry, 5xx retry, successful first attempt, Gemini usage, Groq usage, schema overhead, RPM window, TPM window, and restart accounting tests.
 
 
 
@@ -803,6 +697,51 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 - [ ] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
 
 ## Completed
+
+- [x] AM-106 [P0] [Retry / Rate limit / Usage accounting] — Completed
+  2026-08-26. Providers perform one cancellable transport attempt while the
+  router owns every physical retry, conservative model pacing, quota/event
+  record, transmitted-input estimate, and normalized extraction/Q&A usage.
+  An unconfirmed Groq cancellation is counted and cannot overlap fallback. No
+  migration or live action ran. Verification: 48 focused router/job tests,
+  temporary-SQLite usage coverage, Ruff, formatting, and MyPy.
+
+- [x] AM-105 [P0] [Provider request lifecycle] — Completed 2026-08-26.
+  Gemini uses the cancellable SDK async client; timeout cancellation completes
+  before fallback. Provider-owned clients close with internally created Daily
+  and History routers while injected routers remain caller-owned. No migration
+  or live action ran. Verification: 67 focused router/service/history tests,
+  Ruff, formatting, MyPy, docs, and diff checks.
+
+- [x] AM-104 [P0] [Provider contract / Multi-model] — Completed 2026-08-26.
+  The router passes an explicit selected provider/model/RPM request to both
+  providers; Groq invokes that selected model. Returned execution identity is
+  validated before success accounting, so it cannot be rewritten into apparent
+  compliance. No model expansion, migration, or live action ran. Verification:
+  91 focused AI tests, Ruff, formatting, and MyPy.
+
+- [x] AM-102 [P0] [AI schema / Validation / Anti-slop] — Completed
+  2026-08-26 as a verified closure. The provider-neutral contract already
+  defines the response shape, kinds, owners, statuses, confidence range,
+  project association, and cross-field rules; providers preserve raw JSON
+  without semantic repair. Top-level failures remain diagnostics and item
+  failures remain durable rejections. No code, migration, or live action ran.
+  Verification: 51 focused provider, repository, and semantic-projection tests.
+
+- [x] AM-101 [P0] [AI persistence / Canonical projection] — Completed
+  2026-08-26. Saved provider output replays projection/integration from its
+  durable batch before new provider work. Post-save failure cannot create a
+  synthetic provider failure or reclaim a done job; context assembly failure is
+  retryable rather than stranded. No migration or live action ran. Verification:
+  72 focused tests, Ruff, formatting, and MyPy.
+
+- [x] AM-099 [P0] [AI router / Anti-slop] — Completed 2026-08-26. Automatic
+  Daily/Brief analysis uses background priority while manual Daily analysis is
+  interactive. Existing short/context workload policies now differ,
+  structured-output admission is enforced, route events retain deterministic
+  policy reasons, and the unused long-context flag is removed. No
+  provider/model expansion, migration, or live action ran. Verification: 49
+  focused router/app tests, Ruff, formatting, MyPy, docs check, and review.
 
 - [x] AM-098 [P1] [Application lifecycle / Reliability] — Completed
   2026-08-26. Writer counters and AI wakeups follow successful commits; failed

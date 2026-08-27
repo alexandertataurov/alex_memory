@@ -96,3 +96,40 @@ history rewrite.
   a bounded graph query contract and deterministic/manual projection authority
   for every required relationship kind, with parity fixtures, before moving a
   reader. No relationship conversion, replay, repair, or live action ran.
+
+## Compatibility-cutover contract — 2026-08-26
+
+The graph may become a runtime relationship source only for an explicitly
+bounded reader once all of the following are true:
+
+- the edge joins two canonical nodes and is current at the reader's `as_of`;
+- its authority is `accepted` from an allowlisted deterministic reducer or
+  `manual`; observed, rejected, and superseded graph material is never
+  operational context;
+- automatic edges retain one or more exact immutable claim references, while
+  a manual edge remains manually authoritative without pretending to have AI
+  evidence;
+- the reader receives stable endpoint types/IDs, relationship type, validity,
+  authority, confidence, and claim provenance under an explicit SQL limit.
+
+This contract currently has parity only for the deterministic
+`task -> belongs_to -> project` edge. It does not authorize conversion of
+legacy person/company/project relationships: `ContextService` and
+`ContextGraphImprover` can currently create those compatibility rows from
+validated observations or confidence thresholds, but neither path is an
+allowlisted graph-acceptance reducer. Context traversal, People discovery, and
+Person Profile must therefore continue to read `relationships` until each
+relationship kind has a deterministic/manual authority mapping and parity
+fixtures. This is a derived-projection/read-contract decision only; it changes
+no raw evidence, observation, canonical state, schema, or live data.
+
+### Progress
+
+- 2026-08-27: added `current_authoritative_edges`, a bounded read-only graph
+  query contract. It returns current canonical-node edges only: automatic
+  results are restricted to the existing task-to-project reducer allowlist and
+  require immutable claim evidence, while manual results retain no fabricated
+  AI provenance. Temporary-SQLite fixtures prove acceptance, temporal expiry,
+  observed/source-less exclusion, manual authority, and the current
+  person/company relationship parity gap. No runtime reader, relationship
+  conversion, migration, replay, repair, or live action changed.

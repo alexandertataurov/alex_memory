@@ -41,9 +41,44 @@ async def analyze_daily_messages(
     *,
     priority: RequestPriority = RequestPriority.INTERACTIVE,
 ) -> None:
+    await resume_saved_batches(conn, settings, lane="daily")
     created = ensure_daily_jobs(conn, settings)
     jobs = claim_ai_jobs(conn, "daily", settings.ai_daily_max_messages, settings)
     await _run_lane(conn, settings, console, "daily", jobs, created, priority=priority)
+
+
+async def resume_saved_batches(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    lane: str,
+    limit: int = 20,
+) -> int:
+    """Retry bounded post-provider work from durable batches, never a model call."""
+    rows = conn.execute(
+        """SELECT batch_id FROM ai_batches
+           WHERE lane=? AND (
+               projection_status IN ('pending','failed')
+               OR (projection_status='completed' AND context_integrated_at IS NULL)
+           )
+           ORDER BY batch_id LIMIT ?""",
+        (lane, limit),
+    ).fetchall()
+    resumed = 0
+    for (batch_id,) in rows:
+        if await integrate_saved_batch(conn, int(batch_id), settings):
+            resumed += 1
+    return resumed
+
+
+async def integrate_saved_batch(
+    conn: sqlite3.Connection, batch_id: int, settings: Settings
+) -> bool:
+    """Run canonical projection and bounded refresh for one saved result."""
+    if not process_ai_batch(conn, batch_id, settings):
+        return False
+    await refresh_pending_context(conn, settings)
+    return True
 
 
 async def analyze_history_messages(
@@ -114,6 +149,7 @@ async def _run_lane(
             if on_progress:
                 on_progress()
             for completed, (job_id, batch) in enumerate(jobs, start=1):
+                save_result: AISaveResult | None = None
                 try:
                     result = await router.analyze(
                         batch,
@@ -124,8 +160,9 @@ async def _run_lane(
                         conn, batch, result, settings, lane=lane, job_id=job_id
                     )
                     if save_result.batch_id is not None:
-                        process_ai_batch(conn, save_result.batch_id, settings)
-                        await refresh_pending_context(conn, settings)
+                        await integrate_saved_batch(
+                            conn, save_result.batch_id, settings
+                        )
                     saved += save_result.inserted
                     processed += len(batch.messages)
                     reports.append(
@@ -148,9 +185,10 @@ async def _run_lane(
                     raise
                 except Exception as error:
                     errors += 1
-                    save_ai_failure(
-                        conn, batch, error, settings, lane=lane, job_id=job_id
-                    )
+                    if save_result is None:
+                        save_ai_failure(
+                            conn, batch, error, settings, lane=lane, job_id=job_id
+                        )
                     reports.append(
                         AIBatchReport(
                             chat_id=batch.chat_id,
@@ -158,7 +196,7 @@ async def _run_lane(
                             message_count=len(batch.messages),
                             summary="",
                             model_items=[],
-                            save_result=AISaveResult(),
+                            save_result=save_result or AISaveResult(),
                             error=f"{type(error).__name__}: {error}",
                             lane=lane,
                         )
@@ -191,6 +229,8 @@ async def _run_lane(
                 )
             )
         return
+    finally:
+        await router.close()
 
     if not render_console:
         return

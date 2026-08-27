@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from rich.console import Console
 
@@ -58,6 +59,64 @@ class PausingRouter(FakeRouter):
 
 
 class HistoryIntelligenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_history_closes_only_its_owned_router(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            self.addAsyncCleanup(_close, conn)
+            console = Console(file=StringIO(), force_terminal=False)
+
+            class OwnedRouter:
+                requests = fallbacks = 0
+
+                def __init__(self, *_args, **_kwargs):
+                    self.closed = False
+
+                async def close(self):
+                    self.closed = True
+
+            owned = OwnedRouter()
+            with patch("alex_memory.ai.history.AIRouter", return_value=owned):
+                await FullHistoryAnalyzer(conn, settings, console).analyze_all()
+            self.assertTrue(owned.closed)
+
+            injected = FakeRouter()
+            await FullHistoryAnalyzer(conn, settings, console, injected).analyze_all()
+            self.assertFalse(hasattr(injected, "closed"))
+
+    async def test_post_save_integration_failure_does_not_recall_provider(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory), history_internal_batch_messages=2)
+            conn = connect(settings)
+            self.addAsyncCleanup(_close, conn)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Michael','user')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,date,text) VALUES (1,1,'2026-08-22','Message')"
+            )
+            conn.commit()
+            router = FakeRouter()
+
+            with patch(
+                "alex_memory.ai.history.integrate_saved_batch",
+                side_effect=RuntimeError("integration failed"),
+            ):
+                await FullHistoryAnalyzer(
+                    conn,
+                    settings,
+                    Console(file=StringIO(), force_terminal=False),
+                    router,
+                ).analyze_all()
+
+            self.assertEqual(1, router.requests)
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM ai_batches").fetchone()[0]
+            )
+            self.assertEqual(
+                "done", conn.execute("SELECT status FROM ai_jobs").fetchone()[0]
+            )
+
     async def test_full_history_continues_after_one_failure_without_duplicate_coverage(
         self,
     ):

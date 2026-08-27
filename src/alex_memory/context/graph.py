@@ -263,3 +263,90 @@ class SemanticGraphProjector:
                VALUES (?,?,?)""",
             (edge_id, claim_id, now),
         )
+
+
+def current_authoritative_edges(
+    conn: sqlite3.Connection,
+    seeds: list[tuple[str, int]],
+    as_of: str,
+    *,
+    limit: int = 80,
+) -> list[dict[str, object]]:
+    """Read bounded current graph edges safe for a future runtime consumer.
+
+    Observed claim material is intentionally excluded. Accepted automatic edges
+    are limited to the projector's task-to-project allowlist and must retain
+    claim evidence; manual edges remain usable without a fabricated AI source.
+    """
+    if not seeds or limit <= 0:
+        return []
+    bounded_limit = min(limit, 160)
+    endpoint_predicates = " OR ".join(
+        "(from_node.canonical_entity_type=? AND from_node.canonical_entity_id=?) "
+        "OR (to_node.canonical_entity_type=? AND to_node.canonical_entity_id=?)"
+        for _ in seeds
+    )
+    parameters: list[object] = []
+    for entity_type, entity_id in seeds:
+        parameters.extend((entity_type, entity_id, entity_type, entity_id))
+    rows = conn.execute(
+        f"""SELECT edge.edge_id,
+                   from_node.canonical_entity_type,from_node.canonical_entity_id,
+                   to_node.canonical_entity_type,to_node.canonical_entity_id,
+                   edge.relationship_type,edge.valid_from,edge.valid_to,
+                   edge.confidence,edge.authority_status,
+                   GROUP_CONCAT(edge_claim.claim_id)
+            FROM graph_edges AS edge
+            JOIN graph_nodes AS from_node ON from_node.node_id=edge.from_node_id
+            JOIN graph_nodes AS to_node ON to_node.node_id=edge.to_node_id
+            LEFT JOIN (
+                SELECT provenance.edge_id,provenance.claim_id
+                FROM graph_edge_claims AS provenance
+                JOIN semantic_claims AS claim ON claim.claim_id=provenance.claim_id
+                JOIN semantic_claim_evidence AS evidence ON evidence.claim_id=claim.claim_id
+                GROUP BY provenance.edge_id,provenance.claim_id
+            ) AS edge_claim ON edge_claim.edge_id=edge.edge_id
+            WHERE ({endpoint_predicates})
+              AND from_node.canonical_entity_type IS NOT NULL
+              AND from_node.canonical_entity_id IS NOT NULL
+              AND to_node.canonical_entity_type IS NOT NULL
+              AND to_node.canonical_entity_id IS NOT NULL
+              AND from_node.authority_status IN ('accepted','manual')
+              AND to_node.authority_status IN ('accepted','manual')
+              AND edge.authority_status IN ('accepted','manual')
+              AND edge.valid_from<=?
+              AND (edge.valid_to IS NULL OR edge.valid_to>?)
+              AND (
+                  edge.authority_status='manual'
+                  OR (
+                      edge.relationship_type='belongs_to'
+                      AND from_node.canonical_entity_type='task'
+                      AND to_node.canonical_entity_type='project'
+                      AND edge_claim.claim_id IS NOT NULL
+                  )
+              )
+            GROUP BY edge.edge_id
+            ORDER BY edge.valid_from DESC,edge.edge_id DESC
+            LIMIT ?""",
+        [*parameters, as_of, as_of, bounded_limit],
+    ).fetchall()
+    return [
+        {
+            "edge_id": int(row[0]),
+            "from_type": str(row[1]),
+            "from_id": int(row[2]),
+            "to_type": str(row[3]),
+            "to_id": int(row[4]),
+            "relationship_type": str(row[5]),
+            "valid_from": str(row[6]),
+            "valid_to": row[7],
+            "confidence": float(row[8]),
+            "authority_status": str(row[9]),
+            "claim_ids": tuple(
+                sorted(int(value) for value in str(row[10]).split(","))
+                if row[10] is not None
+                else ()
+            ),
+        }
+        for row in rows
+    ]

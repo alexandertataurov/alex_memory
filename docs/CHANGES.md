@@ -1,5 +1,28 @@
 # Implementation Journal
 
+## 2026-08-27 — AM-120 bounded graph reader contract
+
+`current_authoritative_edges` now provides a bounded, read-only future-reader
+contract over current canonical graph edges. Automatic output is restricted to
+the existing task-to-project reducer allowlist and requires exact immutable
+claim evidence; observed, source-less accepted, and expired edges are excluded.
+Manual edges remain usable without fabricated AI provenance. No existing reader
+uses this contract yet; temporary fixtures make the unsupported current
+person/company relationship types explicit. No relationship conversion, schema
+migration, replay, repair, provider request, or live action ran.
+
+## 2026-08-26 — AM-106 physical provider request ownership
+
+Providers now perform exactly one cancellable Gemini or Groq transport attempt.
+The router owns per-physical-attempt retries, conservative model pacing,
+quota/event accounting, and success/failure telemetry for extraction and
+grounded Q&A. It estimates system, schema, and user content without retaining
+prompt text, and normalizes returned Gemini/Groq usage for durable counters.
+An unconfirmed Groq cancellation is recorded but cannot overlap a fallback.
+Temporary-SQLite/fake coverage proves retries, schema overhead, answer usage,
+and the withheld-fallback path. No migration, replay, provider request, or live
+action ran.
+
 ## 2026-08-26 — Repository control-plane reconciliation
 
 The current-source audit confirms that the remediation baseline is historical,
@@ -15,6 +38,34 @@ The AM-062 documentation-reconciliation leaf also updates stale AM-053 and
 AM-067 task evidence: the revisioned invalidation ledger and single
 person-context writer are implemented controls, not missing foundations. The
 remaining work is limited to any caller-proven scope or ownership gaps.
+
+## 2026-08-26 — AM-102 strict-contract closure
+
+AM-102's reported silent-repair gaps were already closed in the current
+provider-neutral extraction contract. Providers preserve decoded transport JSON;
+the repository validates the unchanged top-level payload before acceptance,
+records top-level failures as diagnostics, and retains invalid individual items
+as durable rejections. The contract covers confidence bounds, task/informational
+status combinations, canceled tasks, and explicit nullable project association.
+Focused provider, repository, and semantic-projection tests pass. No code,
+migration, replay, or live action ran.
+
+## 2026-08-26 — AM-104 selected-provider execution
+
+The router now sends one explicit provider analysis request containing the
+selected provider, model, and applicable RPM limit. Gemini and Groq share this
+contract; Groq invokes the selected model rather than always using its default.
+The router validates returned execution identity before success accounting, so
+it cannot rewrite a mismatched result into apparent compliance. No model
+expansion, migration, replay, or live action ran.
+
+## 2026-08-26 — AM-105 cancellable Gemini lifecycle
+
+Gemini now sends analysis and answer requests through the official async client
+instead of a worker thread. A timeout cancels the in-flight coroutine before
+the router moves to fallback; internally owned Daily and History routers close
+their provider client, while injected routers remain caller-owned. No migration,
+replay, or live action ran.
 
 ## 2026-08-26 — AM-100 source-mutation reanalysis
 
@@ -35,6 +86,24 @@ does not claim active after local-mode recovery, scheduled briefs skip stale
 data after reconciliation failure, and incomplete cleanup is reported without
 masking an earlier failure. Fake and temporary SQLite tests cover each path.
 No schema, migration, replay, or live operation ran.
+
+## 2026-08-26 — AM-099 routing truthfulness
+
+Automatic Daily analysis now consumes the background quota priority while a
+manual Daily run retains interactive priority. The existing registry has
+distinct short and context-workload candidate policies, filters profiles that
+cannot meet a structured-output request, records a deterministic policy reason
+with route diagnostics, and no longer exposes an unused long-context flag. No
+provider/model expansion, migration, or live operation ran.
+
+## 2026-08-26 — AM-101 saved-result recovery
+
+Daily and History processing now distinguish provider failure from work that
+happens after a provider result has been durably saved. Pending or failed
+projection/integration resumes from the saved batch before new provider work;
+an injected post-save error leaves one successful batch and does not reclaim
+the completed job. Context-assembly failure records a retryable failed job
+instead of stranding it as running. No migration or live operation ran.
 
 ## 2026-08-26 — AM-093 scoped contact search and exact context evidence
 

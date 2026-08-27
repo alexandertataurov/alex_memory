@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 
 from alex_memory.ai.repository import save_ai_success
-from alex_memory.context.graph import SemanticGraphProjector
+from alex_memory.context.graph import (
+    SemanticGraphProjector,
+    current_authoritative_edges,
+)
+from alex_memory.context.repository import ensure_relationship
 from alex_memory.database import connect
 from alex_memory.models import AIBatch
 from alex_memory.operational import EntityResolver, process_ai_batch
@@ -287,6 +291,196 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 (item[1],),
             ).fetchone()[0],
         )
+
+    def test_current_authoritative_edges_enforce_temporal_authority_and_lineage(
+        self,
+    ) -> None:
+        batch = AIBatch(100, "Work", [message()], "prompt")
+        saved = save_ai_success(
+            self.conn,
+            batch,
+            {
+                "summary": "Project invoice work.",
+                "items": [
+                    valid_item()
+                    | {
+                        "kind": "project",
+                        "title": "Project Amber",
+                        "details": "Invoice work.",
+                        "status": "informational",
+                        "owner": "unknown",
+                    },
+                    valid_item()
+                    | {"project_name": "Project Amber", "confidence": 0.96},
+                ],
+            },
+            self.settings,
+        )
+        self.assertTrue(process_ai_batch(self.conn, saved.batch_id, self.settings))
+        task_id = self.conn.execute("SELECT task_id FROM tasks").fetchone()[0]
+
+        edges = current_authoritative_edges(
+            self.conn, [("task", task_id)], "2026-08-25T00:00:00+00:00"
+        )
+
+        self.assertEqual(1, len(edges))
+        self.assertEqual("accepted", edges[0]["authority_status"])
+        self.assertEqual("belongs_to", edges[0]["relationship_type"])
+        self.assertTrue(edges[0]["claim_ids"])
+
+        edge_id = edges[0]["edge_id"]
+        task_node_id, project_node_id = self.conn.execute(
+            """SELECT from_node_id,to_node_id FROM graph_edges WHERE edge_id=?""",
+            (edge_id,),
+        ).fetchone()
+        self.conn.execute(
+            "UPDATE graph_edges SET valid_to='2026-08-24T12:00:00+00:00' WHERE edge_id=?",
+            (edge_id,),
+        )
+        self.assertEqual(
+            [],
+            current_authoritative_edges(
+                self.conn, [("task", task_id)], "2026-08-25T00:00:00+00:00"
+            ),
+        )
+        now = "2026-08-24T13:00:00+00:00"
+        for authority_status in ("observed", "accepted"):
+            self.conn.execute(
+                """INSERT INTO graph_edges(
+                       from_node_id,to_node_id,relationship_type,valid_from,valid_to,
+                       first_seen_at,last_seen_at,confidence,authority_status,
+                       properties_json,created_at,updated_at
+                   ) VALUES (?,?,'belongs_to',?,NULL,?,?,0.9,?,'{}',?,?)""",
+                (
+                    task_node_id,
+                    project_node_id,
+                    now,
+                    now,
+                    now,
+                    authority_status,
+                    now,
+                    now,
+                ),
+            )
+        self.assertEqual(
+            [],
+            current_authoritative_edges(
+                self.conn, [("task", task_id)], "2026-08-25T00:00:00+00:00"
+            ),
+        )
+        self.conn.execute(
+            """INSERT INTO graph_edges(
+                   from_node_id,to_node_id,relationship_type,valid_from,valid_to,
+                   first_seen_at,last_seen_at,confidence,authority_status,
+                   properties_json,created_at,updated_at
+               ) VALUES (?,?,'manually_confirmed',?,NULL,?,?,1.0,'manual','{}',?,?)""",
+            (task_node_id, project_node_id, now, now, now, now, now),
+        )
+        self.assertEqual(
+            [
+                {
+                    "authority_status": "manual",
+                    "claim_ids": (),
+                    "from_id": task_id,
+                    "from_type": "task",
+                    "relationship_type": "manually_confirmed",
+                    "to_id": edges[0]["to_id"],
+                    "to_type": "project",
+                    "valid_from": now,
+                    "valid_to": None,
+                    "confidence": 1.0,
+                    "edge_id": self.conn.execute(
+                        "SELECT MAX(edge_id) FROM graph_edges"
+                    ).fetchone()[0],
+                }
+            ],
+            current_authoritative_edges(
+                self.conn, [("task", task_id)], "2026-08-25T00:00:00+00:00"
+            ),
+        )
+
+    def test_accepted_graph_has_no_parity_for_current_person_company_relationships(
+        self,
+    ) -> None:
+        batch = AIBatch(100, "Work", [message()], "prompt")
+        saved = save_ai_success(
+            self.conn,
+            batch,
+            {
+                "summary": "Project invoice work.",
+                "items": [
+                    valid_item()
+                    | {
+                        "kind": "project",
+                        "title": "Project Amber",
+                        "details": "Invoice work.",
+                        "status": "informational",
+                        "owner": "unknown",
+                    },
+                    valid_item()
+                    | {"project_name": "Project Amber", "confidence": 0.96},
+                ],
+            },
+            self.settings,
+        )
+        self.assertTrue(process_ai_batch(self.conn, saved.batch_id, self.settings))
+        task_id, project_id = self.conn.execute(
+            "SELECT task_id,related_project_id FROM tasks"
+        ).fetchone()
+        person_id = EntityResolver(self.conn).entity("person", "Ari", source="manual")
+        company_id = EntityResolver(self.conn).entity(
+            "company", "Acme", source="manual"
+        )
+        assert person_id is not None
+        assert company_id is not None
+        as_of = "2026-08-25T00:00:00+00:00"
+        for from_type, from_id, to_type, to_id, relationship_type in (
+            ("person", person_id, "company", company_id, "works_for"),
+            ("person", person_id, "project", project_id, "contributes_to"),
+            ("company", company_id, "project", project_id, "delivers_for"),
+        ):
+            ensure_relationship(
+                self.conn,
+                from_type,
+                from_id,
+                to_type,
+                to_id,
+                relationship_type,
+                0.95,
+                100,
+                1,
+                "2026-08-24T10:00:00+00:00",
+            )
+        legacy_types = {
+            tuple(row)
+            for row in self.conn.execute(
+                """SELECT from_type,relationship_type,to_type FROM relationships
+                   WHERE valid_from<=? AND (valid_to IS NULL OR valid_to>?)""",
+                (as_of, as_of),
+            ).fetchall()
+        }
+        self.assertEqual(
+            {
+                ("person", "works_for", "company"),
+                ("person", "contributes_to", "project"),
+                ("company", "delivers_for", "project"),
+            },
+            legacy_types,
+        )
+        graph_types = {
+            (edge["from_type"], edge["relationship_type"], edge["to_type"])
+            for edge in current_authoritative_edges(
+                self.conn,
+                [
+                    ("person", person_id),
+                    ("company", company_id),
+                    ("project", project_id),
+                ],
+                as_of,
+            )
+        }
+        self.assertEqual({("task", "belongs_to", "project")}, graph_types)
+        self.assertTrue(legacy_types.isdisjoint(graph_types))
 
 
 if __name__ == "__main__":

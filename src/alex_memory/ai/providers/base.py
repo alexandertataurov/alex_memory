@@ -1,8 +1,38 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
-from ...models import AIAnalysisResult, AIBatch
+import json
+
+from ...models import AIAnalysisResult, AIAnswerResult, AIBatch
+from ..schema import AI_RESPONSE_SCHEMA, AI_SYSTEM_PROMPT
+
+
+ANSWER_SYSTEM_PROMPT = (
+    "You are Alex Memory's grounded question-answering assistant. "
+    "Never invent evidence or citations."
+)
+
+
+def extraction_input_parts(batch: AIBatch) -> tuple[str, str, str]:
+    """Return every extraction instruction sent to a provider, without logging it."""
+    return (
+        AI_SYSTEM_PROMPT,
+        batch.prompt,
+        "Return one valid JSON object only, matching this schema:\n"
+        + json.dumps(AI_RESPONSE_SCHEMA, separators=(",", ":")),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAnalysisRequest:
+    """The router-authorized model invocation for one bounded batch."""
+
+    batch: AIBatch
+    provider: str
+    model: str
+    requests_per_minute: float | None
 
 
 class ProviderError(RuntimeError):
@@ -19,6 +49,10 @@ class ProviderQuotaError(ProviderError):
 
 class ProviderTimeoutError(ProviderError):
     """A provider request exceeded the configured per-attempt deadline."""
+
+    def __init__(self, message: str, *, termination_confirmed: bool = True):
+        super().__init__(message)
+        self.termination_confirmed = termination_confirmed
 
 
 class ProviderConnectionError(ProviderError):
@@ -37,8 +71,8 @@ class AIProvider(Protocol):
     name: str
     model: str
 
-    async def analyze(self, batch: AIBatch) -> AIAnalysisResult:
-        """Return a locally-normalized structured analysis for one chat batch."""
+    async def analyze(self, request: ProviderAnalysisRequest) -> AIAnalysisResult:
+        """Execute exactly the router-authorized provider/model request."""
 
-    async def answer(self, prompt: str, model: str) -> str:
+    async def answer(self, prompt: str, model: str) -> AIAnswerResult:
         """Return one bounded grounded answer for the router-selected model."""

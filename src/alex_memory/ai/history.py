@@ -22,9 +22,7 @@ from rich.text import Text
 
 from ..classification import CLASSIFICATION_VERSION, classify_pending_messages
 from ..config import Settings
-from ..context.refresh import refresh_pending_context
 from ..models import AIBatch
-from ..operational import process_ai_batch
 from ..ui.components import AppPanel as Panel
 from ..ui.components import DataTable as Table
 from ..ui.components import metric_strip, notice
@@ -39,6 +37,7 @@ from .repository import (
 )
 from .router import AIRouter
 from .routing import AIWorkload, RequestPriority
+from .service import integrate_saved_batch, resume_saved_batches
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,11 +79,19 @@ class FullHistoryAnalyzer:
             return HistoryAnalysisReport(0, 0, 0, False, coverage)
         classified = self._classify_all_pending()
         router: HistoryRouter = self.router or AIRouter(self.settings, conn=self.conn)
+        owns_router = self.router is None
+
+        async def finish(report: HistoryAnalysisReport) -> HistoryAnalysisReport:
+            if owns_router:
+                await cast(AIRouter, router).close()
+            return report
+
         semantic = failures = 0
         consecutive_failures = 0
         last_error = "—"
 
         while True:
+            await resume_saved_batches(self.conn, self.settings, lane="history")
             ensure_history_jobs(self.conn, self.settings)
             jobs = claim_ai_jobs(
                 self.conn,
@@ -96,8 +103,10 @@ class FullHistoryAnalyzer:
                 coverage = history_coverage(self.conn, self.settings)
                 complete = coverage["semantic"] >= coverage["eligible"]
                 self._show_progress(coverage, router, failures, complete)
-                return HistoryAnalysisReport(
-                    classified, semantic, failures, complete, coverage
+                return await finish(
+                    HistoryAnalysisReport(
+                        classified, semantic, failures, complete, coverage
+                    )
                 )
 
             for position, (job_id, batch) in enumerate(jobs):
@@ -113,9 +122,12 @@ class FullHistoryAnalyzer:
                             tone="info",
                         )
                     )
-                    return HistoryAnalysisReport(
-                        classified, semantic, failures, False, coverage
+                    return await finish(
+                        HistoryAnalysisReport(
+                            classified, semantic, failures, False, coverage
+                        )
                     )
+                saved = None
                 try:
                     result = await self._analyze_with_live_monitor(
                         router, batch, semantic, position + 1, len(jobs), last_error
@@ -129,8 +141,9 @@ class FullHistoryAnalyzer:
                         job_id=job_id,
                     )
                     if saved.batch_id is not None:
-                        process_ai_batch(self.conn, saved.batch_id, self.settings)
-                        await refresh_pending_context(self.conn, self.settings)
+                        await integrate_saved_batch(
+                            self.conn, saved.batch_id, self.settings
+                        )
                         with self.conn:
                             refresh_conversation_analysis_state(
                                 self.conn, batch.chat_id
@@ -140,14 +153,17 @@ class FullHistoryAnalyzer:
                     self._show_activity(semantic, router)
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     self._release(job_id)
+                    if owns_router:
+                        await cast(AIRouter, router).close()
                     raise
                 except Exception as error:
                     failures += 1
                     consecutive_failures += 1
                     last_error = f"{type(error).__name__}: {error}"
-                    save_ai_failure(
-                        self.conn, batch, error, self.settings, "history", job_id
-                    )
+                    if saved is None:
+                        save_ai_failure(
+                            self.conn, batch, error, self.settings, "history", job_id
+                        )
                     if consecutive_failures >= 3:
                         coverage = history_coverage(self.conn, self.settings)
                         self.console.print(
@@ -157,8 +173,10 @@ class FullHistoryAnalyzer:
                                 tone="warning",
                             )
                         )
-                        return HistoryAnalysisReport(
-                            classified, semantic, failures, False, coverage
+                        return await finish(
+                            HistoryAnalysisReport(
+                                classified, semantic, failures, False, coverage
+                            )
                         )
                     self.console.print(
                         notice(

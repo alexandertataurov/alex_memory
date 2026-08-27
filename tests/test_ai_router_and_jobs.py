@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import tempfile
-import time
 import unittest
 from dataclasses import replace
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
+
+from rich.console import Console
 
 from alex_memory.ai.providers.base import (
+    ProviderAnalysisRequest,
     ProviderConnectionError,
     ProviderError,
     ProviderQuotaError,
@@ -25,6 +29,7 @@ from alex_memory.ai.providers.gemini import (
 from alex_memory.ai.providers.groq import GroqProvider
 from alex_memory.ai.repository import (
     claim_ai_jobs,
+    ensure_daily_jobs,
     ensure_history_jobs,
     fetch_unanalyzed_messages,
     fetch_unclassified_messages,
@@ -33,6 +38,8 @@ from alex_memory.ai.repository import (
     save_ai_success,
 )
 from alex_memory.ai.router import AIRouter
+from alex_memory.ai.routing import estimate_tokens
+from alex_memory.ai.service import _run_lane
 from alex_memory.ai.routing import (
     AIWorkload,
     ModelRegistry,
@@ -47,7 +54,7 @@ from alex_memory.classification import (
 from alex_memory.config import Settings
 from alex_memory.database import connect
 from alex_memory.intelligence import set_chat_policy
-from alex_memory.models import AIAnalysisResult, AIBatch, AIMessage
+from alex_memory.models import AIAnalysisResult, AIAnswerResult, AIBatch, AIMessage
 
 
 def settings_for(root: Path, **overrides) -> Settings:
@@ -109,9 +116,11 @@ class FakeGeminiModels:
     def __init__(self, responses: list[object]):
         self.responses = responses
         self.calls = 0
+        self.requests: list[dict] = []
 
     def generate_content(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -124,9 +133,9 @@ class FakeGeminiClient:
 
 
 class FakeResponse:
-    def __init__(self, result: dict):
+    def __init__(self, result: dict, usage_metadata=None):
         self.parsed = result
-        self.usage_metadata = None
+        self.usage_metadata = usage_metadata
 
 
 class FakeProvider:
@@ -136,11 +145,16 @@ class FakeProvider:
         self.result = result
         self.calls = 0
 
-    async def analyze(self, value: AIBatch) -> AIAnalysisResult:
+    async def analyze(self, value) -> AIAnalysisResult:
         self.calls += 1
         if isinstance(self.result, Exception):
             raise self.result
-        return self.result
+        return replace(self.result, provider=value.provider, model=value.model)
+
+    async def answer(self, _prompt: str, model: str) -> AIAnswerResult:
+        if isinstance(self.result, Exception):
+            raise self.result
+        return AIAnswerResult(self.name, model, "Grounded answer. [1]")
 
 
 class SequenceProvider(FakeProvider):
@@ -148,12 +162,12 @@ class SequenceProvider(FakeProvider):
         super().__init__(name, results[0])
         self.results = results
 
-    async def analyze(self, value: AIBatch) -> AIAnalysisResult:
+    async def analyze(self, value) -> AIAnalysisResult:
         self.calls += 1
         result = self.results.pop(0)
         if isinstance(result, Exception):
             raise result
-        return result
+        return replace(result, provider=value.provider, model=value.model)
 
 
 class FakeCompletions:
@@ -177,12 +191,101 @@ class FakeCompletions:
                         (),
                         {"message": type("Message", (), {"content": content})()},
                     )()
-                ]
+                ],
+                "usage": type(
+                    "Usage",
+                    (),
+                    {
+                        "prompt_tokens": 19,
+                        "completion_tokens": 5,
+                        "total_tokens": 24,
+                    },
+                )(),
             },
         )()
 
 
 class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
+    async def test_daily_post_save_failure_does_not_create_provider_failure(self):
+        class SuccessfulRouter:
+            def __init__(self, *_args, **_kwargs) -> None:
+                self.closed = False
+                return None
+
+            async def analyze(self, _batch, **_kwargs) -> AIAnalysisResult:
+                return AIAnalysisResult("gemini", "gemini-test", "Saved", [])
+
+            async def close(self) -> None:
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            conn = connect(settings)
+            self.addAsyncCleanup(conn.close)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Ilya','user')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,date,text) VALUES (1,1,'2026-08-26','Message')"
+            )
+            conn.commit()
+            ensure_daily_jobs(conn, settings)
+            jobs = claim_ai_jobs(conn, "daily", 1, settings)
+
+            router = SuccessfulRouter()
+            with (
+                patch("alex_memory.ai.service.AIRouter", return_value=router),
+                patch(
+                    "alex_memory.ai.service.integrate_saved_batch",
+                    side_effect=RuntimeError("integration failed"),
+                ),
+            ):
+                await _run_lane(
+                    conn,
+                    settings,
+                    Console(file=StringIO(), force_terminal=False),
+                    "daily",
+                    jobs,
+                    1,
+                    render_console=False,
+                )
+
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM ai_batches").fetchone()[0]
+            )
+            self.assertEqual(
+                "done", conn.execute("SELECT status FROM ai_jobs").fetchone()[0]
+            )
+            self.assertTrue(router.closed)
+
+    def test_context_assembly_failure_returns_claimed_job_to_retryable_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            conn = connect(settings)
+            self.addCleanup(conn.close)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Ilya','user')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,date,text) VALUES (1,1,'2026-08-26','Message')"
+            )
+            conn.commit()
+            ensure_daily_jobs(conn, settings)
+
+            with patch(
+                "alex_memory.ai.repository.add_contextual_preamble",
+                side_effect=RuntimeError("context unavailable"),
+            ):
+                self.assertEqual([], claim_ai_jobs(conn, "daily", 1, settings))
+
+            self.assertEqual(
+                "failed", conn.execute("SELECT status FROM ai_jobs").fetchone()[0]
+            )
+            self.assertIn(
+                "context assembly",
+                conn.execute("SELECT last_error FROM ai_jobs").fetchone()[0],
+            )
+
     def test_quota_cooldown_is_reloaded_after_tracker_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory), ai_routing_mode="quota_aware")
@@ -273,6 +376,17 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
             )
+            self.assertEqual(
+                "excluded: structured output required",
+                registry.candidate_explanations(
+                    AIWorkload.SIMPLE_EXTRACTION,
+                    requires_structured_output=True,
+                )["gemma"],
+            )
+            self.assertEqual(
+                "excluded: short-workload model",
+                registry.candidate_explanations(AIWorkload.CONTEXT_EXTRACTION)["gemma"],
+            )
 
     async def test_quota_aware_skips_gemma_when_prompt_exceeds_guard(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -308,17 +422,15 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 def __init__(self) -> None:
                     self.calls: list[str] = []
 
-                async def analyze_model(
-                    self, batch: AIBatch, model: str, requests_per_minute: float | None
-                ) -> AIAnalysisResult:
-                    self.calls.append(model)
-                    if model == settings.gemini_primary_model:
+                async def analyze(self, request) -> AIAnalysisResult:
+                    self.calls.append(request.model)
+                    if request.model == settings.gemini_primary_model:
                         raise ProviderConnectionError(
                             "temporary network issue for gemini-3.5-flash-lite"
                         )
                     return AIAnalysisResult(
                         "gemini",
-                        model,
+                        request.model,
                         "Recovered via secondary gemini route",
                         [],
                     )
@@ -337,7 +449,10 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             result = await router.analyze(batch())
 
             self.assertEqual("groq", result.provider)
-            self.assertEqual([settings.gemini_primary_model], provider.calls)
+            self.assertEqual(
+                [settings.gemini_primary_model, settings.gemini_primary_model],
+                provider.calls,
+            )
 
     async def test_network_failure_skips_other_gemini_models_and_uses_groq(
         self,
@@ -348,12 +463,25 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             groq = FakeProvider(
                 "groq", AIAnalysisResult("groq", "ignored", "Fallback", [])
             )
-            router = AIRouter(settings, {"gemini": gemini, "groq": groq})
+            delays: list[float] = []
+            now = [0.0]
+
+            async def sleep(seconds: float) -> None:
+                delays.append(seconds)
+                now[0] += seconds
+
+            router = AIRouter(
+                settings,
+                {"gemini": gemini, "groq": groq},
+                clock=lambda: now[0],
+                sleep=sleep,
+            )
 
             result = await router.analyze(batch())
 
             self.assertEqual("groq", result.provider)
-            self.assertEqual(1, gemini.calls)
+            self.assertEqual(2, gemini.calls)
+            self.assertEqual([1, 60 / 13.5 - 1], delays)
             self.assertEqual(1, groq.calls)
             self.assertEqual("groq", router.session_provider)
 
@@ -367,13 +495,23 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             groq = FakeProvider(
                 "groq", AIAnalysisResult("groq", "ignored", "Fallback", [])
             )
-            router = AIRouter(settings, {"gemini": gemini, "groq": groq})
+            now = [0.0]
+
+            async def sleep(seconds: float) -> None:
+                now[0] += seconds
+
+            router = AIRouter(
+                settings,
+                {"gemini": gemini, "groq": groq},
+                clock=lambda: now[0],
+                sleep=sleep,
+            )
 
             result = await router.analyze(batch())
 
             self.assertEqual("groq", result.provider)
             self.assertNotIn("gemini", router._provider_unavailable)
-            self.assertEqual(2, gemini.calls)
+            self.assertEqual(4, gemini.calls)
 
     async def test_quota_failure_skips_secondary_gemini_and_uses_groq(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -384,7 +522,17 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             groq = FakeProvider(
                 "groq", AIAnalysisResult("groq", "ignored", "Fallback", [])
             )
-            router = AIRouter(settings, {"gemini": gemini, "groq": groq})
+            now = [0.0]
+
+            async def sleep(seconds: float) -> None:
+                now[0] += seconds
+
+            router = AIRouter(
+                settings,
+                {"gemini": gemini, "groq": groq},
+                clock=lambda: now[0],
+                sleep=sleep,
+            )
 
             result = await router.analyze(batch())
 
@@ -457,18 +605,17 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(converted, {"type": "string", "nullable": True})
 
-    async def test_gemini_success_and_retry(self) -> None:
+    async def test_gemini_provider_performs_one_physical_attempt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory))
             client = FakeGeminiClient(
                 [RuntimeError("connection timeout"), FakeResponse(payload())]
             )
-            result = await GeminiProvider(settings, client).analyze(batch())
-            self.assertEqual(result.provider, "gemini")
-            self.assertEqual(result.summary, "Invoice requested.")
-            self.assertEqual(client.models.calls, 2)
+            with self.assertRaises(ProviderConnectionError):
+                await GeminiProvider(settings, client).analyze(batch())
+            self.assertEqual(client.models.calls, 1)
 
-    async def test_gemini_transient_connection_error_is_retried(self) -> None:
+    async def test_gemini_connection_error_is_typed_for_router_retry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory))
             client = FakeGeminiClient(
@@ -479,14 +626,17 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                     FakeResponse(payload()),
                 ]
             )
-            result = await GeminiProvider(settings, client).analyze(batch())
-            self.assertEqual(result.provider, "gemini")
-            self.assertEqual(result.summary, "Invoice requested.")
-            self.assertEqual(client.models.calls, 2)
+            with self.assertRaises(ProviderConnectionError):
+                await GeminiProvider(settings, client).analyze(batch())
+            self.assertEqual(client.models.calls, 1)
 
     async def test_gemini_paces_every_request_at_configured_rpm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            settings = settings_for(Path(directory), gemini_requests_per_minute=14.5)
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                gemini_requests_per_minute=14.5,
+            )
             client = FakeGeminiClient(
                 [FakeResponse(payload()), FakeResponse(payload())]
             )
@@ -497,21 +647,25 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 delays.append(seconds)
                 now[0] += seconds
 
-            provider = GeminiProvider(
+            router = AIRouter(
                 settings,
-                client,
+                {"gemini": GeminiProvider(settings, client)},
                 clock=lambda: now[0],
                 sleep=sleep,
             )
-            await provider.analyze(batch())
-            await provider.analyze(batch())
+            await router.analyze(batch())
+            await router.analyze(batch())
 
             self.assertEqual([60 / 13.5], delays)
             self.assertEqual(2, client.models.calls)
 
     async def test_gemini_retry_reserves_a_new_rate_limited_slot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            settings = settings_for(Path(directory), gemini_requests_per_minute=14.5)
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                gemini_requests_per_minute=14.5,
+            )
             client = FakeGeminiClient(
                 [RuntimeError("connection timeout"), FakeResponse(payload())]
             )
@@ -522,13 +676,13 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 delays.append(seconds)
                 now[0] += seconds
 
-            provider = GeminiProvider(
+            router = AIRouter(
                 settings,
-                client,
+                {"gemini": GeminiProvider(settings, client)},
                 clock=lambda: now[0],
                 sleep=sleep,
             )
-            result = await provider.analyze(batch())
+            result = await router.analyze(batch())
 
             self.assertEqual("gemini", result.provider)
             self.assertEqual([1, 60 / 13.5 - 1], delays)
@@ -563,10 +717,58 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory), ai_request_timeout_seconds=0.001)
             provider = GeminiProvider(settings, FakeGeminiClient([]))
-            provider._request = lambda _batch: time.sleep(0.05)  # type: ignore[method-assign]
+            cancelled = asyncio.Event()
+
+            async def hanging_request(_batch, _model=None):
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+            provider._request = hanging_request  # type: ignore[method-assign]
 
             with self.assertRaisesRegex(ProviderTimeoutError, "timed out after"):
                 await provider._request_with_timeout(batch())
+            self.assertTrue(cancelled.is_set())
+
+    async def test_gemini_timeout_cancels_before_groq_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                ai_max_retries=1,
+                ai_request_timeout_seconds=0.001,
+            )
+            gemini = GeminiProvider(settings, FakeGeminiClient([]))
+            cancelled = 0
+
+            async def hanging_request(_batch, _model=None):
+                nonlocal cancelled
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled += 1
+                    raise
+
+            test_case = self
+
+            class GroqAfterCancellation(FakeProvider):
+                async def analyze(self, request) -> AIAnalysisResult:
+                    test_case.assertEqual(2, cancelled)
+                    return await super().analyze(request)
+
+            gemini._request = hanging_request  # type: ignore[method-assign]
+            groq = GroqAfterCancellation(
+                "groq", AIAnalysisResult("groq", "ignored", "Fallback", [])
+            )
+            router = AIRouter(settings, {"gemini": gemini, "groq": groq})
+
+            result = await router.analyze(batch())
+
+            self.assertEqual("groq", result.provider)
+            self.assertEqual(2, cancelled)
+            self.assertEqual(1, groq.calls)
 
     async def test_router_uses_groq_after_gemini_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -682,9 +884,69 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 "Client", (), {"chat": type("Chat", (), {"completions": completions})()}
             )()
 
-            await GroqProvider(settings, client).analyze(batch())
+            result = await GroqProvider(settings, client).analyze(batch())
 
             self.assertEqual(800, completions.calls[0]["max_completion_tokens"])
+            self.assertEqual(
+                {
+                    "prompt_token_count": 19,
+                    "candidates_token_count": 5,
+                    "total_token_count": 24,
+                },
+                result.usage,
+            )
+
+    async def test_groq_uses_the_router_selected_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            completions = FakeCompletions()
+            client = type(
+                "Client", (), {"chat": type("Chat", (), {"completions": completions})()}
+            )()
+
+            result = await GroqProvider(settings, client).analyze(
+                ProviderAnalysisRequest(batch(), "groq", "groq-selected", None)
+            )
+
+            self.assertEqual("groq-selected", completions.calls[0]["model"])
+            self.assertEqual("groq-selected", result.model)
+
+    async def test_gemini_rejects_wrong_provider_before_network_io(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory))
+            client = FakeGeminiClient([FakeResponse(payload())])
+
+            with self.assertRaisesRegex(ProviderError, "cannot execute provider"):
+                await GeminiProvider(settings, client).analyze(
+                    ProviderAnalysisRequest(
+                        batch(), "groq", settings.gemini_primary_model, None
+                    )
+                )
+
+            self.assertEqual(0, client.models.calls)
+
+    async def test_router_rejects_mismatched_execution_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                ai_routing_override="force_groq",
+            )
+
+            class MismatchedProvider:
+                name = "groq"
+                model = "groq-test"
+
+                async def analyze(self, _request) -> AIAnalysisResult:
+                    return AIAnalysisResult("groq", "wrong-model", "Wrong", [])
+
+                async def answer(self, _prompt: str, _model: str) -> str:
+                    return "unused"
+
+            router = AIRouter(settings, {"groq": MismatchedProvider()})
+            with self.assertRaisesRegex(ProviderError, "execution identity mismatch"):
+                await router.analyze(batch())
+            self.assertEqual(0, router.fallbacks)
 
     async def test_groq_uses_json_object_without_a_strict_schema_preflight(
         self,
@@ -740,7 +1002,9 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 ["json_object"],
             )
 
-    async def test_groq_timeout_does_not_wait_for_sdk_cancellation(self) -> None:
+    async def test_groq_timeout_confirms_sdk_cancellation_before_returning(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory), ai_request_timeout_seconds=0.001)
             blocked = asyncio.Event()
@@ -759,6 +1023,125 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(
                     GroqProvider(settings, client).analyze(batch()), 1
                 )
+
+    async def test_unconfirmed_timeout_is_counted_without_unsafe_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                ai_routing_override="force_gemini_35",
+            )
+            conn = connect(settings)
+            gemini = FakeProvider(
+                "gemini",
+                ProviderTimeoutError("request timed out", termination_confirmed=False),
+            )
+            groq = FakeProvider(
+                "groq", AIAnalysisResult("groq", "ignored", "must not run", [])
+            )
+            router = AIRouter(settings, {"gemini": gemini, "groq": groq}, conn=conn)
+
+            with self.assertRaisesRegex(ProviderError, "fallback withheld"):
+                await router.analyze(batch())
+
+            self.assertEqual(1, gemini.calls)
+            self.assertEqual(0, groq.calls)
+            self.assertEqual(
+                (1, 0),
+                conn.execute(
+                    "SELECT attempt_count,success_count FROM ai_model_usage "
+                    "WHERE model_key='gemini_35'"
+                ).fetchone(),
+            )
+            conn.close()
+
+    async def test_router_counts_each_physical_retry_and_schema_overhead(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                ai_routing_override="force_gemini_35",
+            )
+            conn = connect(settings)
+            provider = SequenceProvider(
+                "gemini",
+                [
+                    ProviderConnectionError("connection timeout"),
+                    AIAnalysisResult(
+                        "gemini",
+                        "ignored",
+                        "Recovered",
+                        [],
+                        usage={
+                            "prompt_token_count": 31,
+                            "candidates_token_count": 7,
+                        },
+                    ),
+                ],
+            )
+            now = [0.0]
+
+            async def sleep(seconds: float) -> None:
+                now[0] += seconds
+
+            router = AIRouter(
+                settings,
+                {"gemini": provider},
+                conn=conn,
+                clock=lambda: now[0],
+                sleep=sleep,
+            )
+
+            await router.analyze(batch())
+
+            usage = conn.execute(
+                "SELECT attempt_count,success_count,estimated_input_tokens,actual_input_tokens,output_tokens "
+                "FROM ai_model_usage WHERE model_key='gemini_35'"
+            ).fetchone()
+            events = conn.execute(
+                "SELECT outcome FROM ai_route_events ORDER BY event_id"
+            ).fetchall()
+            self.assertEqual((2, 1, usage[2], 31, 7), usage)
+            self.assertGreater(usage[2], estimate_tokens(batch().prompt) * 2)
+            self.assertEqual(
+                [("attempt",), ("failed",), ("attempt",), ("success",)], events
+            )
+            conn.close()
+
+    async def test_answer_records_normalized_usage_and_system_overhead(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(
+                Path(directory),
+                ai_routing_mode="quota_aware",
+                ai_routing_override="force_groq",
+            )
+            conn = connect(settings)
+
+            class AnswerProvider(FakeProvider):
+                async def answer(self, _prompt: str, model: str) -> AIAnswerResult:
+                    return AIAnswerResult(
+                        "groq",
+                        model,
+                        "Grounded answer. [1]",
+                        {"prompt_token_count": 17, "candidates_token_count": 3},
+                    )
+
+            router = AIRouter(
+                settings,
+                {"groq": AnswerProvider("groq", AIAnalysisResult("groq", "x", "", []))},
+                conn=conn,
+            )
+
+            self.assertEqual(
+                "Grounded answer. [1]", await router.answer("What changed?")
+            )
+            usage = conn.execute(
+                "SELECT attempt_count,success_count,estimated_input_tokens,actual_input_tokens,output_tokens "
+                "FROM ai_model_usage WHERE model_key='groq'"
+            ).fetchone()
+            self.assertEqual((1, 1, usage[2], 17, 3), usage)
+            self.assertGreater(usage[2], estimate_tokens("What changed?"))
+            conn.close()
 
     async def test_both_provider_failures_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

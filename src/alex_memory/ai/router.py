@@ -8,15 +8,19 @@ import time
 from collections.abc import Awaitable, Callable
 
 from ..config import Settings
-from ..models import AIAnalysisResult, AIBatch, AIRequest
+from ..models import AIAnalysisResult, AIAnswerResult, AIBatch, AIRequest
 from .providers import (
     AIProvider,
     GeminiProvider,
     GroqProvider,
+    ProviderAnalysisRequest,
     ProviderConnectionError,
     ProviderError,
     ProviderQuotaError,
+    ProviderTimeoutError,
+    ProviderTransientError,
 )
+from .providers.base import ANSWER_SYSTEM_PROMPT, extraction_input_parts
 from .routing import (
     AIWorkload,
     ModelProfile,
@@ -59,6 +63,8 @@ class AIRouter:
         self.last_decision: str | None = None
         self._unavailable: dict[str, tuple[float, str]] = {}
         self._provider_unavailable: dict[str, tuple[float, str]] = {}
+        self._next_request_at: dict[str, float] = {}
+        self._rate_lock = asyncio.Lock()
 
     async def analyze(
         self,
@@ -72,6 +78,13 @@ class AIRouter:
         return await self.analyze_request(
             AIRequest(batch=batch, workload=workload.value, priority=priority.value)
         )
+
+    async def close(self) -> None:
+        """Close provider transports owned by this router's default providers."""
+        for provider in self.providers.values():
+            close = getattr(provider, "close", None)
+            if close is not None:
+                await close()
 
     async def _analyze_legacy(self, batch: AIBatch) -> AIAnalysisResult:
         """Keep pre-AM-049 explicit-primary behavior for compatible callers."""
@@ -102,7 +115,14 @@ class AIRouter:
                 )
                 self.active_state = "provider request in flight"
                 try:
-                    result = await provider.analyze(batch)
+                    result = await provider.analyze(
+                        ProviderAnalysisRequest(
+                            batch=batch,
+                            provider=name,
+                            model=provider.model,
+                            requests_per_minute=None,
+                        )
+                    )
                     result.fallback_used = index > 0
                     if result.fallback_used:
                         self.fallbacks += 1
@@ -151,8 +171,11 @@ class AIRouter:
             AIWorkload(request.workload),
             RequestPriority(request.priority),
         )
-        estimated = request.estimated_input_tokens or estimate_tokens(
-            request.batch.prompt
+        estimated = request.estimated_input_tokens or self._extraction_estimate(
+            request.batch
+        )
+        policy_reasons = self.registry.candidate_explanations(
+            workload, requires_structured_output=request.requires_structured_output
         )
         errors: list[str] = []
         candidates = self._candidates(
@@ -165,78 +188,58 @@ class AIRouter:
                 errors.append(f"{profile.key}: {provider_health[1]}")
                 continue
             self._provider_unavailable.pop(profile.provider, None)
-            available, _pressure, reason = self.quota.available(
-                profile, estimated, priority
-            )
-            if not available:
-                self._set_active(profile, f"skipped: {reason}")
-                errors.append(f"{profile.key}: {reason}")
-                continue
             provider = self.providers.get(profile.provider)
             if provider is None:
                 errors.append(f"{profile.key}: provider unavailable")
                 continue
-            self.last_decision = f"{profile.key}: {reason} for {workload.value}"
-            self._record_event(
-                workload, priority, profile, estimated, self.last_decision, "attempt"
-            )
-            self.quota.record_attempt(profile, estimated)
-            self.requests += 1
-            self._set_active(profile, "provider request in flight")
-            try:
-                result = await self._request_provider(provider, request.batch, profile)
-            except Exception as error:
-                detail = f"{type(error).__name__}: {error}"
-                next_routes = " → ".join(item.key for item in candidates[index + 1 :])
-                self.last_error = f"{profile.key}: {detail}" + (
-                    f"; next: {next_routes}" if next_routes else ""
+            for attempt in range(self.settings.ai_max_retries):
+                reason = await self._begin_attempt(
+                    workload, priority, profile, estimated, policy_reasons[profile.key]
                 )
-                errors.append(self.last_error)
-                cooldown = (
-                    error.retry_after_seconds
-                    if isinstance(error, ProviderQuotaError)
-                    else None
-                )
-                self.quota.record_failure(profile, detail, cooldown)
-                if isinstance(error, ProviderConnectionError):
-                    seconds = 300
-                    self._provider_unavailable[profile.provider] = (
-                        self._clock() + seconds,
-                        f"network connection failed; retry after {seconds:g} seconds",
+                if reason is None:
+                    errors.append(f"{profile.key}: quota unavailable")
+                    break
+                try:
+                    result = await self._request_provider(
+                        provider, request.batch, profile
                     )
-                self.active_state = (
-                    f"{profile.key} failed; trying {next_routes}"
-                    if next_routes
-                    else f"{profile.key} failed; no remaining route"
-                )
+                except Exception as error:
+                    detail = self._record_failure(
+                        workload, priority, profile, estimated, reason, error
+                    )
+                    if self._fallback_is_unsafe(error):
+                        self.errors += 1
+                        self.active_state = "request termination unconfirmed"
+                        raise ProviderError(
+                            f"{profile.key}: {detail}; fallback withheld"
+                        ) from error
+                    delay = self._retry_delay(error, attempt)
+                    if delay is not None:
+                        self.retry_at = self._clock() + delay
+                        self.active_state = f"{profile.key} retrying after {delay:.1f}s"
+                        await self._sleep(delay)
+                        self.retry_at = None
+                        continue
+                    errors.append(f"{profile.key}: {detail}")
+                    self._mark_provider_unavailable(profile, error)
+                    break
+                result.fallback_used = index > 0
+                if result.fallback_used:
+                    self.fallbacks += 1
+                    result.usage["fallback_reason"] = (
+                        errors[-1] if errors else "policy route"
+                    )
+                self.quota.record_success(profile, result.usage)
                 self._record_event(
-                    workload,
-                    priority,
-                    profile,
-                    estimated,
-                    self.last_decision,
-                    "failed",
-                    detail,
+                    workload, priority, profile, estimated, reason, "success"
                 )
-                continue
-            result.provider, result.model = profile.provider, profile.model
-            result.fallback_used = index > 0
-            if result.fallback_used:
-                self.fallbacks += 1
-                result.usage["fallback_reason"] = (
-                    errors[-1] if errors else "policy route"
-                )
-            self.quota.record_success(profile, result.usage)
-            self._record_event(
-                workload, priority, profile, estimated, self.last_decision, "success"
-            )
-            self.active_state, self.last_error = "response received", None
-            if index > 0:
-                self.session_provider, self.session_model_key = (
-                    profile.provider,
-                    profile.key,
-                )
-            return result
+                self.active_state, self.last_error = "response received", None
+                if index > 0:
+                    self.session_provider, self.session_model_key = (
+                        profile.provider,
+                        profile.key,
+                    )
+                return result
         route_chain = " → ".join(profile.key for profile in candidates)
         self.active_state = (
             f"all eligible routes unavailable: {route_chain}"
@@ -258,7 +261,7 @@ class AIRouter:
         """
         workload = AIWorkload.MEMORY_QA
         priority = RequestPriority.INTERACTIVE
-        estimated = estimate_tokens(prompt)
+        estimated = self._answer_estimate(prompt)
         errors: list[str] = []
         for index, profile in enumerate(self._candidates(workload)):
             health = self._provider_unavailable.get(profile.provider)
@@ -266,67 +269,151 @@ class AIRouter:
                 errors.append(f"{profile.key}: {health[1]}")
                 continue
             self._provider_unavailable.pop(profile.provider, None)
-            available, _pressure, reason = self.quota.available(
-                profile, estimated, priority
-            )
-            if not available:
-                errors.append(f"{profile.key}: {reason}")
-                continue
             provider = self.providers.get(profile.provider)
             if provider is None:
                 errors.append(f"{profile.key}: provider unavailable")
                 continue
-            self.last_decision = f"{profile.key}: {reason} for {workload.value}"
-            self._record_event(
-                workload, priority, profile, estimated, self.last_decision, "attempt"
-            )
-            self.quota.record_attempt(profile, estimated)
-            self.requests += 1
-            self._set_active(profile, "provider request in flight")
-            try:
-                answer = await provider.answer(prompt, profile.model)
-            except Exception as error:
-                detail = f"{type(error).__name__}: {error}"
-                errors.append(f"{profile.key}: {detail}")
-                cooldown = (
-                    error.retry_after_seconds
-                    if isinstance(error, ProviderQuotaError)
-                    else None
+            for attempt in range(self.settings.ai_max_retries):
+                reason = await self._begin_attempt(
+                    workload, priority, profile, estimated, "eligible: answer policy"
                 )
-                self.quota.record_failure(profile, detail, cooldown)
-                if isinstance(error, ProviderConnectionError):
-                    self._provider_unavailable[profile.provider] = (
-                        self._clock() + 300,
-                        "network connection failed; retry after 300 seconds",
+                if reason is None:
+                    errors.append(f"{profile.key}: quota unavailable")
+                    break
+                try:
+                    answer = await provider.answer(prompt, profile.model)
+                    if not isinstance(answer, AIAnswerResult):
+                        raise ProviderError(
+                            "provider returned an invalid answer result"
+                        )
+                    if (
+                        answer.provider != profile.provider
+                        or answer.model != profile.model
+                    ):
+                        raise ProviderError("provider execution identity mismatch")
+                    if not answer.text.strip():
+                        raise ProviderError("provider returned an empty answer")
+                except Exception as error:
+                    detail = self._record_failure(
+                        workload, priority, profile, estimated, reason, error
                     )
+                    if self._fallback_is_unsafe(error):
+                        self.errors += 1
+                        self.active_state = "request termination unconfirmed"
+                        raise ProviderError(
+                            f"{profile.key}: {detail}; fallback withheld"
+                        ) from error
+                    delay = self._retry_delay(error, attempt)
+                    if delay is not None:
+                        self.retry_at = self._clock() + delay
+                        await self._sleep(delay)
+                        self.retry_at = None
+                        continue
+                    errors.append(f"{profile.key}: {detail}")
+                    self._mark_provider_unavailable(profile, error)
+                    break
+                self.quota.record_success(profile, answer.usage)
                 self._record_event(
-                    workload,
-                    priority,
-                    profile,
-                    estimated,
-                    self.last_decision,
-                    "failed",
-                    detail,
+                    workload, priority, profile, estimated, reason, "success"
                 )
-                continue
-            if not answer.strip():
-                errors.append(f"{profile.key}: empty response")
-                continue
-            self.quota.record_success(profile, {})
-            self._record_event(
-                workload, priority, profile, estimated, self.last_decision, "success"
-            )
-            self.active_state, self.last_error = "response received", None
-            if index:
-                self.fallbacks += 1
-                self.session_provider, self.session_model_key = (
-                    profile.provider,
-                    profile.key,
-                )
-            return answer.strip()
+                self.active_state, self.last_error = "response received", None
+                if index:
+                    self.fallbacks += 1
+                    self.session_provider, self.session_model_key = (
+                        profile.provider,
+                        profile.key,
+                    )
+                return answer.text.strip()
         self.errors += 1
         self.active_state = "all eligible routes unavailable"
         raise ProviderError("All AI routes unavailable — " + " | ".join(errors))
+
+    def _extraction_estimate(self, batch: AIBatch) -> int:
+        return sum(estimate_tokens(part) for part in extraction_input_parts(batch))
+
+    def _answer_estimate(self, prompt: str) -> int:
+        return estimate_tokens(ANSWER_SYSTEM_PROMPT) + estimate_tokens(prompt)
+
+    async def _begin_attempt(
+        self,
+        workload: AIWorkload,
+        priority: RequestPriority,
+        profile: ModelProfile,
+        estimated: int,
+        policy_reason: str,
+    ) -> str | None:
+        available, _pressure, quota_reason = self.quota.available(
+            profile, estimated, priority
+        )
+        if not available:
+            self._set_active(profile, f"skipped: {quota_reason}")
+            return None
+        await self._wait_for_request_slot(profile)
+        reason = f"{profile.key}: {policy_reason}; {quota_reason} for {workload.value}"
+        self.last_decision = reason
+        self._record_event(workload, priority, profile, estimated, reason, "attempt")
+        self.quota.record_attempt(profile, estimated)
+        self.requests += 1
+        self._set_active(profile, "provider request in flight")
+        return reason
+
+    async def _wait_for_request_slot(self, profile: ModelProfile) -> None:
+        """Preserve the established model-specific RPM endpoint margin."""
+        if profile.rpm is None:
+            return
+        interval = 60.0 / max(1, profile.rpm - 1)
+        async with self._rate_lock:
+            now = self._clock()
+            slot = max(now, self._next_request_at.get(profile.key, 0.0))
+            delay = slot - now
+            if delay > 0:
+                await self._sleep(delay)
+            self._next_request_at[profile.key] = slot + interval
+
+    def _record_failure(
+        self,
+        workload: AIWorkload,
+        priority: RequestPriority,
+        profile: ModelProfile,
+        estimated: int,
+        reason: str,
+        error: Exception,
+    ) -> str:
+        detail = f"{type(error).__name__}: {error}"
+        cooldown = (
+            error.retry_after_seconds if isinstance(error, ProviderQuotaError) else None
+        )
+        self.quota.record_failure(profile, detail, cooldown)
+        self.last_error = f"{profile.key}: {detail}"
+        self._record_event(
+            workload, priority, profile, estimated, reason, "failed", detail
+        )
+        return detail
+
+    def _retry_delay(self, error: Exception, attempt: int) -> float | None:
+        if isinstance(error, ProviderQuotaError):
+            delay = error.retry_after_seconds
+            return delay if delay is not None and delay <= 60 and attempt == 0 else None
+        if isinstance(error, (ProviderConnectionError, ProviderTransientError)):
+            if attempt + 1 < self.settings.ai_max_retries:
+                return min(60.0, self.settings.ai_retry_base_seconds * (2**attempt))
+        return None
+
+    def _mark_provider_unavailable(
+        self, profile: ModelProfile, error: Exception
+    ) -> None:
+        if isinstance(error, ProviderConnectionError):
+            seconds = 300
+            self._provider_unavailable[profile.provider] = (
+                self._clock() + seconds,
+                f"network connection failed; retry after {seconds:g} seconds",
+            )
+
+    @staticmethod
+    def _fallback_is_unsafe(error: Exception) -> bool:
+        return (
+            isinstance(error, ProviderTimeoutError) and not error.termination_confirmed
+        )
 
     def _route_chain(self, workload: AIWorkload) -> str:
         return " → ".join(profile.key for profile in self._candidates(workload))
@@ -367,10 +454,21 @@ class AIRouter:
     async def _request_provider(
         self, provider: AIProvider, batch: AIBatch, profile: ModelProfile
     ) -> AIAnalysisResult:
-        analyze_model = getattr(provider, "analyze_model", None)
-        if analyze_model is not None:
-            return await analyze_model(batch, profile.model, profile.rpm)
-        return await provider.analyze(batch)
+        result = await provider.analyze(
+            ProviderAnalysisRequest(
+                batch=batch,
+                provider=profile.provider,
+                model=profile.model,
+                requests_per_minute=profile.rpm,
+            )
+        )
+        if result.provider != profile.provider or result.model != profile.model:
+            raise ProviderError(
+                "provider execution identity mismatch: selected "
+                f"{profile.provider}/{profile.model}, returned "
+                f"{result.provider}/{result.model}"
+            )
+        return result
 
     def _set_active(self, profile: ModelProfile, state: str) -> None:
         self.active_provider, self.active_model, self.active_state = (

@@ -41,12 +41,11 @@ class ModelProfile:
     key: str
     provider: str
     model: str
-    rpm: int | None
+    rpm: float | None
     tpm: int | None
     rpd: int | None
     max_input_tokens: int | None
     structured_output: bool = True
-    long_context: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,22 +70,20 @@ class ModelRegistry:
                 "gemini_35",
                 "gemini",
                 settings.gemini_primary_model,
-                settings.gemini_primary_rpm,
+                min(settings.gemini_primary_rpm, settings.gemini_requests_per_minute),
                 settings.gemini_primary_tpm,
                 settings.gemini_primary_rpd,
                 None,
-                True,
                 True,
             ),
             "gemini_31": ModelProfile(
                 "gemini_31",
                 "gemini",
                 settings.gemini_secondary_model,
-                settings.gemini_secondary_rpm,
+                min(settings.gemini_secondary_rpm, settings.gemini_requests_per_minute),
                 settings.gemini_secondary_tpm,
                 settings.gemini_secondary_rpd,
                 None,
-                True,
                 True,
             ),
             # Google documents gemma-4-31b-it as a hosted Gemini API model.
@@ -94,12 +91,11 @@ class ModelRegistry:
                 "gemma",
                 "gemini",
                 settings.gemma_short_model,
-                settings.gemma_short_rpm,
+                min(settings.gemma_short_rpm, settings.gemini_requests_per_minute),
                 settings.gemma_short_tpm,
                 settings.gemma_short_rpd,
                 settings.gemma_short_max_input_tokens,
                 True,
-                False,
             ),
             "groq": ModelProfile(
                 "groq",
@@ -110,7 +106,6 @@ class ModelRegistry:
                 None,
                 None,
                 True,
-                False,
             ),
         }
 
@@ -128,19 +123,44 @@ class ModelRegistry:
         requires_structured_output: bool = True,
     ) -> list[ModelProfile]:
         """Return the policy-eligible route order for one bounded workload."""
+        explanations = self.candidate_explanations(
+            workload, requires_structured_output=requires_structured_output
+        )
+        return [
+            self._profiles[key]
+            for key in self._policy_keys(workload)
+            if explanations[key].startswith("eligible:")
+        ]
+
+    def candidate_explanations(
+        self,
+        workload: AIWorkload,
+        *,
+        requires_structured_output: bool = True,
+    ) -> dict[str, str]:
+        """Return deterministic policy reasons for every configured profile."""
+        policy_keys = self._policy_keys(workload)
+        scope = "short-workload policy" if "gemma" in policy_keys else "context policy"
+        explanations: dict[str, str] = {}
+        for key, profile in self._profiles.items():
+            if key not in policy_keys:
+                explanations[key] = "excluded: short-workload model"
+            elif requires_structured_output and not profile.structured_output:
+                explanations[key] = "excluded: structured output required"
+            else:
+                explanations[key] = f"eligible: {scope}"
+        return explanations
+
+    def _policy_keys(self, workload: AIWorkload) -> tuple[str, ...]:
         short_workloads = {
             AIWorkload.MESSAGE_CLASSIFICATION,
             AIWorkload.SIMPLE_EXTRACTION,
         }
-        keys = (
+        return (
             ("gemini_35", "gemini_31", "gemma", "groq")
             if workload in short_workloads
             else ("gemini_35", "gemini_31", "groq")
         )
-        profiles = [self._profiles[key] for key in keys]
-        if requires_structured_output:
-            profiles = [profile for profile in profiles if profile.structured_output]
-        return profiles
 
     def forced(self) -> ModelProfile | None:
         override = self.settings.ai_routing_override

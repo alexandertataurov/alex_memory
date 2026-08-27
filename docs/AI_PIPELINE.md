@@ -50,22 +50,30 @@ matter (unknown scope, high-value/stale/actionable-question, or forwarded rows);
 approved manual classification reviews retain their authority.
 
 In `AI_ROUTING_MODE=quota_aware`, context extraction, reconciliation, memory
-Q&A, and Deep Dive work prefer Gemini 3.5 Flash Lite, then Gemini 3.1 Flash
-Lite, then Groq. Short classification and simple extraction prefer the hosted
-Gemma route (`gemma-4-31b-it`) when the prompt fits its configured input guard.
-The router estimates prompt tokens before dispatch, reserves the final 20% of
-the primary daily quota for interactive/critical work, keeps rolling RPM/TPM
-state locally, and persists aggregate daily attempts and token counts in
-`ai_model_usage`. No prompt content or credential is stored in routing telemetry.
+Q&A, and Deep Dive work use Gemini 3.5 Flash Lite, then Gemini 3.1 Flash Lite,
+then Groq. Short classification and simple extraction retain the configured
+hosted Gemma route (`gemma-4-31b-it`) as a bounded fallback when its input guard
+permits it. Structured-output requirements filter ineligible profiles before
+quota/health admission, and route diagnostics retain the deterministic policy
+reason for each selected profile.
+The router estimates the system instruction, provider-required schema
+instruction, and user prompt before each physical dispatch. It reserves the
+final 20% of the primary daily quota for interactive/critical work, keeps
+rolling RPM/TPM state locally, and persists aggregate daily attempts plus
+estimated and actual token counts in `ai_model_usage`. Gemini and Groq response
+metadata is normalized for extraction and grounded answers when the SDK returns
+it. No prompt content or credential is stored in routing telemetry.
 
-Gemini attempts—including provider retries—are paced to
-`GEMINI_REQUESTS_PER_MINUTE` (14.5 by default). The pacer uses a conservative
-rolling-window interval, avoiding an endpoint request that some providers count
-as a sixteenth request. A Gemini quota response is not retried immediately: the
-router honors a provider-supplied delay of up to 60 seconds and retries Gemini
-once before using Groq. Longer or unspecified cooldowns use Groq, then make
-Gemini eligible again after the cooldown. The quota reason is retained as
-fallback metadata rather than creating repeated failed batches.
+Providers perform one cancellable transport attempt only. The router owns every
+retry, pacing interval, attempt event, quota write, and success/failure record
+for both extraction and Q&A. Gemini model profiles are capped at the
+conservative `GEMINI_REQUESTS_PER_MINUTE` margin (14.5 by default); the router
+uses the same rolling-window interval for retry attempts. A short provider
+quota delay (up to 60 seconds) receives one router-owned retry; bounded
+connection and typed 5xx failures use the configured exponential retry limit.
+Longer quota cooldowns use Groq, then make Gemini eligible again after the
+cooldown. The quota reason is retained as fallback metadata rather than
+creating repeated failed batches.
 
 When a quota-aware alternative succeeds, that route is kept first for the rest
 of the active history run. This avoids repeatedly probing a provider that has
@@ -91,9 +99,10 @@ Every provider call is bounded by `AI_REQUEST_TIMEOUT_SECONDS` (45 by default),
 so an unresponsive SDK request becomes a durable failed job instead of leaving
 history analysis frozen. Groq uses its compatible JSON-object mode directly;
 it does not make a strict-schema preflight that the configured model can reject.
-If the SDK does not acknowledge cancellation, the request and client shutdown
-use non-blocking deadlines, so the history worker can persist one bounded
-failure and continue instead of remaining `running` indefinitely.
+After a Groq timeout, cancellation must settle before the router can retry or
+fall back. If its bounded cancellation confirmation does not arrive, the one
+physical attempt is recorded as failed and fallback is withheld rather than
+overlapping an unconfirmed request.
 History holds up to
 `HISTORY_INTERNAL_CONCURRENCY` queued windows but marks only the request that
 is actually at a provider as `running`.
@@ -115,6 +124,13 @@ batch diagnostic and does not mark any message analyzed. A malformed item is
 retained in `ai_item_rejections` while valid sibling observations remain
 acceptable. `project_name` is required (nullable) on every item and is used as
 an explicit source-backed task/project association.
+
+Every extraction provider call receives one explicit router-authorized request
+that names its provider and selected model. Gemini and Groq execute that
+request directly; Groq passes the selected model to its API call. Extraction
+and answer results both report provider/model identity and normalized usage.
+Before success accounting or persistence, the router rejects a result whose
+reported provider or model differs from the selected profile.
 
 Jobs store their exact ordered source-message membership and a deterministic
 selection fingerprint. Claiming rechecks deletion and chat-policy eligibility

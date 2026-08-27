@@ -18,6 +18,20 @@ from test_ai_pipeline import make_settings
 
 
 class AppLifecycleTests(unittest.TestCase):
+    def test_manual_daily_analysis_uses_interactive_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            app = AlexMemoryApp(settings, Console(file=StringIO(), width=100))
+            app.conn = connect(settings)
+            app.live_sync = object()
+            app.dialogs_cache = []
+            app._run_daily_analysis = AsyncMock()
+
+            asyncio.run(app.analyze_daily())
+
+            app._run_daily_analysis.assert_awaited_once_with()
+            app.conn.close()
+
     def test_scheduled_daily_analysis_uses_background_priority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))

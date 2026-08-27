@@ -577,9 +577,21 @@ def claim_ai_jobs(
                     ("superseded: membership no longer eligible", utc_now(), job_id),
                 )
             continue
-        batch = add_contextual_preamble(conn, batch, settings)
-        if lane == "history" and settings.ai_context_messages:
-            batch = add_history_context(conn, batch, settings)
+        try:
+            batch = add_contextual_preamble(conn, batch, settings)
+            if lane == "history" and settings.ai_context_messages:
+                batch = add_history_context(conn, batch, settings)
+        except Exception as error:
+            with conn:
+                conn.execute(
+                    """UPDATE ai_jobs SET status='failed',last_error=?
+                       WHERE job_id=? AND status='running'""",
+                    (
+                        f"context assembly: {type(error).__name__}: {error}"[:2000],
+                        job_id,
+                    ),
+                )
+            continue
         claimed.append((int(job_id), batch))
     return claimed
 

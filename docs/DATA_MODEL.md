@@ -104,12 +104,18 @@ projection without changing claim authority.
 `SemanticGraphProjector` is the sole writer of `graph_nodes`, `graph_edges`,
 and `graph_edge_claims`. It creates observed claim links and canonical entity
 nodes; only a task-to-project link already accepted by the deterministic task
-reducer becomes an accepted edge. Each edge has exact claim evidence, temporal
-first/last-seen values, a validity interval, confidence, and authority status.
+reducer becomes an accepted edge. Each automatic edge has exact claim evidence,
+temporal first/last-seen values, a validity interval, confidence, and authority
+status.
 An active manual task-to-project edge blocks later automatic replay and sends
 the new claim projection to Review without deleting either record.
 The old `relationships` table is still compatibility-only until its active
 callers move to graph queries; no historical conversion occurs at startup.
+`current_authoritative_edges` is a bounded, read-only contract for a future
+consumer: it returns only current canonical-node edges, admitting automatic
+edges solely for the existing `task --belongs_to--> project` reducer allowlist
+with immutable claim evidence. Manual edges remain manual without fabricated
+claim lineage. It does not yet replace any compatibility reader.
 
 ## Intelligence coverage
 

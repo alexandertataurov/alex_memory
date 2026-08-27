@@ -110,6 +110,16 @@ class AIAnalysisResult:
         return {"summary": self.summary, "items": self.items}
 
 
+@dataclass(frozen=True, slots=True)
+class AIAnswerResult:
+    """One provider response for a bounded grounded-answer request."""
+
+    provider: str
+    model: str
+    text: str
+    usage: dict[str, int | str] = field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class AISaveResult:
     inserted: int = 0

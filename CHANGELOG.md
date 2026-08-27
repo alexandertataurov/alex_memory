@@ -16,6 +16,48 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Added
 
+- AM-120 adds a bounded, read-only graph query contract for current canonical
+  relationships. It admits the existing accepted task-to-project projection
+  only with immutable claim evidence, excludes observed, source-less, and
+  expired edges, and preserves manual authority without invented AI lineage.
+  Fixtures also record the person/company relationship parity gap. No runtime
+  reader, migration, replay, repair, or live action ran.
+
+- AM-106 gives every physical Gemini/Groq extraction and grounded-answer call
+  one router-owned retry, conservative model pacing, quota/event record, and
+  usage boundary. Transmitted system/schema/user overhead is estimated without
+  storing prompts; Gemini and Groq SDK usage is normalized for both paths.
+  Unconfirmed Groq cancellation records the attempt and withholds fallback.
+  No migration or live action ran.
+
+- AM-105 makes Gemini requests cancellable at the SDK async-client boundary.
+  Timed-out Gemini routes finish cancellation before fallback, and owned clients
+  close with their Daily or History router. No migration or live action ran.
+
+- AM-104 replaces selected-model duck typing with one explicit provider request
+  contract. Gemini and Groq execute its selected model, and the router rejects
+  a mismatched returned provider/model before success accounting or persistence.
+  No model expansion, migration, or live action ran.
+
+- AM-102 is closed as a verified contract-parity task: the provider-neutral
+  response contract already rejects malformed semantic output without repair,
+  preserves raw payloads for repository validation, and records top-level and
+  per-item failures without accepting broken analysis. No code, migration, or
+  live action ran.
+
+- AM-101 separates provider failure from post-provider recovery: saved batches
+  replay canonical projection and context integration from durable state without
+  another model call, and post-save failures cannot create a synthetic provider
+  failure batch or reclaim the completed job. Context-assembly failure returns
+  the claimed job to a durable retryable state. No migration or live action ran.
+
+- AM-099 makes existing quota-aware routing semantics real: automatic Daily
+  work is background priority while manual work remains interactive; short and
+  context workloads have distinct bounded candidate policies; structured-output
+  admission and deterministic policy reasons are enforced; and the unused
+  long-context capability flag is removed. No provider/model expansion,
+  migration, or live action ran.
+
 - AM-098 makes lifecycle status truthful: writer counters follow commits;
   failed writers surface during sync/close; daemon startup avoids false active
   status; stale scheduled briefs are skipped; and incomplete shutdown is

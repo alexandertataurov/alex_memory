@@ -77,10 +77,12 @@ work during `connect()`.
 ### 2. One accountable AI request
 
 1. Complete AM-052, then AM-099 so model eligibility is a stated policy.
-2. Complete AM-104–AM-106: one provider contract and one owner for the physical
-   request, timeout/cancellation, retry, usage, and rate accounting.
-3. Complete AM-075 and AM-102: typed/restart-safe failures and strict
-   provider-neutral semantic validation before observation acceptance.
+2. Complete AM-106: one owner for physical-request retry, usage, and rate
+   accounting. AM-104 binds execution to the selected model; AM-105 provides
+   cancellable timeout handling and explicit provider-client cleanup.
+3. Complete AM-075: typed/restart-safe failures before observation acceptance.
+   AM-102 is complete: focused parity verification confirms strict
+   provider-neutral semantic validation already precedes acceptance.
 
 Exit: a physical request is counted once, failure scope is correct, and every
 route is eligible for a testable reason.

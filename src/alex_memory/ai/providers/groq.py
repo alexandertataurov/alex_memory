@@ -7,10 +7,18 @@ from contextlib import suppress
 from typing import Any
 
 from ...config import Settings
-from ...models import AIAnalysisResult, AIBatch
+from ...models import AIAnalysisResult, AIAnswerResult, AIBatch
 from ..extraction_contract import ExtractionContractError, validate_response
-from ..schema import AI_RESPONSE_SCHEMA, AI_SYSTEM_PROMPT
-from .base import ProviderError, ProviderQuotaError, ProviderTimeoutError
+from .base import (
+    ANSWER_SYSTEM_PROMPT,
+    ProviderAnalysisRequest,
+    ProviderConnectionError,
+    ProviderError,
+    ProviderQuotaError,
+    ProviderTimeoutError,
+    ProviderTransientError,
+    extraction_input_parts,
+)
 
 try:
     from groq import AsyncGroq as AsyncGroqClient
@@ -26,7 +34,18 @@ class GroqProvider:
         self.model = settings.groq_model
         self._client = client
 
-    async def analyze(self, batch: AIBatch) -> AIAnalysisResult:
+    async def analyze(
+        self, request: ProviderAnalysisRequest | AIBatch
+    ) -> AIAnalysisResult:
+        if isinstance(request, AIBatch):
+            request = ProviderAnalysisRequest(
+                batch=request,
+                provider=self.name,
+                model=self.model,
+                requests_per_minute=None,
+            )
+        if request.provider != self.name:
+            raise ProviderError(f"Groq cannot execute provider {request.provider!r}")
         if not self.settings.groq_api_key:
             raise ProviderError("GROQ_API_KEY is missing")
         if self._client is not None:
@@ -36,19 +55,30 @@ class GroqProvider:
                 raise ProviderError("Groq SDK is not installed; run uv sync")
             client = AsyncGroqClient(api_key=self.settings.groq_api_key)
         try:
-            result = await self._with_retries(client, batch)
+            completion = await self._request_with_timeout(
+                _request_json_object(
+                    client,
+                    request.batch,
+                    request.model,
+                    self.settings.ai_max_output_tokens,
+                )
+            )
+            result = _parse_completion(completion)
             return AIAnalysisResult(
                 provider=self.name,
-                model=self.model,
+                model=request.model,
                 summary=result.get("summary", "") if isinstance(result, dict) else "",
                 items=result.get("items", []) if isinstance(result, dict) else [],
+                usage=_usage(getattr(completion, "usage", None)),
                 raw_payload=result,
             )
+        except Exception as error:
+            raise _typed_error(error) from error
         finally:
             if self._client is None:
                 await _close(client)
 
-    async def answer(self, prompt: str, model: str) -> str:
+    async def answer(self, prompt: str, model: str) -> AIAnswerResult:
         if not self.settings.groq_api_key:
             raise ProviderError("GROQ_API_KEY is missing")
         client = self._client or (
@@ -65,10 +95,7 @@ class GroqProvider:
                     messages=[
                         {
                             "role": "system",
-                            "content": (
-                                "You are Alex Memory's grounded question-answering "
-                                "assistant. Never invent evidence or citations."
-                            ),
+                            "content": (ANSWER_SYSTEM_PROMPT),
                         },
                         {"role": "user", "content": prompt},
                     ],
@@ -80,46 +107,17 @@ class GroqProvider:
             content = completion.choices[0].message.content
             if not content:
                 raise ProviderError("Groq returned an empty response")
-            return str(content)
+            return AIAnswerResult(
+                self.name,
+                model,
+                str(content),
+                _usage(getattr(completion, "usage", None)),
+            )
+        except Exception as error:
+            raise _typed_error(error) from error
         finally:
             if self._client is None:
                 await _close(client)
-
-    async def _with_retries(self, client: Any, batch: AIBatch) -> dict:
-        last_error: Exception | None = None
-        for attempt in range(self.settings.ai_max_retries):
-            try:
-                # gpt-oss-20b rejects the strict-schema preflight for some
-                # otherwise valid extractions. Start with its compatible JSON
-                # object mode so a fallback is one bounded request, not two.
-                raw = await self._request_with_timeout(
-                    _request_json_object(
-                        client,
-                        batch,
-                        self.model,
-                        self.settings.ai_max_output_tokens,
-                    )
-                )
-                # Semantic validation is deliberately deferred until the
-                # repository records the exact provider response as a durable
-                # diagnostic. A malformed response is not a transport retry.
-                return raw
-            except Exception as error:
-                last_error = error
-                if _is_quota_error(error):
-                    message, retry_after = _quota_failure_details(error)
-                    raise ProviderQuotaError(
-                        message,
-                        retry_after_seconds=retry_after,
-                    ) from error
-                if attempt + 1 >= self.settings.ai_max_retries or not _is_retryable(
-                    error
-                ):
-                    break
-                await asyncio.sleep(_retry_after_seconds(error, attempt, self.settings))
-        raise ProviderError(
-            f"Groq failed: {type(last_error).__name__}: {last_error}"
-        ) from last_error
 
     async def _request_with_timeout(self, request):
         task = asyncio.create_task(request)
@@ -129,7 +127,19 @@ class GroqProvider:
         if task in done:
             return task.result()
         task.cancel()
-        task.add_done_callback(_consume_background_result)
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=1.0)
+        except asyncio.CancelledError as error:
+            raise ProviderTimeoutError(
+                "Groq request timed out after "
+                f"{self.settings.ai_request_timeout_seconds} seconds"
+            ) from error
+        except asyncio.TimeoutError as error:
+            task.add_done_callback(_consume_background_result)
+            raise ProviderTimeoutError(
+                "Groq request timed out and cancellation was not confirmed",
+                termination_confirmed=False,
+            ) from error
         raise ProviderTimeoutError(
             "Groq request timed out after "
             f"{self.settings.ai_request_timeout_seconds} seconds"
@@ -138,16 +148,13 @@ class GroqProvider:
 
 async def _request_json_object(
     client: Any, batch: AIBatch, model: str, max_output_tokens: int
-) -> dict:
-    fallback = (
-        batch.prompt
-        + "\n\nReturn one valid JSON object only, matching this schema:\n"
-        + json.dumps(AI_RESPONSE_SCHEMA, separators=(",", ":"))
-    )
+) -> Any:
+    system, prompt, schema_instruction = extraction_input_parts(batch)
+    fallback = prompt + "\n\n" + schema_instruction
     completion = await client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": AI_SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": fallback},
         ],
         response_format={"type": "json_object"},
@@ -156,7 +163,7 @@ async def _request_json_object(
         max_completion_tokens=max_output_tokens,
         stream=False,
     )
-    return _parse_completion(completion)
+    return completion
 
 
 def _parse_completion(completion: Any) -> dict:
@@ -232,6 +239,58 @@ def _is_retryable(error: Exception) -> bool:
         token in text
         for token in ("rate limit", "timeout", "connection", "network", "temporar")
     )
+
+
+def _is_connection_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return any(
+        marker in text
+        for marker in (
+            "connection error",
+            "connection failed",
+            "failed to connect",
+            "network error",
+            "network is unreachable",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "connection reset",
+            "connection aborted",
+            "server disconnected",
+            "broken pipe",
+        )
+    )
+
+
+def _typed_error(error: Exception) -> ProviderError:
+    if isinstance(error, ProviderError):
+        return error
+    if _is_quota_error(error):
+        message, retry_after = _quota_failure_details(error)
+        return ProviderQuotaError(message, retry_after_seconds=retry_after)
+    if _is_connection_error(error):
+        return ProviderConnectionError("Groq network connection failed")
+    if _is_retryable(error):
+        return ProviderTransientError("Groq server temporarily unavailable")
+    return ProviderError(f"Groq failed: {type(error).__name__}: {error}")
+
+
+def _usage(metadata: object) -> dict[str, int | str]:
+    if metadata is None:
+        return {}
+    result: dict[str, int | str] = {}
+    for source, target in (
+        ("prompt_tokens", "prompt_token_count"),
+        ("completion_tokens", "candidates_token_count"),
+        ("total_tokens", "total_token_count"),
+    ):
+        value = (
+            metadata.get(source)
+            if isinstance(metadata, dict)
+            else getattr(metadata, source, None)
+        )
+        if value is not None:
+            result[target] = int(value)
+    return result
 
 
 def _retry_after_seconds(error: Exception, attempt: int, settings: Settings) -> float:
