@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-085 entity-memory active-path removal
+
+Projection no longer copies accepted observation text into `entity_memory`.
+Context, retrieval, generic profiles, and FTS now use bounded direct
+`ai_items` rows with item provenance. Existing `entity_memory` rows remain
+inert legacy state; no automatic cleanup, migration, replay, or live operation
+changed.
+
 ## 2026-08-28 — AM-057 graph-refresh scheduling
 
 Graph improvement now records its affected canonical conversation, entity, task,

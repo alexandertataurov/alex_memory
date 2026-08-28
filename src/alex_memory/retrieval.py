@@ -363,23 +363,33 @@ def _append_entity_and_memory_results(
                     **{f"{kind}_id": int(entity_id)},
                 )
             )
-    key_match, key_params = _all_terms_like("memory_key", terms)
-    summary_match, summary_params = _all_terms_like("summary", terms)
+    key_match, key_params = _all_terms_like("title", terms)
+    summary_match, summary_params = _all_terms_like("details", terms)
     rows = conn.execute(
-        """SELECT entity_type,entity_id,memory_key,summary,updated_at,source_item_id
-           FROM entity_memory WHERE (%s OR %s) ORDER BY updated_at DESC LIMIT ?"""
+        """SELECT person_id,company_id,project_id,title,details,source_date,item_id
+           FROM ai_items WHERE (%s OR %s) ORDER BY source_date DESC,item_id DESC LIMIT ?"""
         % (key_match, summary_match),
         [*key_params, *summary_params, settings.qa_max_memories],
     ).fetchall()
-    for kind, entity_id, key, summary, updated, item_id in rows:
-        entity = (
-            {f"{kind}_id": int(entity_id)}
-            if kind in {"person", "company", "project"}
-            else {}
-        )
+    for person_id, company_id, project_id, key, summary, updated, item_id in rows:
+        entity = {
+            name: int(value)
+            for name, value in (
+                ("person_id", person_id),
+                ("company_id", company_id),
+                ("project_id", project_id),
+            )
+            if value is not None
+        }
         results.append(
             SearchResult(
-                "memory", key, summary[:800], updated, 60, source_id=item_id, **entity
+                "observation",
+                key,
+                summary[:800],
+                updated,
+                60,
+                source_id=item_id,
+                **entity,
             )
         )
 

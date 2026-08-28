@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-085 removes active copy-only `entity_memory` behavior. Projection no
+  longer creates copies; context, retrieval, profiles, and FTS use bounded,
+  source-backed accepted observations directly. Existing legacy rows remain
+  inert; no deletion, migration, replay, or live action ran.
+
 - AM-057 routes deterministic graph-improvement follow-up through scoped,
   revisioned context invalidations rather than broadly staling high/critical
   chat messages for AI re-analysis. No schema, replay, or live action ran.

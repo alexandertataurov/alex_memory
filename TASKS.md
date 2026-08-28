@@ -377,13 +377,18 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - SQL fallback is bounded and order-insensitive.
   - Verification: unresolved query with no global leakage, exact source-message grounding, noisy related-chat rejection, unrelated latest-chat-message rejection, person/company/project/task scope, historical `as_of`, multiple summaries, word-order fallback, and FTS/SQL parity tests.
 
-- [ ] AM-085 [P1] [Memory / Anti-slop] — Remove copy-only `entity_memory` behavior and keep only memory that adds information.
+- [x] AM-085 [P1] [Memory / Anti-slop] — Remove copy-only `entity_memory` behavior and keep only memory that adds information.
+  - Plan: `docs/exec-plans/completed/AM-085-entity-memory-removal.md`.
   - Evidence from live DB: **753/753** `entity_memory.summary` rows are exact copies of `ai_items.title + ": " + ai_items.details`.
   - Code evidence: `process_ai_batch()` persists `f"{title}: {details}"` into `entity_memory`; there is no consolidation, supersession, multi-source merge, or state transition.
   - Context-engine evidence: `ContextBuilder._summaries()` reads this copied layer as `DURABLE SUMMARIES`, and `ContextService._refresh_person_state()` also uses it to build person current/long-term summaries. The duplicate observation therefore contaminates more authoritative-looking context layers.
   - Acceptance: either make `entity_memory` a true consolidated multi-observation memory with a distinct consumer/invariant, or remove it from active retrieval/context/profile paths and use source-backed observations/facts/events directly.
   - Anti-slop rule: no persisted layer may exist solely to rename/copy another derived record.
   - Verification: retrieval/context/profile parity before deprecation/removal, provenance retained, and no copied summaries recreated after repair.
+  - Completed 2026-08-28: removed active projection, context, retrieval,
+    generic-profile, and FTS paths. Bounded source-backed `ai_items` now serve
+    those consumers directly with item provenance. Existing rows are inert
+    legacy state; no deletion, migration, replay, or live action ran.
 
 - [ ] AM-094 [P0] [Ask Memory / AI routing / Anti-vibe] — Rebuild Ask Memory around one real retrieval→evidence→router pipeline and remove its private provider stack.
   - Code evidence: `answer_question_with_ai()` directly calls `_gemini_qa()` and then `_groq_qa()`; it never uses the quota-aware `AIRouter`, model registry, workload policy, persistent model usage, cooldown reasons, or configured fallback chain.

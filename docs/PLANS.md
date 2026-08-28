@@ -21,6 +21,7 @@ fix.
 
 ## Completed
 
+- [AM-085 entity-memory removal](exec-plans/completed/AM-085-entity-memory-removal.md)
 - [AM-057 context freshness](exec-plans/completed/AM-057-context-freshness.md)
 - [AM-053 context dirty queue](exec-plans/completed/AM-053-context-dirty-queue.md)
 - [AM-070 task-project links](exec-plans/completed/AM-070-task-project-links.md)

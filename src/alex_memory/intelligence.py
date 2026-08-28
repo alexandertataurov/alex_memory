@@ -452,9 +452,13 @@ def profile(conn: sqlite3.Connection, entity_type: str, entity_id: int) -> dict:
         f"SELECT task_id,title,status,due_date FROM tasks WHERE related_{entity_type}_id=? ORDER BY updated_at DESC LIMIT 20",
         (entity_id,),
     ).fetchall()
+    column = {"person": "person_id", "company": "company_id", "project": "project_id"}[
+        entity_type
+    ]
     memories = conn.execute(
-        "SELECT summary,updated_at FROM entity_memory WHERE entity_type=? AND entity_id=? ORDER BY updated_at DESC LIMIT 12",
-        (entity_type, entity_id),
+        f"""SELECT title || ': ' || details,source_date FROM ai_items
+            WHERE {column}=? ORDER BY source_date DESC,item_id DESC LIMIT 12""",
+        (entity_id,),
     ).fetchall()
     data = {"entity": entity, "tasks": tasks, "memories": memories}
     if entity_type == "person":

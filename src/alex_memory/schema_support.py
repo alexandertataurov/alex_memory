@@ -12,7 +12,6 @@ FTS_TABLES = (
     "memory_fts",
     "summaries_fts",
     "entities_fts",
-    "entity_memory_fts",
 )
 
 FTS_TRIGGERS = (
@@ -37,9 +36,6 @@ FTS_TRIGGERS = (
     "projects_fts_insert",
     "projects_fts_update",
     "projects_fts_delete",
-    "entity_memory_fts_insert",
-    "entity_memory_fts_update",
-    "entity_memory_fts_delete",
 )
 
 
@@ -191,7 +187,6 @@ def create_fts(conn: sqlite3.Connection) -> None:
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(title, details, item_id UNINDEXED);
             CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5(summary, source_type UNINDEXED, source_id UNINDEXED);
             CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(name, entity_type UNINDEXED, entity_id UNINDEXED);
-            CREATE VIRTUAL TABLE IF NOT EXISTS entity_memory_fts USING fts5(summary, entity_type UNINDEXED, entity_id UNINDEXED);
             CREATE TRIGGER IF NOT EXISTS messages_fts_insert AFTER INSERT ON messages BEGIN
                 INSERT INTO messages_fts(text, chat_id, message_id) VALUES (NEW.text, NEW.chat_id, NEW.message_id);
             END;
@@ -212,9 +207,6 @@ def create_fts(conn: sqlite3.Connection) -> None:
             END;
             CREATE TRIGGER IF NOT EXISTS projects_fts_insert AFTER INSERT ON projects BEGIN
                 INSERT INTO entities_fts(name, entity_type, entity_id) VALUES (NEW.canonical_name, 'project', NEW.project_id);
-            END;
-            CREATE TRIGGER IF NOT EXISTS entity_memory_fts_insert AFTER INSERT ON entity_memory BEGIN
-                INSERT INTO entity_memory_fts(summary, entity_type, entity_id) VALUES (NEW.summary, NEW.entity_type, NEW.entity_id);
             END;
         """
     )
@@ -242,7 +234,6 @@ def rebuild_fts(conn: sqlite3.Connection) -> None:
         CREATE VIRTUAL TABLE memory_fts USING fts5(title, details, item_id UNINDEXED);
         CREATE VIRTUAL TABLE summaries_fts USING fts5(summary, source_type UNINDEXED, source_id UNINDEXED);
         CREATE VIRTUAL TABLE entities_fts USING fts5(name, entity_type UNINDEXED, entity_id UNINDEXED);
-        CREATE VIRTUAL TABLE entity_memory_fts USING fts5(summary, entity_type UNINDEXED, entity_id UNINDEXED, memory_key UNINDEXED);
 
         INSERT INTO messages_fts(text,chat_id,message_id)
         SELECT text,chat_id,message_id FROM messages
@@ -265,9 +256,6 @@ def rebuild_fts(conn: sqlite3.Connection) -> None:
         UNION ALL
         SELECT canonical_name,'project',project_id FROM projects
         WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'';
-        INSERT INTO entity_memory_fts(summary,entity_type,entity_id,memory_key)
-        SELECT summary,entity_type,entity_id,memory_key FROM entity_memory
-        WHERE trim(COALESCE(summary,''))<>'';
 
         CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
             INSERT INTO messages_fts(text,chat_id,message_id)
@@ -366,20 +354,6 @@ def rebuild_fts(conn: sqlite3.Connection) -> None:
             DELETE FROM entities_fts WHERE entity_type='project' AND entity_id=OLD.project_id;
         END;
 
-        CREATE TRIGGER entity_memory_fts_insert AFTER INSERT ON entity_memory BEGIN
-            INSERT INTO entity_memory_fts(summary,entity_type,entity_id,memory_key)
-            SELECT NEW.summary,NEW.entity_type,NEW.entity_id,NEW.memory_key WHERE trim(COALESCE(NEW.summary,''))<>'';
-        END;
-        CREATE TRIGGER entity_memory_fts_update AFTER UPDATE ON entity_memory BEGIN
-            DELETE FROM entity_memory_fts
-            WHERE entity_type=OLD.entity_type AND entity_id=OLD.entity_id AND memory_key=OLD.memory_key;
-            INSERT INTO entity_memory_fts(summary,entity_type,entity_id,memory_key)
-            SELECT NEW.summary,NEW.entity_type,NEW.entity_id,NEW.memory_key WHERE trim(COALESCE(NEW.summary,''))<>'';
-        END;
-        CREATE TRIGGER entity_memory_fts_delete AFTER DELETE ON entity_memory BEGIN
-            DELETE FROM entity_memory_fts
-            WHERE entity_type=OLD.entity_type AND entity_id=OLD.entity_id AND memory_key=OLD.memory_key;
-        END;
         """
     )
     health = fts_index_health(conn)
@@ -411,10 +385,6 @@ def fts_index_health(conn: sqlite3.Connection) -> dict[str, object]:
         "entities": (
             "SELECT canonical_name,'person',person_id FROM people WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'company',company_id FROM companies WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'project',project_id FROM projects WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>''",
             "SELECT name,entity_type,entity_id FROM entities_fts",
-        ),
-        "entity_memory": (
-            "SELECT summary,entity_type,entity_id,memory_key FROM entity_memory WHERE trim(COALESCE(summary,''))<>''",
-            "SELECT summary,entity_type,entity_id,memory_key FROM entity_memory_fts",
         ),
     }
     indexes: dict[str, dict[str, int | bool]] = {}

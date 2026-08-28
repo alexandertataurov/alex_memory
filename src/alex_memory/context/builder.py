@@ -435,16 +435,23 @@ class ContextBuilder:
     ) -> list[dict]:
         result: list[dict] = []
         for (kind, entity_id), distance in distances.items():
+            column = {
+                "person": "person_id",
+                "company": "company_id",
+                "project": "project_id",
+            }[kind]
             rows = self.conn.execute(
-                "SELECT memory_key,summary,source_item_id,confidence,updated_at FROM entity_memory WHERE entity_type=? AND entity_id=? AND updated_at<=? ORDER BY updated_at DESC LIMIT 8",
-                (kind, entity_id, as_of),
+                f"""SELECT title,details,item_id,confidence,source_date FROM ai_items
+                    WHERE {column}=? AND source_date<=?
+                    ORDER BY source_date DESC,item_id DESC LIMIT 8""",
+                (entity_id, as_of),
             ).fetchall()
             for row in rows:
                 item = {
                     "entity_type": kind,
                     "entity_id": entity_id,
                     "memory_key": row[0],
-                    "summary": row[1],
+                    "summary": f"{row[0]}: {row[1]}"[:2000],
                     "source_ai_item_id": row[2],
                     "confidence": row[3],
                     "updated_at": row[4],

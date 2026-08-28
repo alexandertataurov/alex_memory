@@ -603,6 +603,9 @@ class OperationalMemoryTests(unittest.TestCase):
             self.assertEqual(
                 1, conn.execute("SELECT COUNT(*) FROM memory_chunks").fetchone()[0]
             )
+            self.assertEqual(
+                0, conn.execute("SELECT COUNT(*) FROM entity_memory").fetchone()[0]
+            )
             direct_person = conn.execute(
                 "SELECT person_id FROM people WHERE telegram_user_id=100"
             ).fetchone()[0]

@@ -20,7 +20,6 @@ from .utils import utc_now
 
 
 TASK_KINDS = {"task", "follow_up", "deadline", "promise_by_me", "promise_to_me"}
-DURABLE_KINDS = {"important_fact", "project", "payment", "commitment"}
 _INFORMATION_SCOPES = {
     "personal",
     "private_group",
@@ -903,28 +902,6 @@ def _project_ai_batch(
             project_id=project_id,
             task_id=task_id,
         )
-        if (
-            kind in DURABLE_KINDS
-            and float(confidence) >= settings.ai_auto_accept_confidence
-        ):
-            for entity_type, entity_id in (
-                ("person", person_id),
-                ("company", company_id),
-                ("project", project_id),
-            ):
-                if entity_id:
-                    conn.execute(
-                        "INSERT INTO entity_memory(entity_type, entity_id, memory_key, summary, source_item_id, confidence, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(entity_type, entity_id, memory_key) DO UPDATE SET summary=excluded.summary, source_item_id=excluded.source_item_id, confidence=excluded.confidence, updated_at=excluded.updated_at",
-                        (
-                            entity_type,
-                            entity_id,
-                            normalize_task_title(title)[:160],
-                            f"{title}: {details}"[:2000],
-                            item_id,
-                            confidence,
-                            now,
-                        ),
-                    )
     context_service.process_batch_temporal(batch_id)
 
 
@@ -1497,7 +1474,6 @@ def _merge_entities(
             (entity_type, discard_entity_id),
         )
         for reference_table, type_column, id_column_name in (
-            ("entity_memory", "entity_type", "entity_id"),
             ("context_facts", "subject_type", "subject_id"),
             ("context_summary_versions", "entity_type", "entity_id"),
             ("user_feedback", "entity_type", "entity_id"),
@@ -1524,10 +1500,6 @@ def _merge_entities(
                     WHERE (from_type=? AND from_id=?) OR (to_type=? AND to_id=?)""",
                 (entity_type, discard_entity_id, entity_type, discard_entity_id),
             )
-        conn.execute(
-            "DELETE FROM entity_memory WHERE entity_type=? AND entity_id=?",
-            (entity_type, discard_entity_id),
-        )
         if entity_type == "person":
             from .context.contact_materializer import ContactContextMaterializer
 
