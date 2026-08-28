@@ -37,20 +37,21 @@ class ContextService:
             source_date,
         ) = item
         event_type = _event_type(kind, status)
-        add_event(
-            self.conn,
-            event_type=event_type,
-            title=title,
-            description=details,
-            occurred_at=source_date or utc_now(),
-            person_id=person_id,
-            company_id=company_id,
-            project_id=project_id,
-            source_chat_id=chat_id,
-            source_message_id=source_message_id,
-            source_ai_item_id=item_id,
-            confidence=confidence,
-        )
+        if event_type is not None:
+            add_event(
+                self.conn,
+                event_type=event_type,
+                title=title,
+                description=details,
+                occurred_at=source_date or utc_now(),
+                person_id=person_id,
+                company_id=company_id,
+                project_id=project_id,
+                source_chat_id=chat_id,
+                source_message_id=source_message_id,
+                source_ai_item_id=item_id,
+                confidence=confidence,
+            )
         if person_id and project_id:
             ensure_relationship(
                 self.conn,
@@ -194,7 +195,7 @@ class ContextService:
         )
 
 
-def _event_type(kind: str, status: str) -> str:
+def _event_type(kind: str, status: str) -> str | None:
     if kind.startswith("promise"):
         return "promise_completed" if status == "done" else "promise_created"
     if kind in {"task", "follow_up", "deadline"}:
@@ -203,4 +204,4 @@ def _event_type(kind: str, status: str) -> str:
         return "payment_discussed"
     if kind == "project":
         return "project_blocked" if status == "waiting" else "project_updated"
-    return "observation_recorded"
+    return None

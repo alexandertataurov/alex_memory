@@ -139,6 +139,14 @@ class ConversationIntelligenceTests(unittest.TestCase):
     def test_person_scoped_answer_uses_contact_context_and_timeline_is_cited(
         self,
     ) -> None:
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+               VALUES (1,'note','Michael prefers email','Use email for updates.',
+                       'informational','unknown',0.9,10,2,'2026-06-03T09:00:00+00:00',?,'now',
+                       'michael-prefers-email')""",
+            (self.person_id,),
+        )
         service = ConversationContextService(self.conn, self.settings)
         service.refresh_person(self.person_id)
         answer, sources = answer_question(
@@ -148,6 +156,13 @@ class ConversationIntelligenceTests(unittest.TestCase):
         self.assertTrue(sources)
         timeline = service.timeline(self.person_id)
         self.assertTrue(any(item["kind"] == "event" for item in timeline))
+        self.assertTrue(
+            any(
+                item["kind"] == "observation"
+                and item["title"] == "Michael prefers email"
+                for item in timeline
+            )
+        )
 
     def test_manual_person_merge_moves_materialized_contact_context(self) -> None:
         duplicate = EntityResolver(self.conn).person("Misha", source="manual")

@@ -549,11 +549,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Dependency: fix this before large task→project backfill/reprojection creates `project_work_status` slop.
   - Verification: multiple simultaneous project tasks, document mention unrelated to KYB, legitimate document-status transition, stale conflict resolution, duplicate replay, and predicate-contract tests.
 
-- [ ] AM-086 [P1] [Events / Anti-slop] — Stop creating generic `observation_recorded` context events that duplicate AI observations.
+- [x] AM-086 [P1] [Events / Anti-slop] — Stop creating generic `observation_recorded` context events that duplicate AI observations.
+  - Plan: `docs/exec-plans/completed/AM-086-observation-event-removal.md`.
   - Evidence from live DB: **612/612** `context_events(event_type='observation_recorded')` copy the source AI item's title and details exactly.
   - Acceptance: retain only semantic events that represent an actual dated/state occurrence (task lifecycle, promise lifecycle, payment, meeting, decision, project change, etc.); ordinary observations remain in `ai_items`.
   - Consumers must use the original observation when an event adds no semantics instead of relying on a duplicate wrapper.
   - Repair: safely remove/rebuild only duplicate derived events after consumers are migrated.
+  - Completed 2026-08-28: ordinary observations stay as source-backed
+    `ai_items`; only explicit semantic mappings create events. Context,
+    profile, related retrieval, and contact timeline readers ignore retained
+    legacy wrappers and retain the direct observation. No migration, replay,
+    deletion, or live repair ran.
   - Verification: timelines, Search, context packages, and Deep Dive retain evidence coverage without duplicate entries.
 
 - [ ] AM-087 [P1] [Conversation intelligence] — Rebuild contact/conversation materializations after source-identity and freshness fixes.

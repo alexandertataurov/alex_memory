@@ -13,7 +13,6 @@ discoveries, and final outcome. Do not create a plan for a small self-contained
 fix.
 
 ## Active
-
 - [AM-074 repair](exec-plans/active/AM-074.md)
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
@@ -21,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-086 duplicate observation-event removal](exec-plans/completed/AM-086-observation-event-removal.md)
 - [AM-085 entity-memory removal](exec-plans/completed/AM-085-entity-memory-removal.md)
 - [AM-057 context freshness](exec-plans/completed/AM-057-context-freshness.md)
 - [AM-053 context dirty queue](exec-plans/completed/AM-053-context-dirty-queue.md)

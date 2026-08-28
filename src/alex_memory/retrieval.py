@@ -142,6 +142,33 @@ def retrieve_related(
             )
         )
 
+    observation_column = "item_id" if entity_type == "task" else f"{entity_type}_id"
+    observation_time = " AND source_date<=?" if as_of else ""
+    observation_params: list[object] = [entity_id]
+    if as_of:
+        observation_params.append(as_of)
+    for item_id, title, details, source_date, chat, message in conn.execute(
+        """SELECT item_id,title,COALESCE(details,''),source_date,source_chat_id,source_message_id
+           FROM ai_items WHERE """
+        + observation_column
+        + "=?"
+        + observation_time
+        + " ORDER BY source_date DESC,item_id DESC LIMIT ?",
+        [*observation_params, settings.context_max_events],
+    ):
+        results.append(
+            SearchResult(
+                "observation",
+                str(title),
+                str(details)[:800],
+                source_date,
+                88,
+                chat_id=chat,
+                message_id=message,
+                source_id=item_id,
+            )
+        )
+
     event_column = "task_id" if entity_type == "task" else f"{entity_type}_id"
     event_time = " AND COALESCE(occurred_at,observed_at,created_at)<=?" if as_of else ""
     event_params: list[object] = [entity_id]
@@ -149,7 +176,7 @@ def retrieve_related(
         event_params.append(as_of)
     for event_id, title, description, occurred_at, chat, message in conn.execute(
         """SELECT event_id,title,COALESCE(description,''),occurred_at,source_chat_id,source_message_id
-           FROM context_events WHERE """
+           FROM context_events WHERE event_type != 'observation_recorded' AND """
         + event_column
         + "=?"
         + event_time

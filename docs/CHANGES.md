@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-086 duplicate observation-event removal
+
+Ordinary accepted observations no longer create generic context-event wrappers.
+Semantic task, promise, payment, and project events remain. Context and profile
+event views exclude legacy wrappers, while related retrieval and contact
+timelines use the original bounded `ai_items` observation. No migration,
+replay, deletion, or live repair ran.
+
 ## 2026-08-28 — AM-085 entity-memory active-path removal
 
 Projection no longer copies accepted observation text into `entity_memory`.

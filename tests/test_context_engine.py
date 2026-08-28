@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.console import Console
 
 from alex_memory.context import ContextBuilder, ContextRequest, ContextService
-from alex_memory.context.repository import current_facts, set_temporal_fact
+from alex_memory.context.repository import add_event, current_facts, set_temporal_fact
 from alex_memory.context.temporal import resolve_temporal_expressions
 from alex_memory.database import connect
 from alex_memory.ui.screens import show_context_view
@@ -113,6 +113,71 @@ class ContextEngineTests(unittest.TestCase):
                 0
             ],
         )
+
+    def test_ordinary_observation_does_not_create_a_context_event(self) -> None:
+        ContextService(self.conn, self.settings).process_ai_item(
+            (
+                101,
+                "note",
+                "Michael prefers email",
+                "Use email for updates.",
+                "informational",
+                "unknown",
+                None,
+                0.9,
+                100,
+                1,
+                "2026-08-19T10:00:00+00:00",
+            ),
+            self.person_id,
+            None,
+            None,
+        )
+        self.assertEqual(
+            0,
+            self.conn.execute("SELECT COUNT(*) FROM context_events").fetchone()[0],
+        )
+
+    def test_semantic_ai_item_still_creates_a_context_event(self) -> None:
+        ContextService(self.conn, self.settings).process_ai_item(
+            (
+                102,
+                "payment",
+                "Payment discussed",
+                "Michael confirmed the transfer.",
+                "informational",
+                "unknown",
+                None,
+                0.9,
+                100,
+                1,
+                "2026-08-19T10:00:00+00:00",
+            ),
+            self.person_id,
+            None,
+            None,
+        )
+        self.assertEqual(
+            "payment_discussed",
+            self.conn.execute("SELECT event_type FROM context_events").fetchone()[0],
+        )
+
+    def test_context_excludes_legacy_observation_event_wrapper(self) -> None:
+        add_event(
+            self.conn,
+            event_type="observation_recorded",
+            title="Michael prefers email",
+            description="Use email for updates.",
+            occurred_at="2026-08-19T10:00:00+00:00",
+            person_id=self.person_id,
+            confidence=0.9,
+        )
+
+        context = ContextBuilder(self.conn, self.settings).build(
+            ContextRequest(person_ids=[self.person_id])
+        )
+
+        self.assertEqual([], context.events)
 
     def test_context_view_renders_without_unrelated_table(self) -> None:
         class Context:

@@ -457,7 +457,8 @@ def _events(conn: sqlite3.Connection, person_id: int) -> list[dict]:
     rows = conn.execute(
         """SELECT event_id,event_type,title,description,occurred_at,confidence,source_claim_id,
                   source_chat_id,source_message_id,source_ai_item_id FROM context_events
-           WHERE person_id=? ORDER BY occurred_at DESC,created_at DESC LIMIT 12""",
+           WHERE person_id=? AND event_type != 'observation_recorded'
+           ORDER BY occurred_at DESC,created_at DESC LIMIT 12""",
         (person_id,),
     ).fetchall()
     return [

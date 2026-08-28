@@ -160,6 +160,30 @@ class IntelligenceTests(unittest.TestCase):
         rows = retrieve_related(self.conn, "person", self.person_id, self.settings)
         self.assertEqual([self.task_id], [row.task_id for row in rows if row.task_id])
 
+    def test_related_retrieval_uses_observation_not_legacy_wrapper(self) -> None:
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+               VALUES (1,'note','Michael prefers email','Use email for updates.',
+                       'informational','unknown',0.9,100,1,'2026-08-21T12:00:00+00:00',?,'now',
+                       'michael-prefers-email')""",
+            (self.person_id,),
+        )
+        self.conn.execute(
+            """INSERT INTO context_events(event_type,title,description,occurred_at,observed_at,
+               person_id,source_ai_item_id,confidence,created_at)
+               VALUES ('observation_recorded','Michael prefers email','Use email for updates.',
+                       '2026-08-21T12:00:00+00:00','2026-08-21T12:00:00+00:00',?,1,0.9,'now')""",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        rows = retrieve_related(self.conn, "person", self.person_id, self.settings)
+
+        observations = [row for row in rows if row.result_type == "observation"]
+        self.assertEqual(["Michael prefers email"], [row.title for row in observations])
+        self.assertNotIn("event", [row.result_type for row in rows])
+
     def test_related_retrieval_supports_each_canonical_scope(self) -> None:
         now = "2026-08-21T12:00:00+00:00"
         company_id = self.conn.execute(

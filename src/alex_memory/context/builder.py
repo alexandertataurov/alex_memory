@@ -350,7 +350,8 @@ class ContextBuilder:
         rows = self.conn.execute(
             f"""SELECT event_id,event_type,title,description,occurred_at,person_id,company_id,
                        project_id,task_id,source_chat_id,source_message_id,source_claim_id,confidence,created_at
-                FROM context_events WHERE {" AND ".join(predicates)}
+                FROM context_events WHERE event_type != 'observation_recorded'
+                  AND {" AND ".join(predicates)}
                 ORDER BY COALESCE(occurred_at,created_at) DESC LIMIT ?""",
             [*params, self.settings.context_max_events * 3],
         ).fetchall()

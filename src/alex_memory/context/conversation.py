@@ -109,10 +109,14 @@ class ConversationContextService:
         cutoff = as_of.isoformat() if as_of else "9999-12-31T23:59:59+00:00"
         rows = self.conn.execute(
             """SELECT occurred_at,title,description,source_chat_id,source_message_id,'event',event_id
-               FROM context_events WHERE person_id=? AND occurred_at<=?
+               FROM context_events WHERE person_id=? AND event_type != 'observation_recorded'
+                 AND occurred_at<=?
                UNION ALL
                SELECT updated_at,title,details,source_chat_id,NULL,'task',task_id
                FROM tasks WHERE related_person_id=? AND updated_at<=?
+               UNION ALL
+               SELECT source_date,title,details,source_chat_id,source_message_id,'observation',item_id
+               FROM ai_items WHERE person_id=? AND source_date<=?
                UNION ALL
                SELECT date,text,'',chat_id,message_id,'message',message_id
                FROM messages WHERE chat_id IN (
@@ -123,7 +127,16 @@ class ConversationContextService:
                    WHERE chat_id=messages.chat_id AND importance IN ('high','critical')
                  )
                ORDER BY 1 DESC LIMIT 100""",
-            (person_id, cutoff, person_id, cutoff, person_id, cutoff),
+            (
+                person_id,
+                cutoff,
+                person_id,
+                cutoff,
+                person_id,
+                cutoff,
+                person_id,
+                cutoff,
+            ),
         ).fetchall()
         seen: set[tuple[str, str]] = set()
         timeline: list[dict[str, Any]] = []

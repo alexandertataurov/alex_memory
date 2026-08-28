@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-086 stops projecting ordinary observations as duplicate
+  `observation_recorded` context events. Event readers ignore legacy wrappers;
+  related retrieval and contact timelines retain the original bounded
+  source-backed observation. Existing rows are inert pending separate repair.
 - AM-085 removes active copy-only `entity_memory` behavior. Projection no
   longer creates copies; context, retrieval, profiles, and FTS use bounded,
   source-backed accepted observations directly. Existing legacy rows remain
