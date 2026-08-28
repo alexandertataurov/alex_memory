@@ -664,18 +664,32 @@ class TaskReconciler:
 
 
 def backfill_task_project_links(
-    conn: sqlite3.Connection, settings: Settings, *, limit: int
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    limit: int,
+    task_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
     """Repair at most ``limit`` unlinked tasks from bounded accepted evidence."""
     if limit < 1:
         raise ValueError("Task-project repair limit must be positive")
+    if task_ids is not None and (not task_ids or len(task_ids) > limit):
+        raise ValueError("Task-project repair IDs must be non-empty and within limit")
+    where = "t.related_project_id IS NULL AND t.source_chat_id IS NOT NULL"
+    params: tuple[int, ...] = (limit,)
+    if task_ids is not None:
+        placeholders = ",".join("?" for _ in task_ids)
+        where += f" AND t.task_id IN ({placeholders})"
+        params = task_ids
     rows = conn.execute(
         """SELECT t.task_id,t.title,t.details,t.source_chat_id,i.batch_id,
                   i.source_message_id,i.source_date,t.related_person_id,t.related_company_id
            FROM tasks AS t JOIN ai_items AS i ON i.item_id=t.source_item_id
-           WHERE t.related_project_id IS NULL AND t.source_chat_id IS NOT NULL
-           ORDER BY t.task_id LIMIT ?""",
-        (limit,),
+           WHERE """
+        + where
+        + " ORDER BY t.task_id"
+        + (" LIMIT ?" if task_ids is None else ""),
+        params,
     ).fetchall()
     reconciler = TaskReconciler(conn, settings)
     linked = reviewed = 0

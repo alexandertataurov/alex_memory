@@ -16,6 +16,10 @@ a matching dry-run fingerprint plus a separate recovery receipt, records the
 checkpoint in the existing metadata table in the same transaction, and returns
 the recorded outcome on retry. No operator apply command is exposed.
 
+The checkpoint retains the exact selected task IDs privately; the dry-run
+report exposes only a digest. Retries therefore cannot move to newly eligible
+tasks after state changes.
+
 ## 2026-08-27 — AM-120 manual-relationship authority parity
 
 An accepted `graph_link` review now writes a manual person/company-to-project

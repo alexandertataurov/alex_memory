@@ -79,6 +79,10 @@ class OperationalMemoryTests(unittest.TestCase):
                     1, report["operations"]["task-project"]["eligible_units"]
                 )
                 self.assertTrue(report["operations"]["task-project"]["truncated"])
+                self.assertRegex(
+                    str(report["operations"]["task-project"]["unit_fingerprint"]),
+                    r"^[0-9a-f]{64}$",
+                )
                 self.assertRegex(str(report["fingerprint"]), r"^[0-9a-f]{64}$")
                 with self.assertRaisesRegex(ValueError, "at least one"):
                     derived_state_repair_dry_run(conn, operations=set())
@@ -147,6 +151,15 @@ class OperationalMemoryTests(unittest.TestCase):
                             (f"derived_state_repair:{report['fingerprint']}",),
                         ).fetchone()[0]
                     )["status"],
+                )
+                self.assertEqual(
+                    [1],
+                    json.loads(
+                        conn.execute(
+                            "SELECT value FROM app_meta WHERE key=?",
+                            (f"derived_state_repair:{report['fingerprint']}",),
+                        ).fetchone()[0]
+                    )["task_ids"],
                 )
                 self.assertEqual(
                     "already-complete",

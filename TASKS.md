@@ -304,6 +304,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     matching dry-run fingerprint and a separate recovery receipt, commits its
     bounded operation and checkpoint together, and is retry-safe. No operator
     apply command or production execution is authorized.
+  - Progress 2026-08-28: task-project checkpoints retain the exact selected
+    task IDs privately while dry-run output exposes only their digest; retry
+    cannot drift to a newly eligible task set.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.

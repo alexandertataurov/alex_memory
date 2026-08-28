@@ -28,6 +28,9 @@ All notable user- and developer-visible changes are recorded here. This project 
   requires the matching dry-run fingerprint and a separate recovery receipt;
   the bounded repair and checkpoint commit together, and retries return the
   recorded outcome. No operator apply command is exposed.
+- AM-074 task-project checkpoints now retain the exact selected task IDs
+  privately while dry-run output exposes only their digest, preventing a retry
+  from drifting to a newly eligible task set.
 
 ### Added
 

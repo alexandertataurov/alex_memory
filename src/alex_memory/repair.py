@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 from .config import Settings
 from .database import set_app_meta
@@ -18,7 +19,7 @@ REPAIR_OPERATIONS = frozenset({"fts", "task-project", "segments", "context"})
 
 def derived_state_repair_inventory(
     conn: sqlite3.Connection, *, limit: int = 500
-) -> dict[str, int | bool]:
+) -> dict[str, object]:
     """Count the first repair units without exposing content or writing rows.
 
     Counts are deliberately capped so a future operator command cannot turn an
@@ -35,6 +36,7 @@ def derived_state_repair_inventory(
            ORDER BY t.task_id LIMIT ?""",
         probe_limit,
     )
+    task_project_unit_fingerprint = _task_project_unit_fingerprint(conn, limit)
     segment_chats = _bounded_count(
         conn,
         """SELECT DISTINCT source_chat_id FROM tasks
@@ -53,6 +55,7 @@ def derived_state_repair_inventory(
         "fts_rebuild_available": fts5_available(conn),
         "task_project_candidates": min(task_links, limit),
         "task_project_truncated": task_links > limit,
+        "task_project_unit_fingerprint": task_project_unit_fingerprint,
         "segment_chat_candidates": min(segment_chats, limit),
         "segment_chat_truncated": segment_chats > limit,
         "pending_context_candidates": min(pending_context, limit),
@@ -113,18 +116,25 @@ def apply_task_project_repair(
     )
     if report["fingerprint"] != dry_run_fingerprint:
         raise ValueError("repair apply dry-run fingerprint no longer matches")
-    checkpoint = {
+    task_ids = _task_project_candidate_ids(conn, limit)
+    checkpoint: dict[str, object] = {
         "status": "running",
         "operation": "task-project",
         "limit": limit,
         "recovery_receipt": str(recovery_receipt),
         "fingerprint": dry_run_fingerprint,
+        "task_ids": task_ids,
     }
     with conn:
         set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
     try:
         with conn:
-            linked, reviewed = backfill_task_project_links(conn, settings, limit=limit)
+            linked, reviewed = backfill_task_project_links(
+                conn,
+                settings,
+                limit=limit,
+                task_ids=tuple(task_ids),
+            )
             outcome = {
                 "fingerprint": dry_run_fingerprint,
                 "linked": linked,
@@ -156,9 +166,7 @@ def apply_task_project_repair(
     return {"status": "completed", **outcome}
 
 
-def _operation_report(
-    name: str, inventory: dict[str, int | bool]
-) -> dict[str, int | bool]:
+def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, object]:
     if name == "fts":
         return {
             "eligible_units": int(bool(inventory["fts_rebuild_available"])),
@@ -170,10 +178,36 @@ def _operation_report(
         "context": "pending_context",
     }[name]
     return {
-        "eligible_units": int(inventory[f"{prefix}_candidates"]),
+        "eligible_units": cast(int, inventory[f"{prefix}_candidates"]),
         "truncated": bool(inventory[f"{prefix}_truncated"]),
+        **(
+            {"unit_fingerprint": str(inventory["task_project_unit_fingerprint"])}
+            if name == "task-project"
+            else {}
+        ),
     }
 
 
 def _bounded_count(conn: sqlite3.Connection, query: str, limit: int) -> int:
     return sum(1 for _ in conn.execute(query, (limit,)))
+
+
+def _task_project_candidate_ids(conn: sqlite3.Connection, limit: int) -> list[int]:
+    return [
+        int(row[0])
+        for row in conn.execute(
+            """SELECT t.task_id FROM tasks AS t
+               JOIN ai_items AS i ON i.item_id=t.source_item_id
+               WHERE t.related_project_id IS NULL AND t.source_chat_id IS NOT NULL
+               ORDER BY t.task_id LIMIT ?""",
+            (limit,),
+        )
+    ]
+
+
+def _task_project_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _task_project_candidate_ids(conn, limit), separators=(",", ":")
+        ).encode()
+    ).hexdigest()
