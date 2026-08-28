@@ -292,6 +292,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 ## Next
 
 - [ ] AM-074 [P1] [Data repair] — Add a safe, resumable derived-state repair/backfill command for the existing live database after logic fixes.
+  - Plan: `docs/exec-plans/active/AM-074.md`.
+  - Progress 2026-08-28: bounded read-only inventory now reports capped
+    task-project, segment-chat, and pending-context candidate counts without
+    exposing content or writing rows. The dry-run/apply workflow, run ledger,
+    and any production operation remain unimplemented.
+  - Progress 2026-08-28: an explicit operation-selected dry-run now produces a
+    deterministic scope fingerprint from those capped counts. Apply/resume and
+    any production operation remain unimplemented.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.

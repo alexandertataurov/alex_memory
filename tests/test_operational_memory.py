@@ -26,11 +26,66 @@ from alex_memory.operational import (
     resolve_review_item,
     resolve_task_project,
 )
+from alex_memory.repair import (
+    derived_state_repair_dry_run,
+    derived_state_repair_inventory,
+)
 
 from test_ai_pipeline import make_settings
 
 
 class OperationalMemoryTests(unittest.TestCase):
+    def test_derived_state_repair_inventory_is_bounded_and_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            try:
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (110,'Work','group')"
+                )
+                for item_id in (1, 2):
+                    conn.execute(
+                        """INSERT INTO ai_items(item_id,batch_id,kind,title,details,status,owner,
+                           confidence,source_chat_id,source_message_id,source_date,created_at,dedupe_key)
+                           VALUES (?,1,'task','Follow up','','open','me',0.96,110,?,
+                           '2026-08-28T09:00:00+00:00','now',?)""",
+                        (item_id, item_id, f"repair-inventory-{item_id}"),
+                    )
+                    conn.execute(
+                        """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                           source_item_id,confidence,created_at,updated_at)
+                           VALUES ('Follow up','follow up','open','me',110,?,0.96,'now','now')""",
+                        (item_id,),
+                    )
+                before = conn.total_changes
+
+                inventory = derived_state_repair_inventory(conn, limit=1)
+
+                self.assertEqual(before, conn.total_changes)
+                self.assertEqual(1, inventory["task_project_candidates"])
+                self.assertTrue(inventory["task_project_truncated"])
+                self.assertEqual(0, inventory["segment_chat_candidates"])
+                self.assertFalse(inventory["segment_chat_truncated"])
+                self.assertEqual(0, inventory["pending_context_candidates"])
+                with self.assertRaisesRegex(ValueError, "limit"):
+                    derived_state_repair_inventory(conn, limit=0)
+                report = derived_state_repair_dry_run(
+                    conn, operations={"task-project"}, limit=1
+                )
+                self.assertEqual(before, conn.total_changes)
+                self.assertEqual("dry-run", report["mode"])
+                self.assertEqual({"task-project"}, set(report["operations"]))
+                self.assertEqual(
+                    1, report["operations"]["task-project"]["eligible_units"]
+                )
+                self.assertTrue(report["operations"]["task-project"]["truncated"])
+                self.assertRegex(str(report["fingerprint"]), r"^[0-9a-f]{64}$")
+                with self.assertRaisesRegex(ValueError, "at least one"):
+                    derived_state_repair_dry_run(conn, operations=set())
+                with self.assertRaisesRegex(ValueError, "unsupported"):
+                    derived_state_repair_dry_run(conn, operations={"lifecycle"})
+            finally:
+                conn.close()
+
     def test_load_daily_brief_is_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             conn = connect(make_settings(Path(directory)))

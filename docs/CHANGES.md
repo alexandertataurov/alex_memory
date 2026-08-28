@@ -1,5 +1,16 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-074 derived-state repair readiness inventory
+
+AM-074 now has a bounded read-only inventory for task-project, segment-chat,
+and pending-context repair candidates. It returns capped counts only, writes
+nothing, and does not expose message content. Apply/resume behavior remains
+separately gated behind dry-run, recovery, and explicit operator approval.
+
+The dry-run command requires explicit named operations and emits a deterministic
+scope fingerprint from the capped inventory. It remains read-only; apply and
+resume are not implemented.
+
 ## 2026-08-27 — AM-120 manual-relationship authority parity
 
 An accepted `graph_link` review now writes a manual person/company-to-project

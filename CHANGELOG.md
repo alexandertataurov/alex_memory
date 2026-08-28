@@ -14,6 +14,16 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ## Unreleased
 
+### Changed
+
+- Added AM-074's bounded, read-only derived-state repair inventory. It reports
+  capped task-project, segment-chat, and pending-context candidate counts
+  without reading message content or modifying SQLite state. No apply path,
+  migration, replay, or production operation is included.
+- Added an explicit AM-074 dry-run command. It requires one or more named
+  operations, returns only capped counts and a deterministic scope fingerprint,
+  and opens the database read-only. It has no apply or resume mode.
+
 ### Added
 
 - AM-120 now projects explicitly accepted manual person/company/project

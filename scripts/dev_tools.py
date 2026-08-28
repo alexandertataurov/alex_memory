@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import ast
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import re
 import shutil
@@ -339,6 +340,23 @@ def db_backup() -> int:
     return 0
 
 
+def repair_dry_run(operations: list[str], limit: int) -> int:
+    """Print a read-only, finite derived-state repair scope."""
+    sys.path.insert(0, str(SRC))
+    from alex_memory.repair import derived_state_repair_dry_run
+
+    try:
+        with readonly_connection() as conn:
+            report = derived_state_repair_dry_run(
+                conn, operations=set(operations), limit=limit
+            )
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print(f"Repair dry-run failed: {error}")
+        return 1
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
 def env_names(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -648,6 +666,7 @@ def main() -> int:
             "docs-check",
             "db-check",
             "db-backup",
+            "repair-dry-run",
             "health",
             "changes",
             "tasks",
@@ -658,12 +677,20 @@ def main() -> int:
             "verify",
         ),
     )
+    parser.add_argument(
+        "--operation",
+        action="append",
+        choices=("fts", "task-project", "segments", "context"),
+        help="One repair operation to include; required for repair-dry-run.",
+    )
+    parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
     commands = {
         "docs": lambda: docs(check=False),
         "docs-check": lambda: docs(check=True),
         "db-check": db_check,
         "db-backup": db_backup,
+        "repair-dry-run": lambda: repair_dry_run(args.operation or [], args.limit),
         "health": health,
         "changes": changes,
         "tasks": task_summary,

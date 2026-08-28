@@ -1,7 +1,8 @@
 PYTHON := .venv/bin/python
 UV ?= .venv/bin/uv
+LIMIT ?= 500
 
-.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup docs docs-check changes tasks review codex-hooks-check codex-check
+.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run docs docs-check changes tasks review codex-hooks-check codex-check
 
 help:
 	@printf '%s\n' 'Alex Memory development commands:' \
@@ -22,6 +23,7 @@ help:
 	  '  make health          Inspect local runtime prerequisites.' \
 	  '  make db-check        Check SQLite integrity.' \
 	  '  make db-backup       Create a SQLite API backup.' \
+	  '  make repair-dry-run  Report an explicit bounded repair scope.' \
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
@@ -86,6 +88,10 @@ db-check:
 
 db-backup:
 	$(PYTHON) scripts/dev_tools.py db-backup
+
+repair-dry-run:
+	@test -n "$(OPERATION)" || { echo "Set OPERATION to fts, task-project, segments, or context."; exit 2; }
+	$(PYTHON) scripts/dev_tools.py repair-dry-run --operation "$(OPERATION)" --limit $(LIMIT)
 
 docs:
 	$(PYTHON) scripts/dev_tools.py docs
