@@ -25,6 +25,12 @@ The active AM-057 ExecPlan now records the required forward-only,
 per-message dependency-revision design. Existing batch invalidation memberships
 are the source of truth; automatic legacy backfill is explicitly excluded.
 
+Migration 21 implements that plan: an accepted batch's exact scoped refresh
+revisions are persisted per exact message membership in the same projection
+transaction. Current-enough compares those dependencies with the durable
+invalidation ledger. Legacy messages remain explicitly partial; no source,
+claim, canonical, replay, or live operation changed.
+
 ## 2026-08-28 — AM-099 override eligibility closure
 
 Forced and session-pinned model keys are now applied only after the normal

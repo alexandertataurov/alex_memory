@@ -307,8 +307,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
   - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
 
-- [ ] AM-057 [P1] [Context freshness] — Add explicit freshness/current-enough metrics and selective stale-work scheduling based on dependency footprint.
-  - Plan: `docs/exec-plans/active/AM-057-context-freshness.md`.
+- [x] AM-057 [P1] [Context freshness] — Add explicit freshness/current-enough metrics and selective stale-work scheduling based on dependency footprint.
+  - Plan: `docs/exec-plans/completed/AM-057-context-freshness.md`.
   - Acceptance: distinguish archived, classified, semantically analyzed, canonicalized, context-integrated, and current-enough coverage; high-value operations detect stale materialized context before presenting it as current.
   - Current DB baseline: all 65,475 non-bot personal text messages are classified, but only 45,976 are semantically analyzed; 241/389 tracked conversations are not semantically complete.
   - Code evidence: graph improvement currently marks **every high/critical message in an affected chat** `context_stale` / `analysis_stale` after a graph change, even when only one entity/link changed. This can trigger unnecessary broad re-analysis and feedback loops.
@@ -334,6 +334,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     committed integrated batch and no pending refresh scope. The remaining
     precision increment is dependency-revision comparison for
     `context_version_used`; no schema, replay, or live action ran.
+  - Completed 2026-08-28: migration 21 records each accepted batch's exact
+    canonical scope/revision dependencies against its exact message membership.
+    Current-enough now checks those rows against the revisioned ledger; legacy
+    rows remain explicitly partial and are never auto-backfilled. No source,
+    claim, canonical, replay, or live action ran.
 
 - [x] AM-093 [P0] [Retrieval / Context grounding / Anti-vibe] — Completed related, temporal, and supporting-evidence retrieval alignment.
   - Progress 2026-08-26: active Person Intelligence leaf. Textual “Search this

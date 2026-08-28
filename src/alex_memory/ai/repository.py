@@ -399,8 +399,18 @@ def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, 
                    SUM(CASE WHEN a.canonicalized_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
                    SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0
-                                 AND NOT EXISTS (SELECT 1 FROM context_invalidations AS ci
-                                                 WHERE ci.status IN ('pending','running','failed'))
+                                 AND EXISTS (
+                                     SELECT 1 FROM ai_message_context_dependencies AS d
+                                     WHERE d.chat_id=m.chat_id AND d.message_id=m.message_id
+                                 )
+                                 AND NOT EXISTS (
+                                     SELECT 1 FROM ai_message_context_dependencies AS d
+                                     LEFT JOIN context_invalidations AS ci
+                                       ON ci.scope_type=d.scope_type AND ci.scope_id=d.scope_id
+                                     WHERE d.chat_id=m.chat_id AND d.message_id=m.message_id
+                                       AND (ci.scope_type IS NULL OR ci.completed_revision<d.required_revision
+                                            OR ci.status!='clean')
+                                 )
                             THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' AND mc.chat_id IS NOT NULL THEN 1 ELSE 0 END),

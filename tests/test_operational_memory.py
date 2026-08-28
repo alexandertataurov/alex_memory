@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from alex_memory.ai.repository import save_ai_success
+from alex_memory.ai.repository import history_coverage, save_ai_success
 from alex_memory.ai.context import add_contextual_preamble
 from alex_memory.classification import classify_message, save_classification
 from alex_memory.context.refresh import enqueue_context_refresh, refresh_pending_context
@@ -586,6 +586,14 @@ class OperationalMemoryTests(unittest.TestCase):
                 process_ai_batch(conn, saved.batch_id, settings)
             self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
             asyncio.run(refresh_pending_context(conn, settings))
+            self.assertGreater(
+                conn.execute(
+                    "SELECT COUNT(*) FROM ai_message_context_dependencies WHERE batch_id=?",
+                    (saved.batch_id,),
+                ).fetchone()[0],
+                0,
+            )
+            self.assertEqual(1, history_coverage(conn, settings)["current_enough"])
             self.assertEqual(
                 1,
                 conn.execute(

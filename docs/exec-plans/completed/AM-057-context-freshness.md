@@ -54,3 +54,13 @@ claim, task, fact, or relationship rows.
 - 2026-08-28: graph changes enqueue affected revisioned scopes and runtime
   reporting distinguishes the lifecycle stages. Exact per-message dependency
   comparison remains unimplemented.
+
+## Outcome
+
+Completed 2026-08-28. Migration 21 adds `ai_message_context_dependencies` and
+the accepted projection transaction records the existing batch scope/revision
+set for each exact batch message. The bounded coverage query marks a message
+current-enough only when all recorded dependencies are clean at or beyond their
+required revision. Existing rows are deliberately partial; no automatic
+historical rebuild is performed. Temporary SQLite migration, projection,
+idempotency, refresh, and full-suite checks pass.

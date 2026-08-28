@@ -982,10 +982,20 @@ def process_ai_batch(
                 scopes.add(("task", int(task_id)))
             from .context.refresh import enqueue_context_invalidations
 
-            enqueue_context_invalidations(conn, batch_id, scopes)
+            revisions = enqueue_context_invalidations(conn, batch_id, scopes)
             conn.execute(
                 "UPDATE ai_message_state SET canonicalized_at=? WHERE batch_id=?",
                 (utc_now(), batch_id),
+            )
+            conn.executemany(
+                """INSERT OR REPLACE INTO ai_message_context_dependencies(
+                       chat_id,message_id,batch_id,scope_type,scope_id,required_revision
+                   ) SELECT chat_id,message_id,?,?,?,? FROM ai_message_state
+                     WHERE batch_id=?""",
+                [
+                    (batch_id, scope_type, scope_id, revision, batch_id)
+                    for (scope_type, scope_id), revision in revisions.items()
+                ],
             )
             conn.execute(
                 """UPDATE ai_batches SET projection_status='completed',projected_at=?,

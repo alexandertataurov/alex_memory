@@ -14,7 +14,6 @@ fix.
 
 ## Active
 
-- [AM-057 context freshness](exec-plans/active/AM-057-context-freshness.md)
 - [AM-074 repair](exec-plans/active/AM-074.md)
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
@@ -22,6 +21,7 @@ fix.
 
 ## Completed
 
+- [AM-057 context freshness](exec-plans/completed/AM-057-context-freshness.md)
 - [AM-053 context dirty queue](exec-plans/completed/AM-053-context-dirty-queue.md)
 - [AM-070 task-project links](exec-plans/completed/AM-070-task-project-links.md)
 - [AM-084 direct-chat identity](exec-plans/completed/AM-084-direct-chat-identity.md)

@@ -10,7 +10,7 @@ from ..utils import utc_now
 
 def enqueue_context_invalidations(
     conn: sqlite3.Connection, batch_id: int, scopes: set[tuple[str, int]]
-) -> None:
+) -> dict[tuple[str, int], int]:
     """Coalesce affected scopes and retain the revision owned by this batch."""
     revisions = _enqueue_context_scopes(conn, scopes)
     for scope_type, scope_id in sorted(scopes):
@@ -20,6 +20,7 @@ def enqueue_context_invalidations(
                DO UPDATE SET requested_revision=excluded.requested_revision,integrated_at=NULL""",
             (batch_id, scope_type, scope_id, revisions[(scope_type, scope_id)]),
         )
+    return revisions
 
 
 def enqueue_context_refresh(
