@@ -21,6 +21,10 @@ current-enough messages. Current-enough requires an integrated batch and no
 pending refresh scope; dependency-revision comparison remains later AM-057
 precision work. No schema, replay, or live operation changed.
 
+The active AM-057 ExecPlan now records the required forward-only,
+per-message dependency-revision design. Existing batch invalidation memberships
+are the source of truth; automatic legacy backfill is explicitly excluded.
+
 ## 2026-08-28 — AM-099 override eligibility closure
 
 Forced and session-pinned model keys are now applied only after the normal

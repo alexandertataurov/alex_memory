@@ -308,6 +308,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
 
 - [ ] AM-057 [P1] [Context freshness] — Add explicit freshness/current-enough metrics and selective stale-work scheduling based on dependency footprint.
+  - Plan: `docs/exec-plans/active/AM-057-context-freshness.md`.
   - Acceptance: distinguish archived, classified, semantically analyzed, canonicalized, context-integrated, and current-enough coverage; high-value operations detect stale materialized context before presenting it as current.
   - Current DB baseline: all 65,475 non-bot personal text messages are classified, but only 45,976 are semantically analyzed; 241/389 tracked conversations are not semantically complete.
   - Code evidence: graph improvement currently marks **every high/critical message in an affected chat** `context_stale` / `analysis_stale` after a graph change, even when only one entity/link changed. This can trigger unnecessary broad re-analysis and feedback loops.

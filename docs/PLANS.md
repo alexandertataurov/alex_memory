@@ -14,6 +14,7 @@ fix.
 
 ## Active
 
+- [AM-057 context freshness](exec-plans/active/AM-057-context-freshness.md)
 - [AM-074 repair](exec-plans/active/AM-074.md)
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
