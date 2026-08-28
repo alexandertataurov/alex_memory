@@ -27,6 +27,7 @@ from alex_memory.operational import (
     resolve_task_project,
 )
 from alex_memory.repair import (
+    apply_task_project_repair,
     derived_state_repair_dry_run,
     derived_state_repair_inventory,
 )
@@ -83,6 +84,88 @@ class OperationalMemoryTests(unittest.TestCase):
                     derived_state_repair_dry_run(conn, operations=set())
                 with self.assertRaisesRegex(ValueError, "unsupported"):
                     derived_state_repair_dry_run(conn, operations={"lifecycle"})
+            finally:
+                conn.close()
+
+    def test_task_project_repair_requires_matching_dry_run_and_is_resumable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                project_id = EntityResolver(conn).entity("project", "Georgia LP")
+                assert project_id is not None
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (111,'Work','group')"
+                )
+                conn.execute(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                       source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+                       VALUES (3,'project','Georgia LP','','informational','unknown',0.96,
+                       111,1,'2026-08-22T09:00:00+00:00',?,'now','repair-apply-project')""",
+                    (project_id,),
+                )
+                item_id = conn.execute(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                       source_chat_id,source_message_id,source_date,created_at,dedupe_key)
+                       VALUES (3,'task','Send docs','','open','me',0.96,111,1,
+                       '2026-08-22T09:00:00+00:00','now','repair-apply-task')"""
+                ).lastrowid
+                conn.execute(
+                    """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                       source_item_id,confidence,created_at,updated_at)
+                       VALUES ('Send docs','send docs','open','me',111,?,0.96,'now','now')""",
+                    (item_id,),
+                )
+                report = derived_state_repair_dry_run(
+                    conn, operations={"task-project"}, limit=1
+                )
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+
+                outcome = apply_task_project_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                    limit=1,
+                )
+
+                self.assertEqual("completed", outcome["status"])
+                self.assertEqual(1, outcome["linked"])
+                self.assertEqual(
+                    project_id,
+                    conn.execute("SELECT related_project_id FROM tasks").fetchone()[0],
+                )
+                self.assertEqual(
+                    "completed",
+                    json.loads(
+                        conn.execute(
+                            "SELECT value FROM app_meta WHERE key=?",
+                            (f"derived_state_repair:{report['fingerprint']}",),
+                        ).fetchone()[0]
+                    )["status"],
+                )
+                self.assertEqual(
+                    "already-complete",
+                    apply_task_project_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )["status"],
+                )
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    apply_task_project_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint="not-the-report",
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
             finally:
                 conn.close()
 

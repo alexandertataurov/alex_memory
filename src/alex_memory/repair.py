@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from pathlib import Path
 
+from .config import Settings
+from .database import set_app_meta
+from .operational import backfill_task_project_links
 from .schema_support import fts5_available
 
 
@@ -78,6 +82,78 @@ def derived_state_repair_dry_run(
         json.dumps(report, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     return report
+
+
+def apply_task_project_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+    limit: int = 500,
+) -> dict[str, object]:
+    """Apply one fingerprinted task-project repair unit transactionally.
+
+    The stored checkpoint is deliberately keyed by the dry-run fingerprint.
+    Retrying a completed unit returns its recorded outcome; an interrupted unit
+    reruns the same bounded, idempotent operation in one SQLite transaction.
+    """
+    if not recovery_receipt.is_file():
+        raise ValueError("repair apply requires an existing recovery receipt")
+    if recovery_receipt.resolve() == settings.db_path.resolve():
+        raise ValueError("repair recovery receipt must not be the target database")
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(
+        conn, operations={"task-project"}, limit=limit
+    )
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    checkpoint = {
+        "status": "running",
+        "operation": "task-project",
+        "limit": limit,
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        with conn:
+            linked, reviewed = backfill_task_project_links(conn, settings, limit=limit)
+            outcome = {
+                "fingerprint": dry_run_fingerprint,
+                "linked": linked,
+                "reviewed": reviewed,
+            }
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {**checkpoint, "status": "completed", "outcome": outcome},
+                    sort_keys=True,
+                ),
+            )
+    except Exception as error:
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
 
 
 def _operation_report(

@@ -11,6 +11,11 @@ The dry-run command requires explicit named operations and emits a deterministic
 scope fingerprint from the capped inventory. It rejects missing/invalid limits
 before opening SQLite, remains read-only, and has no apply or resume mode.
 
+The first fixture-only apply unit covers task-project linkage. It accepts only
+a matching dry-run fingerprint plus a separate recovery receipt, records the
+checkpoint in the existing metadata table in the same transaction, and returns
+the recorded outcome on retry. No operator apply command is exposed.
+
 ## 2026-08-27 — AM-120 manual-relationship authority parity
 
 An accepted `graph_link` review now writes a manual person/company-to-project

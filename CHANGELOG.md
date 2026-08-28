@@ -24,6 +24,10 @@ All notable user- and developer-visible changes are recorded here. This project 
   operations, returns only capped counts and a deterministic scope fingerprint,
   and opens the database read-only only after validating its input. It has no
   apply or resume mode.
+- Added the first fixture-only AM-074 apply unit for task-project linkage. It
+  requires the matching dry-run fingerprint and a separate recovery receipt;
+  the bounded repair and checkpoint commit together, and retries return the
+  recorded outcome. No operator apply command is exposed.
 
 ### Added
 
