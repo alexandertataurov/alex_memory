@@ -71,6 +71,108 @@ class OperationalMemoryTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_global_invalidation_coalesces_across_restart_and_retries_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            try:
+                enqueue_context_refresh(conn, {("global", 0)})
+                enqueue_context_refresh(conn, {("global", 0)})
+                self.assertEqual(
+                    ("pending", 2, 0),
+                    conn.execute(
+                        """SELECT status,requested_revision,completed_revision
+                           FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect(settings)
+            try:
+                with patch(
+                    "alex_memory.context.service.ContextService.snapshot_global_state",
+                    side_effect=RuntimeError("injected global refresh failure"),
+                ):
+                    self.assertEqual(
+                        0, asyncio.run(refresh_pending_context(conn, settings))
+                    )
+                self.assertEqual(
+                    ("failed", 2, 0),
+                    conn.execute(
+                        """SELECT status,requested_revision,completed_revision
+                           FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+                self.assertEqual(
+                    1, asyncio.run(refresh_pending_context(conn, settings))
+                )
+                self.assertEqual(
+                    ("clean", 2, 2),
+                    conn.execute(
+                        """SELECT status,requested_revision,completed_revision
+                           FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+            finally:
+                conn.close()
+
+    def test_new_global_revision_stays_pending_when_older_refresh_finishes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            try:
+                enqueue_context_refresh(conn, {("global", 0)})
+
+                async def refresh_and_requeue(*_args) -> None:
+                    enqueue_context_refresh(conn, {("global", 0)})
+
+                with patch(
+                    "alex_memory.context.refresh._refresh_scope",
+                    side_effect=refresh_and_requeue,
+                ):
+                    self.assertEqual(
+                        1, asyncio.run(refresh_pending_context(conn, settings))
+                    )
+                self.assertEqual(
+                    ("pending", 2, 1),
+                    conn.execute(
+                        """SELECT status,requested_revision,completed_revision
+                           FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+            finally:
+                conn.close()
+
+    def test_non_global_invalidation_does_not_refresh_global_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            try:
+                enqueue_context_refresh(conn, {("conversation", 112)})
+
+                self.assertEqual(
+                    1, asyncio.run(refresh_pending_context(conn, settings))
+                )
+
+                self.assertEqual(
+                    0,
+                    conn.execute(
+                        "SELECT COUNT(*) FROM global_state_snapshots"
+                    ).fetchone()[0],
+                )
+            finally:
+                conn.close()
+
     def test_derived_state_repair_inventory_is_bounded_and_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             conn = connect(make_settings(Path(directory)))

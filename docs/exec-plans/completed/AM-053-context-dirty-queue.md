@@ -36,3 +36,14 @@ and repeat execution before any operator-run maintenance.
   `global` invalidation scope rather than bypassing the ledger with direct
   follow-up/project-health calls. Fixture coverage proves its revision reaches
   clean only after the global snapshot/operational projection worker succeeds.
+
+## Final outcome
+
+Completed 2026-08-28. Canonical projection remains transactional and only
+records scoped invalidations. The bounded worker owns conversation, person, and
+global materialization; the global path includes snapshot, project-health, and
+follow-up projections. Coalescing, restart persistence, failure retry, revision
+races, and non-global isolation are covered by temporary-SQLite tests. Project,
+company, and task scopes retain their durable invalidation records for future
+separate materializers; no unowned runtime writer bypasses the global contract.
+No migration, backfill, or live operation ran.

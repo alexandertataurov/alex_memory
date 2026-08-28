@@ -218,31 +218,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
 
-- [ ] AM-053 [P0] [Context runtime] — Add a persistent context invalidation/dirty queue and move expensive derived refresh out of the per-batch canonical projection path.
-  - Historical evidence: the original review found no dedicated invalidation ledger
-    and synchronous downstream refresh after canonical projection. That is no
-    longer current runtime behavior.
-  - Current source: accepted projection coalesces scoped revisions in
-    `context_invalidations`; `refresh_pending_context()` claims bounded pending
-    work, preserves failures for retry, and cannot clear a later revision.
-  - Remaining: verify and move only the still-unowned project, company, and
-    global materializations onto this established bounded contract.
-  - Progress 2026-08-28: the explicit terminal global refresh now enqueues and
-    drains the `global` invalidation scope instead of directly refreshing
-    follow-ups/project health. Temporary-SQLite coverage proves the pending →
-    clean revision transition and global snapshot write through the worker.
-  - Acceptance:
-    - keep source-backed canonical projection transactional and small;
-    - accepted material changes mark affected person/conversation/project/company/task/global scopes dirty;
-    - duplicate invalidations coalesce;
-    - revision checks prevent an older refresh from clearing newer work;
-    - pending dirty state survives restart;
-    - global snapshots/project-health/follow-up evaluation run only when their inputs were materially invalidated, not after every AI batch.
-  - Integration: accepted batch projection, conversation intelligence, project/person profiles, Ask Memory, Task Deep Dive, graph maintenance, and global state.
-  - Verification: deduplication, revision races, restart/resume, targeted refresh, no-global-refresh-on-noop batch, and failure retry without losing canonical state.
-
-
-
 - [ ] AM-067 [P0] [Context ownership / Anti-slop] — Give each materialized context table exactly one writer and remove competing person-state projections.
   - Historical evidence: the original review found competing `ContextService`
     and `ContactContextMaterializer` writes to `person_context_state`.
@@ -682,6 +657,13 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 - [ ] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
 
 ## Completed
+
+- [x] AM-053 [P0] [Context runtime] — Completed 2026-08-28. Accepted
+  projection coalesces scoped revisions; bounded workers preserve failures,
+  cannot clear newer revisions, and own global snapshots/project health/
+  follow-ups. The explicit terminal refresh now uses that same ledger.
+  Verification covers dedupe, restart, failure retry, revision race, and no
+  global refresh for a non-global scope. No migration or live action ran.
 
 - [x] AM-075 [P0] [AI routing / Failure taxonomy] — Completed 2026-08-27.
   Migration 20 adds a durable retry schedule for temporary history work.

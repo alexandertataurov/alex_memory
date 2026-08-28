@@ -15,13 +15,13 @@ fix.
 ## Active
 
 - [AM-074 repair](exec-plans/active/AM-074.md)
-- [AM-053 context dirty queue](exec-plans/active/AM-053-context-dirty-queue.md)
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
 - [AM-120 semantic graph projection](exec-plans/active/AM-120-semantic-graph-projection.md)
 
 ## Completed
 
+- [AM-053 context dirty queue](exec-plans/completed/AM-053-context-dirty-queue.md)
 - [AM-070 task-project links](exec-plans/completed/AM-070-task-project-links.md)
 - [AM-084 direct-chat identity](exec-plans/completed/AM-084-direct-chat-identity.md)
 - [AM-095 read-only terminal workflow](exec-plans/completed/AM-095-terminal-workflow.md)
