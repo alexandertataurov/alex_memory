@@ -72,7 +72,7 @@ class ConversationContextService:
         return {
             "context": context,
             "conversation": conversation,
-            "project_contexts": self._project_contexts(person_id),
+            "project_contexts": self._project_contexts(person_id, as_of),
             "new_message_count": len(new_messages or []),
         }
 
@@ -186,11 +186,12 @@ class ConversationContextService:
             """SELECT primary_project_id,primary_company_id,topic_json,summary,started_at,ended_at
                FROM conversation_contact_segments WHERE person_id=? AND source_type='telegram'
                  AND conversation_id=? AND started_at<=?
-               ORDER BY started_at DESC LIMIT 1""",
-            (person_id, conversation_id, as_of.isoformat()),
+                 AND (ended_at IS NULL OR ended_at>?)
+                 ORDER BY started_at DESC LIMIT 1""",
+            (person_id, conversation_id, as_of.isoformat(), as_of.isoformat()),
         ).fetchone()
         if row is None:
-            return current
+            return _conversation_row(None)
         try:
             topics = json.loads(row[2])
         except (TypeError, json.JSONDecodeError):
@@ -206,7 +207,11 @@ class ConversationContextService:
             "open_loops": [],
         }
 
-    def _project_contexts(self, person_id: int) -> list[dict[str, Any]]:
+    def _project_contexts(
+        self, person_id: int, as_of: datetime | None = None
+    ) -> list[dict[str, Any]]:
+        if as_of is not None:
+            return []
         rows = self.conn.execute(
             """SELECT ppc.project_id,p.canonical_name,ppc.status,ppc.current_summary,
                       ppc.last_activity_at,ppc.confidence

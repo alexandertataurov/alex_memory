@@ -169,13 +169,11 @@ class TaskDeepDiveTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
-    def test_as_of_excludes_future_evidence_and_notes_and_pins_persist(self) -> None:
-        report = self.service.build(
-            self.task_id, as_of=datetime.fromisoformat("2026-08-22T12:00:00+00:00")
-        )
-        self.assertNotIn(
-            "E-message-100-2", {item.evidence_id for item in report.evidence}
-        )
+    def test_historical_deep_dive_fails_closed_and_notes_and_pins_persist(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Historical Task Deep Dive"):
+            self.service.build(
+                self.task_id, as_of=datetime.fromisoformat("2026-08-22T12:00:00+00:00")
+            )
         note_id = self.service.add_note(
             self.task_id, "Ask Michael for the rate comparison."
         )

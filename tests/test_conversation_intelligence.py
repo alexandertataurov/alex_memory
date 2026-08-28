@@ -144,6 +144,20 @@ class ConversationIntelligenceTests(unittest.TestCase):
         self.assertEqual(self.georgia, package["conversation"]["primary_project_id"])
         self.assertNotIn("Dubai", package["conversation"]["current_state"])
         self.assertTrue(package["context"].segments)
+        self.assertEqual([], package["project_contexts"])
+
+    def test_historical_package_fails_closed_outside_active_segment(self) -> None:
+        service = ConversationContextService(self.conn, self.settings)
+        service.refresh_person(self.person_id)
+
+        package = service.build_for_conversation(
+            person_id=self.person_id,
+            conversation_id=10,
+            as_of=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertIsNone(package["conversation"]["primary_project_id"])
+        self.assertEqual([], package["project_contexts"])
 
     def test_refresh_removes_task_loops_after_done_or_canceled(self) -> None:
         service = ConversationContextService(self.conn, self.settings)

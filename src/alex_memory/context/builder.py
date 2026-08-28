@@ -30,7 +30,7 @@ class ContextBuilder:
             if request.as_of
             else datetime.now().astimezone().isoformat()
         )
-        seed_distances = self._resolve_entities(request)
+        seed_distances = self._resolve_entities(request, as_of)
         relationships, distances = self._expand_relationships(seed_distances, as_of)
         people = self._entities(
             "person", distances, as_of, self.settings.context_max_people
@@ -100,7 +100,9 @@ class ContextBuilder:
             diagnostics,
         )
 
-    def _resolve_entities(self, request: ContextRequest) -> dict[tuple[str, int], int]:
+    def _resolve_entities(
+        self, request: ContextRequest, as_of: str
+    ) -> dict[tuple[str, int], int]:
         distances: dict[tuple[str, int], int] = {}
         for kind, ids in (
             ("person", request.person_ids),
@@ -122,10 +124,11 @@ class ContextBuilder:
         if request.chat_id is not None:
             rows = self.conn.execute(
                 """SELECT related_person_id,related_company_id,related_project_id
-                   FROM tasks WHERE source_chat_id=? AND status IN ('open','waiting')
+                   FROM tasks WHERE source_chat_id=? AND updated_at<=? AND status IN ('open','waiting')
                    UNION ALL
-                   SELECT person_id,company_id,project_id FROM ai_items WHERE source_chat_id=?""",
-                (request.chat_id, request.chat_id),
+                   SELECT person_id,company_id,project_id FROM ai_items
+                   WHERE source_chat_id=? AND source_date<=?""",
+                (request.chat_id, as_of, request.chat_id, as_of),
             ).fetchall()
             for person_id, company_id, project_id in rows:
                 for kind, entity_id in (

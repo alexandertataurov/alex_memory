@@ -29,6 +29,10 @@ class TaskDeepDiveService:
     def build(
         self, task_id: int, *, as_of: datetime | None = None, deeper: bool = False
     ) -> TaskDeepDiveReport:
+        if as_of is not None:
+            raise ValueError(
+                "Historical Task Deep Dive is unavailable until task lifecycle state can be reconstructed."
+            )
         task = self._task(task_id)
         as_of_text = (
             as_of.isoformat() if as_of else datetime.now().astimezone().isoformat()
