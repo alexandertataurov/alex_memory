@@ -391,6 +391,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     legacy state; no deletion, migration, replay, or live action ran.
 
 - [ ] AM-094 [P0] [Ask Memory / AI routing / Anti-vibe] — Rebuild Ask Memory around one real retrieval→evidence→router pipeline and remove its private provider stack.
+  - Plan: `docs/exec-plans/completed/AM-094-ask-memory-pipeline.md`.
   - Code evidence: `answer_question_with_ai()` directly calls `_gemini_qa()` and then `_groq_qa()`; it never uses the quota-aware `AIRouter`, model registry, workload policy, persistent model usage, cooldown reasons, or configured fallback chain.
   - Code evidence: `answer_question()` reduces retrieval to at most **5** selected rows. If any returned task is `WAITING`, it discards all non-waiting evidence and returns only waiting tasks; `answer_question_with_ai()` then sends that already-truncated set to the model.
   - Code evidence: the prompt includes structured canonical context but says only numbered retrieval rows may be cited; `validate_citations()` accepts only `[n]` against that small selected set. Canonical facts that appear only in structured context are therefore uncitable under the function's own contract.
@@ -405,6 +406,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - provider fallback is handled by router-classified failures, not blanket exception swallowing;
     - offline/local deterministic answer remains available when AI is disabled/unavailable.
   - Verification: broad person/project history question, waiting-state question, mixed evidence, quota fallback/accounting, citation validity, provider failure, and no-LLM fallback tests.
+  - Completed 2026-08-28: Ask Memory uses bounded balanced evidence selection;
+    only numbered supplied evidence is citable, with structured canonical
+    context marked background. Typed provider failures preserve local fallback;
+    unexpected errors are visible.
 
 - [ ] AM-096 [P1] [Database migrations / Anti-slop] — Make schema evolution have one truthful source of behavior and freeze old migrations.
   - Code evidence: the giant `SCHEMA` bootstrap already creates tables that are later “added” again by migrations 4–10 (`source_evidence`, classification state, conflict review, conversation segments, conversation intelligence, etc.).

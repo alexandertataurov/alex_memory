@@ -27,6 +27,67 @@ def build_context(results: list[SearchResult], settings: Settings) -> str:
     return "\n".join(parts)
 
 
+def select_evidence(
+    results: list[SearchResult],
+    question: str,
+    settings: Settings,
+    *,
+    max_items: int | None,
+) -> list[SearchResult]:
+    """Select a deterministic, question-aware mix from already bounded retrieval."""
+    waiting_question = bool(
+        re.search(r"\b(wait|waiting|follow.?up|awaiting)\b|жду|ожида", question, re.I)
+    )
+    waiting = [
+        item
+        for item in results
+        if item.result_type == "task" and item.snippet.startswith("WAITING")
+    ]
+    groups = {
+        "task": [item for item in results if item.result_type == "task"],
+        "canonical": [
+            item
+            for item in results
+            if item.result_type
+            in {"person", "company", "project", "fact", "relationship"}
+        ],
+        "summary": [
+            item for item in results if item.result_type in {"summary", "brief"}
+        ],
+        "evidence": [
+            item
+            for item in results
+            if item.result_type in {"message", "observation", "event", "conversation"}
+        ],
+    }
+    ordered: list[SearchResult] = []
+    if waiting_question:
+        ordered.extend(waiting)
+    while any(groups.values()):
+        for name in ("task", "canonical", "summary", "evidence"):
+            if groups[name]:
+                item = groups[name].pop(0)
+                if item not in ordered:
+                    ordered.append(item)
+    limit = max_items or (
+        settings.qa_max_tasks
+        + settings.qa_max_memories
+        + settings.qa_max_summaries
+        + settings.qa_max_raw_messages
+    )
+    selected: list[SearchResult] = []
+    size = 0
+    for item in ordered:
+        line_size = len(item.citation) + len(item.title) + len(item.snippet) + 32
+        if size + line_size > settings.qa_max_context_chars:
+            continue
+        selected.append(item)
+        size += line_size
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def answer_question(
     conn: sqlite3.Connection,
     question: str,
@@ -51,8 +112,8 @@ def answer_question(
     waiting_question = bool(
         re.search(r"\b(wait|waiting|follow.?up|awaiting)\b|жду|ожида", question, re.I)
     )
-    selected = waiting_tasks[:5] if waiting_tasks and waiting_question else results[:5]
-    if waiting_tasks:
+    selected = select_evidence(results, question, settings, max_items=5)
+    if waiting_tasks and waiting_question:
         lines = ["You are currently waiting on:"]
         for index, item in enumerate(selected, start=1):
             lines.append(
@@ -111,23 +172,24 @@ async def answer_question_with_ai(
         if person_id is not None
         else retrieve(conn, question, settings)
     )
-    evidence = evidence[: settings.qa_max_tasks + settings.qa_max_raw_messages]
+    evidence = select_evidence(evidence, question, settings, max_items=None)
     context = build_context(evidence, settings)
     prompt = (
         "Question: "
         + question
-        + "\n\nCanonical bounded context:\n"
+        + "\n\nCanonical bounded context (background only; do not cite it):\n"
         + structured
         + "\n\nRetrieved evidence (and the only allowed citation IDs):\n"
         + context
         + "\nAnswer from this evidence only. Label any inference as inference and any suggested action as recommendation. "
         "Cite every factual statement using [n]. If evidence is insufficient, say so plainly."
     )
-    try:
-        from .ai.router import AIRouter
+    from .ai.providers.base import ProviderError
+    from .ai.router import AIRouter
 
+    try:
         answer = await (router or AIRouter(settings, conn=conn)).answer(prompt)
-    except Exception:
+    except ProviderError:
         # The deterministic answer is deliberately available when routing,
         # configuration, or a provider is unavailable.
         return baseline, selected

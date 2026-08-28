@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-094 Ask Memory evidence/router pipeline
+
+Ask Memory now selects a bounded deterministic mix of task, canonical, summary,
+and direct evidence. Structured context is explicit non-citable background;
+only router/provider failures return the local answer.
+
 ## 2026-08-28 — AM-088 conversation open-loop lifecycle
 
 Scoped refresh now removes task-derived loops without a matching canonical

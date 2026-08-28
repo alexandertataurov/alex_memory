@@ -23,8 +23,11 @@ from alex_memory.intelligence import (
     refresh_operational_state,
     retrieve,
     set_chat_policy,
+    select_evidence,
     validate_citations,
 )
+from alex_memory.ai.providers.base import ProviderError
+from alex_memory.retrieval import SearchResult
 from alex_memory.intelligence import _notify
 from alex_memory.retrieval import _entity_hints, retrieve_related
 from alex_memory.schema_support import fts5_available, fts_index_health
@@ -111,6 +114,56 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual("Corporate documents are still waiting. [1]", answer)
         self.assertTrue(sources)
         self.assertEqual(1, len(router.prompts))
+
+    def test_ask_falls_back_only_for_typed_provider_failure(self) -> None:
+        class OfflineRouter:
+            async def answer(self, prompt: str) -> str:
+                raise ProviderError("offline")
+
+        fallback, _ = answer_question(
+            self.conn, "What am I waiting for from Michael?", self.settings
+        )
+        answer, _ = asyncio.run(
+            answer_question_with_ai(
+                self.conn,
+                "What am I waiting for from Michael?",
+                self.settings,
+                router=OfflineRouter(),
+            )
+        )
+        self.assertEqual(fallback, answer)
+
+    def test_ask_does_not_hide_unexpected_router_failure(self) -> None:
+        class BrokenRouter:
+            async def answer(self, prompt: str) -> str:
+                raise ValueError("broken local wiring")
+
+        with self.assertRaisesRegex(ValueError, "broken local wiring"):
+            asyncio.run(
+                answer_question_with_ai(
+                    self.conn,
+                    "What am I waiting for from Michael?",
+                    self.settings,
+                    router=BrokenRouter(),
+                )
+            )
+
+    def test_evidence_selection_keeps_a_mixed_bounded_set(self) -> None:
+        rows = [
+            SearchResult("task", "Waiting task", "WAITING — approval", None, 100),
+            SearchResult("fact", "document_status", "received", None, 99),
+            SearchResult("summary", "Daily summary", "Terms discussed", None, 98),
+            SearchResult("message", "Telegram", "Contract terms", None, 97),
+        ]
+
+        selected = select_evidence(
+            rows, "What is the contract status?", self.settings, max_items=4
+        )
+
+        self.assertEqual(
+            {"task", "fact", "summary", "message"},
+            {row.result_type for row in selected},
+        )
 
     def test_search_and_crm_profile_share_canonical_person(self) -> None:
         rows = retrieve(self.conn, "Michael corporate documents", self.settings)

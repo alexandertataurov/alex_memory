@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-094 balances bounded Ask Memory evidence by type, marks canonical context
+  as non-citable background, and limits deterministic fallback to typed router
+  failures.
 - AM-088 makes conversation task loops an exact active-task projection and
   removes stale derived rows during scoped refresh. Heuristic question loops
   require an adjacent substantive opposite-author reply and age out of current
