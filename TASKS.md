@@ -240,7 +240,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     `person_context_state`; merge relocation retains its existing behavior.
     No migration, rebuild, replay, provider request, or live operation ran.
 
-- [ ] AM-052 [P0] [Configuration correctness] — Make effective AI configuration have one value per concept and identical defaults across every construction path.
+- [x] AM-052 [P0] [Configuration correctness] — Make effective AI configuration have one value per concept and identical defaults across every construction path.
   - Code evidence: the `Settings` dataclass default is `ai_routing_mode="legacy"`, while `load_settings()` defaults `AI_ROUTING_MODE` to `quota_aware`. Tests or internal code that instantiate `Settings(...)` directly can therefore run a different routing architecture than the real application with no explicit override.
   - Code evidence: the same concepts exist twice: `gemini_model` vs `gemini_primary_model`, and `gemini_requests_per_minute` vs `gemini_primary_rpm`; legacy provider fields also coexist with the model registry.
   - Code evidence: `_bool()` silently converts every unrecognized value to `False` (`tru`, `enabled`, typo, etc.) instead of failing configuration validation, while `AI_INCLUDE_GROUPS` duplicates its own hand-written boolean parser.
@@ -253,6 +253,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - compatibility aliases are explicit, tested, diagnostic-visible, and lower priority than current names;
     - direct `Settings(...)` test fixtures and `load_settings()` resolve the same behavior unless a test deliberately overrides it.
   - Verification: explicit settings, defaults, legacy-only settings, mixed settings, boolean typos, typo alias, direct dataclass construction, and effective-router configuration tests.
+  - Completed 2026-08-28: removed the unused `Settings.gemini_model` mirror;
+    `gemini_primary_model` is the sole effective Gemini primary-model field.
+    Deprecated environment aliases remain boundary-only, lower-priority inputs
+    with visible warnings. Per-model RPM remains bounded by the separately
+    documented provider-wide conservative ceiling. No provider, schema,
+    migration, replay, or live action ran.
 
 ## Next
 

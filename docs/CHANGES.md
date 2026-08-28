@@ -1,5 +1,15 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-052 effective configuration closure
+
+`Settings.gemini_model` was an unused mirror of `gemini_primary_model`; it is
+removed, leaving one effective primary-model field in runtime and direct test
+construction. `GEMINI_MODEL` and `GGEMINI_MODEL` remain lower-priority
+configuration-boundary compatibility inputs with warnings. The provider-wide
+conservative RPM ceiling remains deliberately distinct from model-specific
+quota profiles and is documented as such. No provider request, schema,
+migration, replay, or live operation changed.
+
 ## 2026-08-28 — AM-067 person-context writer closure
 
 The source audit found two remaining SQL bypasses for `person_context_state`:

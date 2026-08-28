@@ -31,7 +31,6 @@ class Settings:
     groq_api_key: str
     groq_model: str
     gemini_api_key: str
-    gemini_model: str
     ai_primary_provider: str
     ai_fallback_provider: str
     ai_daily_max_messages: int
@@ -134,8 +133,6 @@ def load_settings(root: Path | None = None) -> Settings:
         configuration_warnings.append(
             f"{gemini_model_source} is deprecated; use GEMINI_PRIMARY_MODEL"
         )
-    gemini_model = gemini_primary_model
-
     api_id = os.getenv("TELEGRAM_API_ID", "").strip()
     api_hash = os.getenv("TELEGRAM_API_HASH", "").strip()
 
@@ -171,7 +168,6 @@ def load_settings(root: Path | None = None) -> Settings:
         groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
         groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b").strip(),
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
-        gemini_model=gemini_model,
         ai_primary_provider=_provider_name("AI_PRIMARY_PROVIDER", "gemini"),
         ai_fallback_provider=_provider_name("AI_FALLBACK_PROVIDER", "groq"),
         ai_daily_max_messages=_positive_int(

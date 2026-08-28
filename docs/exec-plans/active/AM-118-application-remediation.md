@@ -77,6 +77,9 @@ work during `connect()`.
 ### 2. One accountable AI request
 
 1. Complete AM-052, then AM-099 so model eligibility is a stated policy.
+   AM-052 completed 2026-08-28: `gemini_primary_model` is the sole effective
+   primary-model field; deprecated environment aliases are boundary-only and
+   provider-wide RPM capping remains distinct from model quota profiles.
 2. Complete AM-106: one owner for physical-request retry, usage, and rate
    accounting. AM-104 binds execution to the selected model; AM-105 provides
    cancellable timeout handling and explicit provider-client cleanup.

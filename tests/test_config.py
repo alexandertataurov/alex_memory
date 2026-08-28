@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from alex_memory.config import load_settings
+from alex_memory.config import Settings, load_settings
 
 
 class SettingsTests(unittest.TestCase):
@@ -112,8 +112,8 @@ class SettingsTests(unittest.TestCase):
             ):
                 settings = load_settings(root)
             self.assertEqual("gemini-2.5-flash", settings.gemini_primary_model)
-            self.assertEqual("gemini-2.5-flash", settings.gemini_model)
             self.assertEqual((), settings.configuration_warnings)
+            self.assertNotIn("gemini_model", Settings.__dataclass_fields__)
 
     def test_legacy_ai_aliases_are_visible_in_runtime_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

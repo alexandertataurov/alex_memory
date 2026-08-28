@@ -78,7 +78,6 @@ def settings_for(root: Path, **overrides) -> Settings:
         groq_api_key="groq-key",
         groq_model="groq-test",
         gemini_api_key="gemini-key",
-        gemini_model="gemini-test",
         ai_primary_provider="gemini",
         ai_fallback_provider="groq",
         ai_daily_max_messages=100,

@@ -16,6 +16,12 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-052 removes the unused `Settings.gemini_model` mirror. Gemini primary
+  model selection now has one effective settings field; deprecated environment
+  aliases remain lower-priority inputs with diagnostics, and documented
+  provider-wide RPM capping remains distinct from model quota profiles. No
+  provider, schema, migration, replay, or live action ran.
+
 - AM-067 consolidates all `person_context_state` writes in
   `ContactContextMaterializer`. Locally validated presentation summaries and
   canonical-person merge relocation now use its explicit methods, so profile
