@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from alex_memory.ai.repository import save_ai_success
 from alex_memory.ai.context import add_contextual_preamble
@@ -128,6 +129,40 @@ class OperationalMemoryTests(unittest.TestCase):
                 )
                 receipt = path / "recovery-receipt.sqlite"
                 receipt.touch()
+
+                def partial_failure(*_args, **_kwargs) -> tuple[int, int]:
+                    conn.execute(
+                        "UPDATE tasks SET related_project_id=? WHERE task_id=1",
+                        (project_id,),
+                    )
+                    raise RuntimeError("injected repair failure")
+
+                with (
+                    patch(
+                        "alex_memory.repair.backfill_task_project_links",
+                        side_effect=partial_failure,
+                    ),
+                    self.assertRaisesRegex(RuntimeError, "injected"),
+                ):
+                    apply_task_project_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+                self.assertIsNone(
+                    conn.execute("SELECT related_project_id FROM tasks").fetchone()[0]
+                )
+                self.assertEqual(
+                    "failed",
+                    json.loads(
+                        conn.execute(
+                            "SELECT value FROM app_meta WHERE key=?",
+                            (f"derived_state_repair:{report['fingerprint']}",),
+                        ).fetchone()[0]
+                    )["status"],
+                )
 
                 outcome = apply_task_project_repair(
                     conn,
