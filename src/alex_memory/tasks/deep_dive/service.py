@@ -382,7 +382,7 @@ class TaskDeepDiveService:
         known = set(known_terms)
         candidates: list[str] = []
         for item in evidence:
-            for term in re.findall(r"[a-z0-9][a-z0-9_-]{2,}", item.text.casefold()):
+            for term in re.findall(r"[\w][\w-]{2,}", item.text.casefold()):
                 if term not in known and term not in {
                     "that",
                     "this",

@@ -12,7 +12,7 @@ from alex_memory.database import connect
 from alex_memory.operational import EntityResolver, normalize_task_title
 from alex_memory.tasks.deep_dive import TaskDeepDiveService
 from alex_memory.tasks.deep_dive.models import EvidenceItem
-from alex_memory.tasks.deep_dive.retrieval import raw_message_evidence
+from alex_memory.tasks.deep_dive.retrieval import raw_message_evidence, task_concepts
 from test_ai_pipeline import make_settings
 
 
@@ -318,3 +318,17 @@ class TaskDeepDiveTests(unittest.TestCase):
         report = self.service.build(self.task_id)
         self.assertTrue(report.evidence)
         self.assertTrue(all(item.reasons for item in report.evidence))
+
+    def test_multilingual_concepts_do_not_need_deal_specific_expansion(self) -> None:
+        task = self.service._task(self.task_id)
+        task["title"] = "Подтвердить ქართული პირობები"
+        context = self.service._context(self.task_id, task["title"], None)
+
+        concepts = task_concepts(task, context)
+        discovered = self.service._evidence_terms(
+            [EvidenceItem("E-test", "message", "test", "ქართული პასუხი")], concepts
+        )
+
+        self.assertIn("подтвердить", concepts)
+        self.assertIn("ქართული", concepts)
+        self.assertIn("პასუხი", discovered)

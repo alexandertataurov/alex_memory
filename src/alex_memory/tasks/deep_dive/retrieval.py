@@ -30,31 +30,6 @@ _STOP_WORDS = {
     "send",
     "structure",
 }
-_DOMAIN_TERMS = {
-    "hedge": (
-        "hedge",
-        "hedging",
-        "fx",
-        "forward",
-        "spread",
-        "pricing",
-        "rate",
-        "difference",
-    ),
-    "hedging": (
-        "hedge",
-        "hedging",
-        "fx",
-        "forward",
-        "spread",
-        "pricing",
-        "rate",
-        "difference",
-    ),
-    "tbc": ("tbc", "fx", "spread", "pricing", "rate"),
-    "flow": ("flow", "funds", "flow-of-funds"),
-    "funds": ("flow", "funds", "flow-of-funds"),
-}
 
 
 def task_concepts(
@@ -73,8 +48,6 @@ def task_concepts(
                 str(entity.get("canonical_name", "")).casefold(),
             )
         )
-    for concept in list(concepts):
-        concepts.extend(_DOMAIN_TERMS.get(concept, ()))
     concepts.extend(value.casefold().strip() for value in extra if value.strip())
     return _unique(concepts)
 
