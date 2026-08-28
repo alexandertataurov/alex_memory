@@ -218,7 +218,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
 
-- [ ] AM-067 [P0] [Context ownership / Anti-slop] — Give each materialized context table exactly one writer and remove competing person-state projections.
+- [x] AM-067 [P0] [Context ownership / Anti-slop] — Give each materialized context table exactly one writer and remove competing person-state projections.
   - Historical evidence: the original review found competing `ContextService`
     and `ContactContextMaterializer` writes to `person_context_state`.
   - Current source: `ContactContextMaterializer` is the sole person-context
@@ -234,6 +234,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - shrink `process_ai_batch()` to canonical projection + dirty marking, not downstream recomputation.
   - Anti-slop constraint: do not solve this by wrapping both writers in additional manager/factory layers; delete the redundant writer/path.
   - Verification: same batch with waiting task + conversation context, corrected project/person link, empty-after-cleanup summary, no-op refresh, version history, and deterministic rebuild tests.
+  - Completed 2026-08-28: source audit found the remaining profile-summary and
+    canonical-person-merge table writes. Both now delegate to
+    `ContactContextMaterializer`, leaving it as the sole SQL writer for
+    `person_context_state`; merge relocation retains its existing behavior.
+    No migration, rebuild, replay, provider request, or live operation ran.
 
 - [ ] AM-052 [P0] [Configuration correctness] — Make effective AI configuration have one value per concept and identical defaults across every construction path.
   - Code evidence: the `Settings` dataclass default is `ai_routing_mode="legacy"`, while `load_settings()` defaults `AI_ROUTING_MODE` to `quota_aware`. Tests or internal code that instantiate `Settings(...)` directly can therefore run a different routing architecture than the real application with no explicit override.

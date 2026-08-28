@@ -105,7 +105,9 @@ deterministic at every interruption point.
 1. Complete AM-053: projection marks scoped invalidations; workers coalesce and
    cannot clear a newer revision.
 2. Complete AM-067 by removing the redundant person-state writer; version rows
-   must record the final committed meaning.
+   must record the final committed meaning. Completed 2026-08-28: the remaining
+   profile-summary and canonical-person-merge SQL bypasses delegate to
+   `ContactContextMaterializer`; no live rebuild ran.
 3. Complete AM-057, AM-085–AM-088 with explicit source, supersession/removal,
    and rebuild rules.
 

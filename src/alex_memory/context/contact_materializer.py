@@ -75,6 +75,34 @@ class ContactContextMaterializer:
         self._refresh_person_state(person_id)
         return len(chat_ids)
 
+    def store_profile_summary(
+        self, person_id: int, summary: str, input_hash: str
+    ) -> None:
+        """Persist a locally validated presentation summary for one person."""
+        now = utc_now()
+        self.conn.execute(
+            """INSERT INTO person_context_state(person_id,profile_summary,profile_summary_updated_at,
+                      profile_summary_input_hash,updated_at)
+               VALUES (?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET
+                 profile_summary=excluded.profile_summary,
+                 profile_summary_updated_at=excluded.profile_summary_updated_at,
+                 profile_summary_input_hash=excluded.profile_summary_input_hash,
+                 updated_at=excluded.updated_at""",
+            (person_id, summary, now, input_hash, now),
+        )
+
+    def merge_person_state(self, keep_person_id: int, discard_person_id: int) -> None:
+        """Move derived person state during a canonical person merge."""
+        self.conn.execute(
+            """UPDATE OR IGNORE person_context_state SET person_id=?
+               WHERE person_id=?""",
+            (keep_person_id, discard_person_id),
+        )
+        self.conn.execute(
+            "DELETE FROM person_context_state WHERE person_id=?",
+            (discard_person_id,),
+        )
+
     def refresh_conversation(self, person_id: int, chat_id: int) -> None:
         records = self._activity_records(person_id, chat_id)
         now = utc_now()

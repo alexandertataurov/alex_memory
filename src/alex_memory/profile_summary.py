@@ -12,7 +12,6 @@ from .ai.router import AIRouter
 from .ai.routing import AIWorkload, RequestPriority
 from .models import AIBatch, AIMessage
 from .person_profile import profile_summary_package
-from .utils import utc_now
 
 
 _CITATION = re.compile(r"\[(\d+)/(\d+)\]")
@@ -140,14 +139,9 @@ async def refresh_profile_summary(
         raise ExtractionContractError(
             "profile summary has missing or foreign evidence citations"
         )
-    conn.execute(
-        """INSERT INTO person_context_state(person_id,profile_summary,profile_summary_updated_at,
-                  profile_summary_input_hash,updated_at)
-           VALUES (?,?,?,?,?) ON CONFLICT(person_id) DO UPDATE SET
-             profile_summary=excluded.profile_summary,
-             profile_summary_updated_at=excluded.profile_summary_updated_at,
-             profile_summary_input_hash=excluded.profile_summary_input_hash,
-             updated_at=excluded.updated_at""",
-        (person_id, summary, utc_now(), input_hash, utc_now()),
+    from .context.contact_materializer import ContactContextMaterializer
+
+    ContactContextMaterializer(conn).store_profile_summary(
+        person_id, summary, input_hash
     )
     return True

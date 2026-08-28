@@ -16,6 +16,12 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-067 consolidates all `person_context_state` writes in
+  `ContactContextMaterializer`. Locally validated presentation summaries and
+  canonical-person merge relocation now use its explicit methods, so profile
+  and operational callers no longer write the materialized table directly. No
+  migration, rebuild, replay, provider request, or live action ran.
+
 - AM-053 routes the explicit terminal global refresh through the durable
   invalidation worker. Project health, follow-ups, and global snapshots no
   longer bypass the ledger on that path.

@@ -1,5 +1,15 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-067 person-context writer closure
+
+The source audit found two remaining SQL bypasses for `person_context_state`:
+the bounded, locally validated presentation summary and canonical-person merge
+relocation. Both now call explicit `ContactContextMaterializer` methods, so the
+materializer owns the table's SQL writes while profile, operational, and refresh
+callers retain their existing contracts. The state remains rebuildable derived
+context; no evidence, temporal facts, authority, schema, replay, provider, or
+live operation changed.
+
 ## 2026-08-28 — Global refresh ownership
 
 The explicit terminal operational refresh now queues and drains the durable

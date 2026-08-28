@@ -1519,14 +1519,10 @@ def _merge_entities(
             (entity_type, discard_entity_id),
         )
         if entity_type == "person":
-            conn.execute(
-                """UPDATE OR IGNORE person_context_state SET person_id=?
-                   WHERE person_id=?""",
-                (keep_entity_id, discard_entity_id),
-            )
-            conn.execute(
-                "DELETE FROM person_context_state WHERE person_id=?",
-                (discard_entity_id,),
+            from .context.contact_materializer import ContactContextMaterializer
+
+            ContactContextMaterializer(conn).merge_person_state(
+                keep_entity_id, discard_entity_id
             )
             for contact_table in (
                 "conversation_contact_segments",

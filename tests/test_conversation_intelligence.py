@@ -160,6 +160,17 @@ class ConversationIntelligenceTests(unittest.TestCase):
         )
         ConversationContextService(self.conn, self.settings).refresh_person(duplicate)
         _merge_entities(self.conn, "person", self.person_id, [duplicate])
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM person_context_state WHERE person_id=?", (duplicate,)
+            ).fetchone()
+        )
+        self.assertIsNotNone(
+            self.conn.execute(
+                "SELECT 1 FROM person_context_state WHERE person_id=?",
+                (self.person_id,),
+            ).fetchone()
+        )
         self.assertEqual(
             0,
             self.conn.execute(
