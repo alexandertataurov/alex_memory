@@ -103,6 +103,15 @@ class ConversationIntelligenceTests(unittest.TestCase):
                 (self.person_id,),
             ).fetchone()[0],
         )
+        service.refresh_conversation(self.person_id, 10)
+        self.assertEqual(
+            2,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM conversation_open_loops
+                   WHERE person_id=? AND loop_type='task'""",
+                (self.person_id,),
+            ).fetchone()[0],
+        )
         current = self.conn.execute(
             """SELECT current_state,topic_json FROM current_conversation_context
                WHERE person_id=? AND conversation_id='10'""",
@@ -135,6 +144,196 @@ class ConversationIntelligenceTests(unittest.TestCase):
         self.assertEqual(self.georgia, package["conversation"]["primary_project_id"])
         self.assertNotIn("Dubai", package["conversation"]["current_state"])
         self.assertTrue(package["context"].segments)
+
+    def test_refresh_removes_task_loops_after_done_or_canceled(self) -> None:
+        service = ConversationContextService(self.conn, self.settings)
+        service.refresh_conversation(self.person_id, 10)
+        self.assertEqual(
+            2,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM conversation_open_loops
+                   WHERE person_id=? AND loop_type='task'""",
+                (self.person_id,),
+            ).fetchone()[0],
+        )
+        self.conn.execute(
+            "UPDATE tasks SET status='done' WHERE title='Confirm TBC pricing'"
+        )
+        self.conn.execute(
+            "UPDATE tasks SET status='canceled' WHERE title='Send Dubai documents'"
+        )
+
+        service.refresh_conversation(self.person_id, 10)
+
+        self.assertEqual(
+            0,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM conversation_open_loops
+                   WHERE person_id=? AND loop_type='task'""",
+                (self.person_id,),
+            ).fetchone()[0],
+        )
+
+    def test_refresh_removes_orphan_task_loop(self) -> None:
+        now = "2026-08-20T09:00:00+00:00"
+        self.conn.execute(
+            """INSERT INTO conversation_open_loops(person_id,source_type,conversation_id,loop_type,
+                   title,owner,status,task_id,source_chat_id,source_message_id,confidence,created_at,updated_at)
+               VALUES (?,'telegram','10','task','Old derived loop','me','waiting',999,10,99,0.9,?,?)""",
+            (self.person_id, now, now),
+        )
+
+        ConversationContextService(self.conn, self.settings).refresh_conversation(
+            self.person_id, 10
+        )
+
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT 1 FROM conversation_open_loops WHERE task_id=999"
+            ).fetchone()
+        )
+
+    def test_refresh_preserves_non_task_durable_loop(self) -> None:
+        now = "2026-08-20T09:00:00+00:00"
+        self.conn.execute(
+            """INSERT INTO conversation_open_loops(person_id,source_type,conversation_id,loop_type,
+                   title,owner,status,source_chat_id,source_message_id,confidence,created_at,updated_at)
+               VALUES (?,'telegram','10','promise','Send signed terms','me','waiting',10,99,0.9,?,?)""",
+            (self.person_id, now, now),
+        )
+
+        ConversationContextService(self.conn, self.settings).refresh_conversation(
+            self.person_id, 10
+        )
+
+        self.assertEqual(
+            "waiting",
+            self.conn.execute(
+                """SELECT status FROM conversation_open_loops
+                   WHERE loop_type='promise' AND source_message_id=99"""
+            ).fetchone()[0],
+        )
+
+    def test_weak_or_late_reply_does_not_resolve_question_loop(self) -> None:
+        self.conn.executemany(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,?,?,?,?,0)""",
+            [
+                (
+                    20,
+                    "2026-08-21T09:00:00+00:00",
+                    "Can we proceed with the documents?",
+                    1,
+                ),
+                (21, "2026-08-21T09:01:00+00:00", "yes", 0),
+                (
+                    22,
+                    "2026-08-21T09:02:00+00:00",
+                    "The documents were sent to legal today.",
+                    0,
+                ),
+            ],
+        )
+
+        ConversationContextService(self.conn, self.settings).refresh_conversation(
+            self.person_id, 10
+        )
+
+        self.assertEqual(
+            "waiting",
+            self.conn.execute(
+                """SELECT status FROM conversation_open_loops
+                   WHERE loop_type='question' AND source_message_id=20"""
+            ).fetchone()[0],
+        )
+        self.assertIsNone(
+            self.conn.execute(
+                """SELECT 1 FROM conversation_context_links
+                   WHERE link_type='question_answer' AND from_message_id=20"""
+            ).fetchone()
+        )
+
+    def test_old_question_loop_ages_out_of_current_state(self) -> None:
+        self.conn.execute(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,30,'2025-01-01T09:00:00+00:00',
+                       'Can we proceed with the documents?',1,0)"""
+        )
+
+        ConversationContextService(self.conn, self.settings).refresh_conversation(
+            self.person_id, 10
+        )
+
+        self.assertEqual(
+            "resolved",
+            self.conn.execute(
+                """SELECT status FROM conversation_open_loops
+                   WHERE loop_type='question' AND source_message_id=30"""
+            ).fetchone()[0],
+        )
+
+    def test_only_the_adjacent_question_gets_a_nearby_answer(self) -> None:
+        self.conn.executemany(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,?,?,?,?,0)""",
+            [
+                (40, "2026-08-22T09:00:00+00:00", "Can we proceed with documents?", 1),
+                (41, "2026-08-22T09:01:00+00:00", "What rate can they offer?", 1),
+                (
+                    42,
+                    "2026-08-22T09:02:00+00:00",
+                    "They can offer 1.2% above benchmark.",
+                    0,
+                ),
+            ],
+        )
+
+        ConversationContextService(self.conn, self.settings).refresh_conversation(
+            self.person_id, 10
+        )
+
+        states = dict(
+            self.conn.execute(
+                """SELECT source_message_id,status FROM conversation_open_loops
+                   WHERE loop_type='question' AND source_message_id IN (40,41)"""
+            ).fetchall()
+        )
+        self.assertEqual({40: "waiting", 41: "resolved"}, states)
+
+    def test_answer_outside_bounded_window_does_not_resolve_question(self) -> None:
+        self.conn.execute(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,50,'2026-08-23T09:00:00+00:00',
+                       'Can we proceed with documents?',1,0)"""
+        )
+        service = ConversationContextService(self.conn, self.settings)
+        service.refresh_conversation(self.person_id, 10)
+        self.conn.executemany(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,?,?,?,?,0)""",
+            [
+                (message_id, "2026-08-23T10:00:00+00:00", "Routine update", 1)
+                for message_id in range(51, 171)
+            ]
+            + [
+                (
+                    171,
+                    "2026-08-23T10:01:00+00:00",
+                    "The documents were sent to legal today.",
+                    0,
+                )
+            ],
+        )
+
+        service.refresh_conversation(self.person_id, 10)
+
+        self.assertEqual(
+            "waiting",
+            self.conn.execute(
+                """SELECT status FROM conversation_open_loops
+                   WHERE loop_type='question' AND source_message_id=50"""
+            ).fetchone()[0],
+        )
 
     def test_person_scoped_answer_uses_contact_context_and_timeline_is_cited(
         self,

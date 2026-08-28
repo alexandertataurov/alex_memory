@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-088 conversation open-loop lifecycle
+
+Scoped refresh now removes task-derived loops without a matching canonical
+open/waiting task. Heuristic question loops remain low-confidence derived state:
+only adjacent substantive replies resolve them, and questions older than 90 days
+become resolved history.
+
 ## 2026-08-28 — AM-086 duplicate observation-event removal
 
 Ordinary accepted observations no longer create generic context-event wrappers.

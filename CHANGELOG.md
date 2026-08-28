@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-088 makes conversation task loops an exact active-task projection and
+  removes stale derived rows during scoped refresh. Heuristic question loops
+  require an adjacent substantive opposite-author reply and age out of current
+  state after 90 days while remaining historical.
 - AM-086 stops projecting ordinary observations as duplicate
   `observation_recorded` context events. Event readers ignore legacy wrappers;
   related retrieval and contact timelines retain the original bounded

@@ -20,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-088 conversation open-loop lifecycle](exec-plans/completed/AM-088-open-loop-lifecycle.md)
 - [AM-086 duplicate observation-event removal](exec-plans/completed/AM-086-observation-event-removal.md)
 - [AM-085 entity-memory removal](exec-plans/completed/AM-085-entity-memory-removal.md)
 - [AM-057 context freshness](exec-plans/completed/AM-057-context-freshness.md)

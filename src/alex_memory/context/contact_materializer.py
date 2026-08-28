@@ -48,6 +48,7 @@ _TOPIC_STOP_WORDS = {
     "and",
     "are",
 }
+_QUESTION_LOOP_CURRENT_DAYS = 90
 
 
 class ContactContextMaterializer:
@@ -242,6 +243,22 @@ class ContactContextMaterializer:
             )
 
     def _materialize_open_loops(self, person_id: int, chat_id: int, now: str) -> None:
+        self.conn.execute(
+            """DELETE FROM conversation_open_loops AS loop
+               WHERE loop.person_id=? AND loop.source_type='telegram'
+                 AND loop.conversation_id=? AND loop.loop_type='task'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM tasks AS t WHERE t.task_id=loop.task_id
+                       AND t.source_chat_id=? AND t.status IN ('open','waiting')
+                       AND (t.related_person_id=? OR EXISTS (
+                           SELECT 1 FROM chats AS c JOIN people AS p
+                             ON p.telegram_user_id=c.chat_id
+                            WHERE c.chat_id=t.source_chat_id AND c.chat_type='user'
+                              AND p.person_id=?
+                       ))
+                 )""",
+            (person_id, str(chat_id), chat_id, person_id, person_id),
+        )
         rows = self.conn.execute(
             """SELECT t.task_id,t.title,t.status,t.owner,t.related_project_id,t.source_chat_id,
                       COALESCE(i.source_message_id,0),t.confidence
@@ -322,53 +339,69 @@ class ContactContextMaterializer:
                ORDER BY date DESC,message_id DESC LIMIT 120""",
             (chat_id,),
         ).fetchall()
-        pending: list[tuple[int, bool]] = []
-        for message_id, _, text, is_outgoing in reversed(rows):
+        chronological = list(reversed(rows))
+        for index, (message_id, _, text, is_outgoing) in enumerate(chronological):
             text = str(text or "")
-            if _is_operational_question(text):
+            if not _is_operational_question(text):
+                continue
+            self.conn.execute(
+                """INSERT OR IGNORE INTO conversation_open_loops(
+                       person_id,source_type,conversation_id,loop_type,title,owner,status,
+                       source_chat_id,source_message_id,confidence,created_at,updated_at
+                   ) VALUES (?, 'telegram', ?, 'question', ?, ?, 'waiting', ?, ?, 0.6, ?, ?)""",
+                (
+                    person_id,
+                    str(chat_id),
+                    _question_title(text),
+                    "other" if is_outgoing else "me",
+                    chat_id,
+                    message_id,
+                    now,
+                    now,
+                ),
+            )
+            if index + 1 >= len(chronological):
+                continue
+            reply_id, _, reply_text, reply_outgoing = chronological[index + 1]
+            if bool(reply_outgoing) != bool(is_outgoing) and _supports_question(
+                text, str(reply_text or "")
+            ):
                 self.conn.execute(
-                    """INSERT OR IGNORE INTO conversation_open_loops(
-                           person_id,source_type,conversation_id,loop_type,title,owner,status,
-                           source_chat_id,source_message_id,confidence,created_at,updated_at
-                       ) VALUES (?, 'telegram', ?, 'question', ?, ?, 'waiting', ?, ?, 0.6, ?, ?)""",
+                    """INSERT OR IGNORE INTO conversation_context_links(
+                           person_id,link_type,from_chat_id,from_message_id,to_chat_id,to_message_id,
+                           confidence,source,created_at
+                       ) VALUES (?, 'question_answer', ?, ?, ?, ?, 0.7, 'adjacent_substantive_reply', ?)""",
+                    (person_id, chat_id, message_id, chat_id, reply_id, now),
+                )
+                self.conn.execute(
+                    """UPDATE conversation_open_loops SET status='resolved',resolved_by_chat_id=?,
+                           resolved_by_message_id=?,updated_at=? WHERE person_id=? AND source_type='telegram'
+                           AND conversation_id=? AND loop_type='question' AND source_chat_id=?
+                           AND source_message_id=? AND status IN ('open','waiting')""",
                     (
+                        chat_id,
+                        reply_id,
+                        now,
                         person_id,
                         str(chat_id),
-                        _question_title(text),
-                        "other" if is_outgoing else "me",
                         chat_id,
                         message_id,
-                        now,
-                        now,
                     ),
                 )
-                pending.append((int(message_id), bool(is_outgoing)))
-            elif pending and _looks_like_answer(text):
-                question_id, question_outgoing = pending[-1]
-                if bool(is_outgoing) != question_outgoing:
-                    self.conn.execute(
-                        """INSERT OR IGNORE INTO conversation_context_links(
-                               person_id,link_type,from_chat_id,from_message_id,to_chat_id,to_message_id,
-                               confidence,source,created_at
-                           ) VALUES (?, 'question_answer', ?, ?, ?, ?, 0.7, 'bounded_reply_pattern', ?)""",
-                        (person_id, chat_id, question_id, chat_id, message_id, now),
-                    )
-                    self.conn.execute(
-                        """UPDATE conversation_open_loops SET status='resolved',resolved_by_chat_id=?,
-                               resolved_by_message_id=?,updated_at=? WHERE person_id=? AND source_type='telegram'
-                               AND conversation_id=? AND loop_type='question' AND source_chat_id=?
-                               AND source_message_id=? AND status IN ('open','waiting')""",
-                        (
-                            chat_id,
-                            message_id,
-                            now,
-                            person_id,
-                            str(chat_id),
-                            chat_id,
-                            question_id,
-                        ),
-                    )
-                    pending.pop()
+        cutoff = (
+            datetime.fromisoformat(now.replace("Z", "+00:00"))
+            - timedelta(days=_QUESTION_LOOP_CURRENT_DAYS)
+        ).isoformat()
+        self.conn.execute(
+            """UPDATE conversation_open_loops AS loop SET status='resolved',updated_at=?
+               WHERE loop.person_id=? AND loop.source_type='telegram' AND loop.conversation_id=?
+                 AND loop.loop_type='question' AND loop.status IN ('open','waiting')
+                 AND EXISTS (
+                     SELECT 1 FROM messages AS m WHERE m.chat_id=loop.source_chat_id
+                       AND m.message_id=loop.source_message_id AND m.date<?
+                 )""",
+            (now, person_id, str(chat_id), cutoff),
+        )
 
     def _materialize_person_project_context(
         self, person_id: int, records: list[dict], now: str
@@ -542,12 +575,22 @@ def _is_operational_question(text: str) -> bool:
     )
 
 
-def _looks_like_answer(text: str) -> bool:
-    lowered = text.casefold()
-    return bool(re.search(r"\d+(?:[.,]\d+)?\s*%", text)) or any(
-        token in lowered
-        for token in ("sent", "confirmed", "received", "yes", "готов", "отправ")
-    )
+def _supports_question(question: str, answer: str) -> bool:
+    """Return whether an adjacent reply carries enough evidence to resolve a question."""
+    answer_terms = {
+        term.casefold()
+        for term in _TOPIC_WORDS.findall(answer)
+        if not term.isdigit() and term.casefold() not in _TOPIC_STOP_WORDS
+    }
+    question_terms = {
+        term.casefold()
+        for term in _TOPIC_WORDS.findall(question)
+        if not term.isdigit() and term.casefold() not in _TOPIC_STOP_WORDS
+    }
+    if len(answer_terms) < 2:
+        return False
+    has_number = bool(re.search(r"\d+(?:[.,]\d+)?\s*%", answer))
+    return has_number or bool(question_terms & answer_terms)
 
 
 def _question_title(text: str) -> str:

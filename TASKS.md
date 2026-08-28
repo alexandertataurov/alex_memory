@@ -568,7 +568,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Safety: never rewrite raw Telegram messages, AI evidence, manual feedback, task locks, notes, or pins.
   - Verification: rebuild is bounded/idempotent and a second run produces no duplicate materialized state.
 
-- [ ] AM-088 [P0] [Open loops / Anti-slop] — Give conversation open loops a real lifecycle instead of append-only heuristic memory.
+- [x] AM-088 [P0] [Open loops / Anti-slop] — Give conversation open loops a real lifecycle instead of append-only heuristic memory.
+  - Plan: `docs/exec-plans/completed/AM-088-open-loop-lifecycle.md`.
   - Evidence from live DB: 629 open/waiting loops; **440** are older than 90 days and **193** are older than one year.
   - Code evidence: `_materialize_open_loops()` selects only currently open/waiting tasks and upserts them, but never resolves/removes an existing loop when its canonical task later becomes `done` or `canceled`. This directly creates stale task loops.
   - Code evidence: question→answer linking scans only the latest 120 messages and can resolve the latest opposite-author question when a later message merely contains weak tokens such as `yes`, `sent`, `confirmed`, `готов`, `отправ` or a percentage.
@@ -580,6 +581,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - ordinary historical questions age out of Current while remaining queryable in history;
     - rebuild removes stale materialized loops rather than only inserting/updating rows.
   - Verification: waiting→done/canceled task, old stale loop cleanup, multiple nearby questions, unrelated `yes`, percentage reply, answer outside bounded window, restart/rebuild, and manual keep/pin cases.
+  - Completed 2026-08-28: task loops now mirror scoped open/waiting canonical
+    tasks, removing stale/done/canceled/orphaned derived rows on refresh.
+    Question loops resolve only to an adjacent substantive opposite-author
+    reply and age to resolved history after 90 days.
 
 - [ ] AM-091 [P1] [Generated text quality] — Remove prompt-internal `ME` terminology from user-facing derived text.
   - Evidence from live DB: the internal marker appears in hundreds of derived records, including AI item details, task details, memory chunks, daily/monthly summaries, and context summary versions.
