@@ -729,11 +729,13 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   retryable rather than stranded. No migration or live action ran. Verification:
   72 focused tests, Ruff, formatting, and MyPy.
 
-- [x] AM-099 [P0] [AI router / Anti-slop] — Completed 2026-08-26. Automatic
+- [x] AM-099 [P0] [AI router / Anti-slop] — Completed 2026-08-28. Automatic
   Daily/Brief analysis uses background priority while manual Daily analysis is
   interactive. Existing short/context workload policies now differ,
   structured-output admission is enforced, route events retain deterministic
-  policy reasons, and the unused long-context flag is removed. No
+  policy reasons, and the unused long-context flag is removed. Forced and
+  session-pinned models can reorder or select only from the normal
+  workload/capability eligible set; they cannot admit an excluded profile. No
   provider/model expansion, migration, or live action ran. Verification: 49
   focused router/app tests, Ruff, formatting, MyPy, docs check, and review.
 

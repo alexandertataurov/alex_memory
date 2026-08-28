@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-099 override eligibility closure
+
+Forced and session-pinned model keys are now applied only after the normal
+workload and required-capability eligible set is computed. A forced model can
+remain selected and an eligible session model can still move first, but neither
+can admit a short-only or capability-ineligible profile. No provider/model
+expansion, schema, migration, replay, or live operation changed.
+
 ## 2026-08-28 — AM-052 effective configuration closure
 
 `Settings.gemini_model` was an unused mirror of `gemini_primary_model`; it is

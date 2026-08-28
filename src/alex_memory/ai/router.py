@@ -478,18 +478,20 @@ class AIRouter:
                 )
             )
             return list(dict.fromkeys(self.registry.profile(key) for key in keys))
-        forced = self.registry.forced()
-        if forced:
-            return [forced]
         candidates = self.registry.candidates(
             workload, requires_structured_output=requires_structured_output
         )
+        eligible = {profile.key for profile in candidates}
+        forced = self.registry.forced()
+        if forced and forced.key in eligible:
+            return [forced]
         if self.session_model_key:
             selected = self.registry.profile(self.session_model_key)
-            return [
-                selected,
-                *[item for item in candidates if item.key != selected.key],
-            ]
+            if selected.key in eligible:
+                return [
+                    selected,
+                    *[item for item in candidates if item.key != selected.key],
+                ]
         return candidates
 
     async def _request_provider(

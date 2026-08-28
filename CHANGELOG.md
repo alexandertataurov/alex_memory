@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-099 now applies workload and structured-output eligibility before forced
+  or session-pinned route selection. Overrides can choose only an eligible
+  profile; excluded models remain unavailable and trigger no request. No
+  provider/model expansion, schema, migration, replay, or live action ran.
+
 - AM-052 removes the unused `Settings.gemini_model` mirror. Gemini primary
   model selection now has one effective settings field; deprecated environment
   aliases remain lower-priority inputs with diagnostics, and documented

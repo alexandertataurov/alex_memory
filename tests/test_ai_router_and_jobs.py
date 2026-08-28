@@ -417,6 +417,64 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 registry.candidate_explanations(AIWorkload.CONTEXT_EXTRACTION)["gemma"],
             )
 
+    def test_forced_or_session_model_never_bypasses_eligibility(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            forced = AIRouter(
+                settings_for(
+                    Path(directory),
+                    ai_routing_mode="quota_aware",
+                    ai_routing_override="force_gemma",
+                )
+            )
+            self.assertEqual(
+                ["gemini_35", "gemini_31", "groq"],
+                [
+                    profile.key
+                    for profile in forced._candidates(AIWorkload.CONTEXT_EXTRACTION)
+                ],
+            )
+            forced_capability = AIRouter(
+                settings_for(
+                    Path(directory),
+                    ai_routing_mode="quota_aware",
+                    ai_routing_override="force_gemini_35",
+                )
+            )
+            forced_capability.registry._profiles["gemini_35"] = replace(
+                forced_capability.registry.profile("gemini_35"),
+                structured_output=False,
+            )
+            self.assertEqual(
+                ["gemini_31", "gemma", "groq"],
+                [
+                    profile.key
+                    for profile in forced_capability._candidates(
+                        AIWorkload.SIMPLE_EXTRACTION,
+                        requires_structured_output=True,
+                    )
+                ],
+            )
+
+            session = AIRouter(
+                settings_for(Path(directory), ai_routing_mode="quota_aware")
+            )
+            session.session_model_key = "gemma"
+            self.assertEqual(
+                ["gemini_35", "gemini_31", "groq"],
+                [
+                    profile.key
+                    for profile in session._candidates(AIWorkload.CONTEXT_EXTRACTION)
+                ],
+            )
+            session.session_model_key = "groq"
+            self.assertEqual(
+                ["groq", "gemini_35", "gemini_31"],
+                [
+                    profile.key
+                    for profile in session._candidates(AIWorkload.CONTEXT_EXTRACTION)
+                ],
+            )
+
     async def test_quota_aware_skips_gemma_when_prompt_exceeds_guard(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(
