@@ -83,7 +83,10 @@ def show_status(status: RuntimeStatus, console: Console) -> None:
     )
     ai_table.add_row(
         "History coverage",
-        f"{status.history['semantic']:,}/{status.history['eligible']:,} semantic · {status.history['classified']:,} classified",
+        f"{status.history['semantic']:,}/{status.history['eligible']:,} semantic · "
+        f"{status.history['canonicalized']:,} canonical · "
+        f"{status.history['context_integrated']:,} integrated · "
+        f"{status.history['current_enough']:,} current-enough",
     )
     ai_table.add_row("Context dirty", f"{status.context.dirty_count:,}")
     ai_table.add_row(

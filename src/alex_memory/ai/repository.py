@@ -379,14 +379,29 @@ def fetch_unclassified_messages(
 
 
 def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, int]:
-    """Report corpus coverage rather than internal work-window counts."""
+    """Report bounded archive-to-context coverage from durable lifecycle state."""
     eligible = _eligible_chat_sql(settings)
-    total, classified, semantic, private_total, private_classified, private_semantic = (
-        conn.execute(
-            f"""
+    (
+        total,
+        classified,
+        semantic,
+        canonicalized,
+        integrated,
+        current_enough,
+        private_total,
+        private_classified,
+        private_semantic,
+    ) = conn.execute(
+        f"""
             SELECT COUNT(*),
                    SUM(CASE WHEN mc.chat_id IS NOT NULL THEN 1 ELSE 0 END),
                    SUM(CASE WHEN a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN a.canonicalized_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0
+                                 AND NOT EXISTS (SELECT 1 FROM context_invalidations AS ci
+                                                 WHERE ci.status IN ('pending','running','failed'))
+                            THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' AND mc.chat_id IS NOT NULL THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' AND a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END)
@@ -394,16 +409,19 @@ def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, 
             LEFT JOIN chats AS c ON c.chat_id=m.chat_id
             LEFT JOIN message_classifications AS mc ON mc.chat_id=m.chat_id AND mc.message_id=m.message_id
             LEFT JOIN ai_message_state AS a ON a.chat_id=m.chat_id AND a.message_id=m.message_id
+            LEFT JOIN ai_batches AS b ON b.batch_id=a.batch_id
             WHERE TRIM(COALESCE(m.text, '')) <> ''
               AND COALESCE(m.is_deleted, 0)=0 AND {eligible}
               AND {_semantic_policy_sql()}
             """
-        ).fetchone()
-    )
+    ).fetchone()
     return {
         "eligible": int(total or 0),
         "classified": int(classified or 0),
         "semantic": int(semantic or 0),
+        "canonicalized": int(canonicalized or 0),
+        "context_integrated": int(integrated or 0),
+        "current_enough": int(current_enough or 0),
         "private_total": int(private_total or 0),
         "private_classified": int(private_classified or 0),
         "private_semantic": int(private_semantic or 0),

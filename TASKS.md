@@ -327,6 +327,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     running, and failed revisioned refresh scopes, rather than treating only
     source-message stale flags as dirty. This is read-only status reporting;
     no schema, replay, or live action ran.
+  - Progress 2026-08-28: the runtime coverage snapshot now distinguishes
+    eligible archived, classified, semantic, canonicalized, context-integrated,
+    and conservatively current-enough messages. Current-enough requires a
+    committed integrated batch and no pending refresh scope. The remaining
+    precision increment is dependency-revision comparison for
+    `context_version_used`; no schema, replay, or live action ran.
 
 - [x] AM-093 [P0] [Retrieval / Context grounding / Anti-vibe] — Completed related, temporal, and supporting-evidence retrieval alignment.
   - Progress 2026-08-26: active Person Intelligence leaf. Textual “Search this

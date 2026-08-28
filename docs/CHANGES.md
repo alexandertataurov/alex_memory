@@ -15,6 +15,12 @@ therefore report refresh-pending rather than falsely calling derived context
 fresh. This is read-only reporting; no schema, replay, or live operation
 changed.
 
+The bounded runtime coverage snapshot now separately reports eligible archived,
+classified, semantic, canonicalized, context-integrated, and conservatively
+current-enough messages. Current-enough requires an integrated batch and no
+pending refresh scope; dependency-revision comparison remains later AM-057
+precision work. No schema, replay, or live operation changed.
+
 ## 2026-08-28 — AM-099 override eligibility closure
 
 Forced and session-pinned model keys are now applied only after the normal

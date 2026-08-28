@@ -22,6 +22,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 - AM-057 context freshness now reports pending, running, and failed revisioned
   refresh scopes alongside stale source interpretation, so refresh work is not
   falsely shown as fresh. No schema, replay, or live action ran.
+- AM-057 runtime coverage now separates archived eligibility, classification,
+  semantic analysis, canonicalization, context integration, and conservative
+  current-enough coverage. No schema, replay, or live action ran.
 
 - AM-099 now applies workload and structured-output eligibility before forced
   or session-pinned route selection. Overrides can choose only an eligible
