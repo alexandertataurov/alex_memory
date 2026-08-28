@@ -342,6 +342,12 @@ def db_backup() -> int:
 
 def repair_dry_run(operations: list[str], limit: int) -> int:
     """Print a read-only, finite derived-state repair scope."""
+    if not operations:
+        print("Repair dry-run requires at least one --operation.")
+        return 1
+    if limit < 1:
+        print("Repair dry-run limit must be positive.")
+        return 1
     sys.path.insert(0, str(SRC))
     from alex_memory.repair import derived_state_repair_dry_run
 

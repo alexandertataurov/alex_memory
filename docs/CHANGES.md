@@ -8,8 +8,8 @@ nothing, and does not expose message content. Apply/resume behavior remains
 separately gated behind dry-run, recovery, and explicit operator approval.
 
 The dry-run command requires explicit named operations and emits a deterministic
-scope fingerprint from the capped inventory. It remains read-only; apply and
-resume are not implemented.
+scope fingerprint from the capped inventory. It rejects missing/invalid limits
+before opening SQLite, remains read-only, and has no apply or resume mode.
 
 ## 2026-08-27 — AM-120 manual-relationship authority parity
 

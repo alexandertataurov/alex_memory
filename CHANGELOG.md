@@ -22,7 +22,8 @@ All notable user- and developer-visible changes are recorded here. This project 
   migration, replay, or production operation is included.
 - Added an explicit AM-074 dry-run command. It requires one or more named
   operations, returns only capped counts and a deterministic scope fingerprint,
-  and opens the database read-only. It has no apply or resume mode.
+  and opens the database read-only only after validating its input. It has no
+  apply or resume mode.
 
 ### Added
 
