@@ -317,6 +317,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - a deterministic graph/materialization change should normally refresh derived context without re-calling the LLM unless interpretation of specific source evidence is genuinely stale.
   - Integration: person/project profiles, Ask Memory, Task Deep Dive, history status, runtime status, and AM-053 dirty queue.
   - Verification: identity merge/project relink/relationship change marks only dependent state stale; unrelated corpus remains untouched; no graph→AI→graph reanalysis loop.
+  - Progress 2026-08-28: graph improvement now records only its affected
+    conversation/person/company/project/task scopes plus global state in the
+    revisioned invalidation ledger. It no longer marks whole-chat
+    classifications or AI analyses stale, so deterministic repair does not
+    requeue unrelated source messages. Freshness metrics remain this task's
+    next increment. No schema, replay, or live action ran.
 
 - [x] AM-093 [P0] [Retrieval / Context grounding / Anti-vibe] — Completed related, temporal, and supporting-evidence retrieval alignment.
   - Progress 2026-08-26: active Person Intelligence leaf. Textual “Search this

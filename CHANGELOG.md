@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-057 routes deterministic graph-improvement follow-up through scoped,
+  revisioned context invalidations rather than broadly staling high/critical
+  chat messages for AI re-analysis. No schema, replay, or live action ran.
+
 - AM-099 now applies workload and structured-output eligibility before forced
   or session-pinned route selection. Overrides can choose only an eligible
   profile; excluded models remain unavailable and trigger no request. No

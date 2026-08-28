@@ -40,6 +40,7 @@ class ContextGraphImprover:
         item_rows = self._accepted_item_links(entity_type, entity_id, source_chat_id)
         before = self.conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
         affected_chats: set[int] = set()
+        refresh_scopes: set[tuple[str, int]] = set()
         changed = False
         with self.conn:
             for row in rows:
@@ -94,6 +95,15 @@ class ContextGraphImprover:
                     )
                 if chat_id is not None:
                     affected_chats.add(int(chat_id))
+                    refresh_scopes.add(("conversation", int(chat_id)))
+                for scope_type, scope_id in (
+                    ("person", person_id),
+                    ("company", company_id),
+                    ("project", project_id),
+                    ("task", task_id),
+                ):
+                    if scope_id is not None:
+                        refresh_scopes.add((scope_type, int(scope_id)))
             for row in item_rows:
                 (
                     person_id,
@@ -132,6 +142,14 @@ class ContextGraphImprover:
                     )
                 if chat_id is not None:
                     affected_chats.add(int(chat_id))
+                    refresh_scopes.add(("conversation", int(chat_id)))
+                for scope_type, scope_id in (
+                    ("person", person_id),
+                    ("company", company_id),
+                    ("project", project_id),
+                ):
+                    if scope_id is not None:
+                        refresh_scopes.add((scope_type, int(scope_id)))
             candidates = self._queue_contextual_candidates(source_chat_id)
             repair_candidates, repair_chats, repaired = self._repair_orphan_records(
                 source_chat_id
@@ -144,7 +162,13 @@ class ContextGraphImprover:
             ]
             added = int(after - before)
             if added or changed:
-                self._mark_affected_analysis_stale(affected_chats)
+                refresh_scopes.update(
+                    ("conversation", chat_id) for chat_id in repair_chats
+                )
+                refresh_scopes.add(("global", 0))
+                from .refresh import enqueue_context_refresh
+
+                enqueue_context_refresh(self.conn, refresh_scopes)
                 self._bump_context_version()
         return GraphImprovementReport(
             added, len(affected_chats), candidates, graph_diagnostics(self.conn)
@@ -532,26 +556,6 @@ class ContextGraphImprover:
             "SELECT source_message_id FROM ai_items WHERE item_id=?", (item_id,)
         ).fetchone()
         return int(row[0]) if row and row[0] is not None else None
-
-    def _mark_affected_analysis_stale(self, chat_ids: set[int]) -> None:
-        if not chat_ids:
-            return
-        placeholders = ",".join("?" for _ in chat_ids)
-        self.conn.execute(
-            f"UPDATE message_classifications SET context_stale=1 WHERE chat_id IN ({placeholders}) AND importance IN ('critical','high')",
-            sorted(chat_ids),
-        )
-        self.conn.execute(
-            f"""UPDATE ai_message_state SET analysis_stale=1
-                WHERE chat_id IN ({placeholders})
-                  AND EXISTS (
-                      SELECT 1 FROM message_classifications AS mc
-                      WHERE mc.chat_id=ai_message_state.chat_id
-                        AND mc.message_id=ai_message_state.message_id
-                        AND mc.importance IN ('critical','high')
-                  )""",
-            sorted(chat_ids),
-        )
 
     def _bump_context_version(self) -> None:
         row = self.conn.execute(

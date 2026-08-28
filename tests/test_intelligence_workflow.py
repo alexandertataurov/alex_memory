@@ -175,8 +175,23 @@ class IntelligenceWorkflowTests(unittest.TestCase):
         self.assertEqual(0, second.relationships_added)
         self.assertEqual(1, first.affected_chats)
         self.assertEqual(
-            1,
+            0,
             self.conn.execute(
                 "SELECT context_stale FROM message_classifications WHERE chat_id=100 AND message_id=1"
             ).fetchone()[0],
+        )
+        self.assertEqual(
+            {
+                ("conversation",),
+                ("global",),
+                ("person",),
+                ("project",),
+                ("task",),
+            },
+            {
+                (scope_type,)
+                for scope_type, _scope_id in self.conn.execute(
+                    "SELECT scope_type,scope_id FROM context_invalidations"
+                )
+            },
         )

@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-057 graph-refresh scheduling
+
+Graph improvement now records its affected canonical conversation, entity, task,
+and global scopes in the revisioned context invalidation ledger. It no longer
+marks all high/critical rows in an affected chat stale, avoiding a deterministic
+graph-to-AI re-analysis loop. This is a derived-context scheduling change only;
+freshness metrics remain subsequent AM-057 work. No schema, replay, or live
+operation changed.
+
 ## 2026-08-28 — AM-099 override eligibility closure
 
 Forced and session-pinned model keys are now applied only after the normal
