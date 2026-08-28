@@ -447,7 +447,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 
 
-- [ ] AM-107 [P0] [Task Deep Dive / Evidence integrity] — Make every Deep Dive evidence row demonstrably belong to the investigated task.
+- [x] AM-107 [P0] [Task Deep Dive / Evidence integrity] — Make every Deep Dive evidence row demonstrably belong to the investigated task.
+  - Plan: `docs/exec-plans/completed/AM-107-deep-dive-evidence-integrity.md`.
   - Crash bug: `structured_evidence()` builds fact IDs with `fact['fact_id']`, but `current_facts()`/`ContextBuilder._facts()` do not return `fact_id`. Any Deep Dive with non-empty temporal facts can raise `KeyError`.
   - Contamination bug: event filtering treats `task_id=NULL` as acceptable because `None` is explicitly in the allowed tuple. Therefore **every unlinked context event** returned by the broader task context is accepted as task evidence without `_event_matches_task()` being required.
   - This is especially dangerous because many existing task lifecycle events have `task_id=NULL`.
@@ -463,6 +464,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - remove dead `_task_events()` path;
     - no evidence item enters the report without a machine-readable `why this belongs to task` reason.
   - Verification: fact-bearing task (no crash), unrelated `task_id=NULL` event, correctly linked event, Russian task title, contextual entity fact, duplicate origin/raw message, and lifecycle evidence tests.
+  - Completed 2026-08-28: fact IDs are stable; only exact/conservative task-linked
+    events and anchor-linked messages enter evidence; contextual facts remain
+    report background. Dedupe retains strongest provenance with membership
+    reasons. No migration or live operation ran.
 
 - [ ] AM-108 [P0] [Historical context / `as_of`] — Make historical context and Task Deep Dive fail-closed; prevent current state from leaking into past views.
   - ContextBuilder evidence: chat entity seeds come from current open tasks and `ai_items` without consistently applying `request.as_of`; future observations can influence a historical query.

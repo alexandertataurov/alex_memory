@@ -7,10 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from alex_memory.context.repository import ensure_relationship
+from alex_memory.context.repository import ensure_relationship, set_temporal_fact
 from alex_memory.database import connect
 from alex_memory.operational import EntityResolver, normalize_task_title
 from alex_memory.tasks.deep_dive import TaskDeepDiveService
+from alex_memory.tasks.deep_dive.models import EvidenceItem
 from alex_memory.tasks.deep_dive.retrieval import raw_message_evidence
 from test_ai_pipeline import make_settings
 
@@ -149,7 +150,7 @@ class TaskDeepDiveTests(unittest.TestCase):
         cross_chat = next(
             item for item in report.evidence if item.evidence_id == "E-message-200-1"
         )
-        self.assertIn("graph-related chat", " ".join(cross_chat.reasons))
+        self.assertIn("task-linked anchor", " ".join(cross_chat.reasons))
         self.assertTrue(cross_chat.conversation_window)
         self.assertLessEqual(
             len(report.evidence), self.settings.task_deep_dive_max_evidence
@@ -226,3 +227,96 @@ class TaskDeepDiveTests(unittest.TestCase):
                 self.settings,
                 as_of=self.now,
             )
+
+    def test_contextual_fact_and_unlinked_event_are_not_task_evidence(self) -> None:
+        set_temporal_fact(
+            self.conn,
+            subject_type="project",
+            subject_id=self.project,
+            predicate="project_status",
+            value={"status": "active"},
+            valid_from=self.now,
+            confidence=0.9,
+        )
+        event_id = self.conn.execute(
+            """INSERT INTO context_events(event_type,title,description,occurred_at,observed_at,
+                   project_id,confidence,created_at)
+               VALUES ('project_updated','Unrelated project update','No task link',?,?,?,0.9,?)""",
+            (self.now, self.now, self.project, self.now),
+        ).lastrowid
+
+        report = self.service.build(self.task_id)
+
+        ids = {item.evidence_id for item in report.evidence}
+        self.assertNotIn(f"E-event-{event_id}", ids)
+        self.assertFalse(any(item.evidence_type == "fact" for item in report.evidence))
+        self.assertTrue(report.known_facts)
+
+    def test_exact_task_event_is_evidence(self) -> None:
+        event_id = self.conn.execute(
+            """INSERT INTO context_events(event_type,title,description,occurred_at,observed_at,
+                   task_id,confidence,created_at)
+               VALUES ('task_updated','Task lifecycle','Task is waiting',?,?,?,0.9,?)""",
+            (self.now, self.now, self.task_id, self.now),
+        ).lastrowid
+
+        report = self.service.build(self.task_id)
+
+        linked = next(
+            item
+            for item in report.evidence
+            if item.evidence_id == f"E-event-{event_id}"
+        )
+        self.assertIn("exact canonical task link", linked.reasons)
+
+    def test_unicode_task_title_matches_linkless_event_conservatively(self) -> None:
+        self.conn.execute(
+            "UPDATE tasks SET title='Подтвердить цену хеджирования' WHERE task_id=?",
+            (self.task_id,),
+        )
+        event_id = self.conn.execute(
+            """INSERT INTO context_events(event_type,title,description,occurred_at,observed_at,
+                   project_id,confidence,created_at)
+               VALUES ('pricing_discussion','Цена хеджирования','Подтвердить цену',?,?,?,0.9,?)""",
+            (self.now, self.now, self.project, self.now),
+        ).lastrowid
+
+        report = self.service.build(self.task_id)
+
+        matched = next(
+            item
+            for item in report.evidence
+            if item.evidence_id == f"E-event-{event_id}"
+        )
+        self.assertIn("conservative task-title match", matched.reasons)
+
+    def test_dedupe_retains_strongest_provenance_and_reasons(self) -> None:
+        weak = EvidenceItem(
+            "E-message-100-1",
+            "message",
+            "Raw",
+            "weak copy",
+            relevance_score=10,
+            reasons=["raw task-linked anchor"],
+        )
+        origin = EvidenceItem(
+            "E-message-100-1",
+            "message",
+            "Origin",
+            "exact origin",
+            relevance_score=100,
+            reasons=["task origin source message"],
+        )
+
+        selected = self.service._dedupe_and_limit([weak, origin])
+
+        self.assertEqual(["exact origin"], [item.text for item in selected])
+        self.assertEqual(
+            {"raw task-linked anchor", "task origin source message"},
+            set(selected[0].reasons),
+        )
+
+    def test_report_evidence_has_explicit_membership_reason(self) -> None:
+        report = self.service.build(self.task_id)
+        self.assertTrue(report.evidence)
+        self.assertTrue(all(item.reasons for item in report.evidence))

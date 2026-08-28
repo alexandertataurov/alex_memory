@@ -320,24 +320,25 @@ def current_facts(
 ) -> list[dict]:
     if as_of:
         rows = conn.execute(
-            "SELECT predicate,value_json,valid_from,valid_to,confidence,source_chat_id,source_message_id,source_claim_id FROM context_facts WHERE subject_type=? AND subject_id=? AND valid_from<=? AND (valid_to IS NULL OR valid_to>?) ORDER BY valid_from DESC LIMIT ?",
+            "SELECT fact_id,predicate,value_json,valid_from,valid_to,confidence,source_chat_id,source_message_id,source_claim_id FROM context_facts WHERE subject_type=? AND subject_id=? AND valid_from<=? AND (valid_to IS NULL OR valid_to>?) ORDER BY valid_from DESC LIMIT ?",
             (subject_type, subject_id, as_of, as_of, limit),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT predicate,value_json,valid_from,valid_to,confidence,source_chat_id,source_message_id,source_claim_id FROM context_facts WHERE subject_type=? AND subject_id=? AND is_current=1 ORDER BY valid_from DESC LIMIT ?",
+            "SELECT fact_id,predicate,value_json,valid_from,valid_to,confidence,source_chat_id,source_message_id,source_claim_id FROM context_facts WHERE subject_type=? AND subject_id=? AND is_current=1 ORDER BY valid_from DESC LIMIT ?",
             (subject_type, subject_id, limit),
         ).fetchall()
     return [
         {
-            "predicate": row[0],
-            "value": json.loads(row[1]),
-            "valid_from": row[2],
-            "valid_to": row[3],
-            "confidence": row[4],
-            "source_chat_id": row[5],
-            "source_message_id": row[6],
-            "source_claim_id": row[7],
+            "fact_id": row[0],
+            "predicate": row[1],
+            "value": json.loads(row[2]),
+            "valid_from": row[3],
+            "valid_to": row[4],
+            "confidence": row[5],
+            "source_chat_id": row[6],
+            "source_message_id": row[7],
+            "source_claim_id": row[8],
         }
         for row in rows
     ]

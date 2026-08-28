@@ -62,14 +62,14 @@ def task_concepts(
 ) -> list[str]:
     """Expand only explicit task/entity terms and small auditable domain maps."""
     words = re.findall(
-        r"[a-z0-9][a-z0-9_-]{1,}",
+        r"[\w][\w-]{1,}",
         f"{task['title']} {task.get('details') or ''}".casefold(),
     )
     concepts = [word for word in words if word not in _STOP_WORDS]
     for entity in (*context.people, *context.projects, *context.companies):
         concepts.extend(
             re.findall(
-                r"[a-z0-9][a-z0-9_-]{1,}",
+                r"[\w][\w-]{1,}",
                 str(entity.get("canonical_name", "")).casefold(),
             )
         )
@@ -82,10 +82,8 @@ def task_concepts(
 def structured_evidence(task: dict, context: BuiltContext) -> list[EvidenceItem]:
     evidence: list[EvidenceItem] = []
     for event_record in context.events:
-        if event_record.get("task_id") not in (
-            None,
-            task["task_id"],
-        ) and not _event_matches_task(event_record, task):
+        reason = _event_task_reason(event_record, task)
+        if reason is None:
             continue
         evidence.append(
             EvidenceItem(
@@ -98,29 +96,9 @@ def structured_evidence(task: dict, context: BuiltContext) -> list[EvidenceItem]
                 event_record.get("source_message_id"),
                 float(event_record.get("score", 0)),
                 event_record.get("confidence"),
-                ["canonical event linked through task context"],
+                [reason],
             )
         )
-    for fact in context.facts:
-        value = fact.get("value")
-        if isinstance(value, dict):
-            value = ", ".join(f"{key}={item}" for key, item in value.items())
-        evidence.append(
-            EvidenceItem(
-                f"E-fact-{fact['fact_id']}",
-                "fact",
-                str(fact.get("predicate", "fact")),
-                str(value or ""),
-                fact.get("valid_from") or fact.get("updated_at"),
-                fact.get("source_chat_id"),
-                fact.get("source_message_id"),
-                float(fact.get("score", 0)),
-                fact.get("confidence"),
-                ["current temporal fact in task context"],
-            )
-        )
-    for event in _task_events(task, context):
-        evidence.append(event)
     return evidence
 
 
@@ -170,11 +148,7 @@ def raw_message_evidence(
         anchor_hits = len({anchor for anchor in anchors if anchor in lowered})
         direct_source = chat_id == task.get("source_chat_id")
         related_chat = chat_id in related_chats
-        eligible = (
-            anchor_hits > 0
-            or (related_chat and concept_hits >= 2)
-            or (direct_source and concept_hits >= 1)
-        )
+        eligible = anchor_hits > 0
         if not eligible:
             diagnostics["raw_rejected"] += 1
             continue
@@ -188,10 +162,10 @@ def raw_message_evidence(
         reasons = []
         if anchor_hits:
             reasons.append("mentions a task-linked entity")
-        if related_chat and concept_hits >= 2:
-            reasons.append("graph-related chat with multiple task concepts")
         if direct_source:
-            reasons.append("task source chat")
+            reasons.append("task source chat with task-linked anchor")
+        elif related_chat:
+            reasons.append("related chat with task-linked anchor")
         selected.append(
             EvidenceItem(
                 f"E-message-{chat_id}-{message_id}",
@@ -219,12 +193,6 @@ def raw_message_evidence(
     return selected[:limit], diagnostics
 
 
-def _task_events(task: dict, context: BuiltContext) -> list[EvidenceItem]:
-    # ContextBuilder does not read lifecycle events. The calling service augments this
-    # through its connection-specific helper; retained for a stable structured shape.
-    return []
-
-
 def lifecycle_evidence(
     conn: sqlite3.Connection, task_id: int, as_of: str
 ) -> list[EvidenceItem]:
@@ -245,6 +213,34 @@ def lifecycle_evidence(
             65.0,
             None,
             ["task lifecycle audit event"],
+        )
+        for row in rows
+    ]
+
+
+def task_event_evidence(
+    conn: sqlite3.Connection, task_id: int, as_of: str
+) -> list[EvidenceItem]:
+    """Return bounded context events carrying an exact canonical task link."""
+    rows = conn.execute(
+        """SELECT event_id,event_type,title,description,occurred_at,source_chat_id,
+                  source_message_id,confidence FROM context_events
+           WHERE task_id=? AND COALESCE(occurred_at,observed_at,created_at)<=?
+           ORDER BY COALESCE(occurred_at,created_at) DESC LIMIT 40""",
+        (task_id, as_of),
+    ).fetchall()
+    return [
+        EvidenceItem(
+            f"E-event-{row[0]}",
+            "event",
+            str(row[2] or row[1]),
+            str(row[3] or ""),
+            row[4],
+            row[5],
+            row[6],
+            80.0,
+            row[7],
+            ["exact canonical task link"],
         )
         for row in rows
     ]
@@ -331,11 +327,20 @@ def _related_chats(
     return chats
 
 
-def _event_matches_task(event: dict, task: dict) -> bool:
+def _event_task_reason(event: dict, task: dict) -> str | None:
+    if event.get("task_id") == task["task_id"]:
+        return "exact canonical task link"
+    if (
+        event.get("source_chat_id") == task.get("source_chat_id")
+        and event.get("source_message_id") is not None
+        and event.get("source_message_id") == task.get("source_message_id")
+    ):
+        return "exact task source message"
     text = f"{event.get('title') or ''} {event.get('description') or ''}".casefold()
-    return any(
-        word in text for word in re.findall(r"[a-z0-9]{3,}", task["title"].casefold())
-    )
+    terms = re.findall(r"[\w][\w-]{2,}", task["title"].casefold())
+    if any(word in text for word in terms):
+        return "conservative task-title match"
+    return None
 
 
 def _unique(values: Iterable[str]) -> list[str]:

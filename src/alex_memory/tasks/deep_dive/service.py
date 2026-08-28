@@ -15,6 +15,7 @@ from .retrieval import (
     lifecycle_evidence,
     raw_message_evidence,
     structured_evidence,
+    task_event_evidence,
     task_concepts,
 )
 
@@ -42,6 +43,7 @@ class TaskDeepDiveService:
             )
         evidence = [
             *structured_evidence(task, context),
+            *task_event_evidence(self.conn, task_id, as_of_text),
             *lifecycle_evidence(self.conn, task_id, as_of_text),
             *self._origin_evidence(task, as_of_text),
         ]
@@ -108,9 +110,9 @@ class TaskDeepDiveService:
 
     def _task(self, task_id: int) -> dict:
         row = self.conn.execute(
-            """SELECT task_id,title,details,status,owner,due_date,related_person_id,related_company_id,
-                      related_project_id,source_chat_id,source_item_id,confidence,created_at,updated_at
-               FROM tasks WHERE task_id=?""",
+            """SELECT t.task_id,t.title,t.details,t.status,t.owner,t.due_date,t.related_person_id,t.related_company_id,
+                      t.related_project_id,t.source_chat_id,t.source_item_id,i.source_message_id,t.confidence,t.created_at,t.updated_at
+               FROM tasks AS t LEFT JOIN ai_items AS i ON i.item_id=t.source_item_id WHERE t.task_id=?""",
             (task_id,),
         ).fetchone()
         if not row:
@@ -127,6 +129,7 @@ class TaskDeepDiveService:
             "related_project_id",
             "source_chat_id",
             "source_item_id",
+            "source_message_id",
             "confidence",
             "created_at",
             "updated_at",
@@ -277,7 +280,21 @@ class TaskDeepDiveService:
         )
 
     def _dedupe_and_limit(self, evidence: list[EvidenceItem]) -> list[EvidenceItem]:
-        unique = {item.evidence_id: item for item in evidence}
+        unique: dict[str, EvidenceItem] = {}
+        for item in evidence:
+            existing = unique.get(item.evidence_id)
+            if existing is None:
+                unique[item.evidence_id] = item
+                continue
+            winner, loser = (
+                (item, existing)
+                if item.relevance_score > existing.relevance_score
+                else (existing, item)
+            )
+            winner.reasons = list(dict.fromkeys([*winner.reasons, *loser.reasons]))
+            if not winner.conversation_window:
+                winner.conversation_window = loser.conversation_window
+            unique[item.evidence_id] = winner
         selected: list[EvidenceItem] = []
         chars = 0
         for item in sorted(

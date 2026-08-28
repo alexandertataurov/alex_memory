@@ -20,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-107 Deep Dive evidence integrity](exec-plans/completed/AM-107-deep-dive-evidence-integrity.md)
 - [AM-094 Ask Memory evidence and router pipeline](exec-plans/completed/AM-094-ask-memory-pipeline.md)
 - [AM-088 conversation open-loop lifecycle](exec-plans/completed/AM-088-open-loop-lifecycle.md)
 - [AM-086 duplicate observation-event removal](exec-plans/completed/AM-086-observation-event-removal.md)

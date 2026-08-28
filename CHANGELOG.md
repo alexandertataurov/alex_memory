@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-107 makes Task Deep Dive evidence membership explicit: contextual facts
+  stay background, events and messages require task-specific proof, Unicode
+  matching is supported, and dedupe keeps strongest provenance.
 - AM-094 balances bounded Ask Memory evidence by type, marks canonical context
   as non-citable background, and limits deterministic fallback to typed router
   failures.

@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-28 — AM-107 Deep Dive evidence integrity
+
+Deep Dive now retains only task-demonstrable evidence. Temporal fact IDs are
+stable; contextual facts remain background; structured and raw records require
+exact or conservative task membership; duplicate provenance is deterministic.
+
 ## 2026-08-28 — AM-094 Ask Memory evidence/router pipeline
 
 Ask Memory now selects a bounded deterministic mix of task, canonical, summary,
