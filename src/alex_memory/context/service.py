@@ -7,7 +7,7 @@ from ..config import Settings
 from ..utils import utc_now
 from .builder import ContextBuilder
 from .models import ContextRequest
-from .repository import add_event, ensure_relationship, set_temporal_fact
+from .repository import add_event, ensure_relationship
 from .temporal import resolve_temporal_expressions
 
 
@@ -75,46 +75,6 @@ class ContextService:
                 confidence,
                 chat_id,
                 source_message_id,
-            )
-        if project_id and kind in {
-            "task",
-            "follow_up",
-            "deadline",
-            "promise_by_me",
-            "promise_to_me",
-        }:
-            predicate = "project_work_status"
-            set_temporal_fact(
-                self.conn,
-                subject_type="project",
-                subject_id=project_id,
-                predicate=predicate,
-                value={"status": status, "title": title},
-                valid_from=source_date or utc_now(),
-                confidence=confidence,
-                source_chat_id=chat_id,
-                source_message_id=source_message_id,
-                source_ai_item_id=item_id,
-            )
-        if person_id and "document" in f"{title} {details}".casefold():
-            state = (
-                "received"
-                if status == "done" or "received" in f"{title} {details}".casefold()
-                else "requested"
-                if status in {"open", "waiting"}
-                else "discussed"
-            )
-            set_temporal_fact(
-                self.conn,
-                subject_type="person",
-                subject_id=person_id,
-                predicate="corporate_documents_status",
-                value={"status": state},
-                valid_from=source_date or utc_now(),
-                confidence=confidence,
-                source_chat_id=chat_id,
-                source_message_id=source_message_id,
-                source_ai_item_id=item_id,
             )
 
     def process_batch_temporal(self, batch_id: int) -> None:
