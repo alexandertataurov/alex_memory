@@ -227,6 +227,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     work, preserves failures for retry, and cannot clear a later revision.
   - Remaining: verify and move only the still-unowned project, company, and
     global materializations onto this established bounded contract.
+  - Progress 2026-08-28: the explicit terminal global refresh now enqueues and
+    drains the `global` invalidation scope instead of directly refreshing
+    follow-ups/project health. Temporary-SQLite coverage proves the pending →
+    clean revision transition and global snapshot write through the worker.
   - Acceptance:
     - keep source-backed canonical projection transactional and small;
     - accepted material changes mark affected person/conversation/project/company/task/global scopes dirty;

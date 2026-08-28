@@ -29,3 +29,10 @@ it selectively and commit completion only for the revision they processed.
 Use temporary databases for migration, coalescing, restart, revision race,
 targeted refresh, failure retry, and no-op projection cases. Verify integrity
 and repeat execution before any operator-run maintenance.
+
+## Progress
+
+- 2026-08-28: explicit terminal operational refresh now requests and drains the
+  `global` invalidation scope rather than bypassing the ledger with direct
+  follow-up/project-health calls. Fixture coverage proves its revision reaches
+  clean only after the global snapshot/operational projection worker succeeds.

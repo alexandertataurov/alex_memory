@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-053 routes the explicit terminal global refresh through the durable
+  invalidation worker. Project health, follow-ups, and global snapshots no
+  longer bypass the ledger on that path.
+
 - Added AM-074's bounded, read-only derived-state repair inventory. It reports
   capped task-project, segment-chat, and pending-context candidate counts
   without reading message content or modifying SQLite state. No apply path,

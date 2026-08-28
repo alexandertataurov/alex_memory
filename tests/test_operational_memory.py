@@ -10,7 +10,7 @@ from unittest.mock import patch
 from alex_memory.ai.repository import save_ai_success
 from alex_memory.ai.context import add_contextual_preamble
 from alex_memory.classification import classify_message, save_classification
-from alex_memory.context.refresh import refresh_pending_context
+from alex_memory.context.refresh import enqueue_context_refresh, refresh_pending_context
 from alex_memory.database import connect
 from alex_memory.models import AIBatch, AIMessage
 from alex_memory.operational import (
@@ -37,6 +37,40 @@ from test_ai_pipeline import make_settings
 
 
 class OperationalMemoryTests(unittest.TestCase):
+    def test_explicit_global_refresh_uses_the_invalidation_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            try:
+                enqueue_context_refresh(conn, {("global", 0)})
+
+                self.assertEqual(
+                    ("pending", 1),
+                    conn.execute(
+                        """SELECT status,requested_revision FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+                self.assertEqual(
+                    1, asyncio.run(refresh_pending_context(conn, settings))
+                )
+                self.assertEqual(
+                    ("clean", 1, 1),
+                    conn.execute(
+                        """SELECT status,requested_revision,completed_revision
+                           FROM context_invalidations
+                           WHERE scope_type='global' AND scope_id=0"""
+                    ).fetchone(),
+                )
+                self.assertEqual(
+                    1,
+                    conn.execute(
+                        "SELECT COUNT(*) FROM global_state_snapshots"
+                    ).fetchone()[0],
+                )
+            finally:
+                conn.close()
+
     def test_derived_state_repair_inventory_is_bounded_and_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             conn = connect(make_settings(Path(directory)))

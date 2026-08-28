@@ -12,7 +12,29 @@ def enqueue_context_invalidations(
     conn: sqlite3.Connection, batch_id: int, scopes: set[tuple[str, int]]
 ) -> None:
     """Coalesce affected scopes and retain the revision owned by this batch."""
+    revisions = _enqueue_context_scopes(conn, scopes)
+    for scope_type, scope_id in sorted(scopes):
+        conn.execute(
+            """INSERT INTO ai_batch_invalidations(batch_id,scope_type,scope_id,requested_revision)
+               VALUES (?,?,?,?) ON CONFLICT(batch_id,scope_type,scope_id)
+               DO UPDATE SET requested_revision=excluded.requested_revision,integrated_at=NULL""",
+            (batch_id, scope_type, scope_id, revisions[(scope_type, scope_id)]),
+        )
+
+
+def enqueue_context_refresh(
+    conn: sqlite3.Connection, scopes: set[tuple[str, int]]
+) -> None:
+    """Request explicit derived refresh without inventing a source batch."""
+    _enqueue_context_scopes(conn, scopes)
+
+
+def _enqueue_context_scopes(
+    conn: sqlite3.Connection, scopes: set[tuple[str, int]]
+) -> dict[tuple[str, int], int]:
+    """Coalesce scope revisions and return their durable revision numbers."""
     now = utc_now()
+    revisions: dict[tuple[str, int], int] = {}
     for scope_type, scope_id in sorted(scopes):
         row = conn.execute(
             "SELECT requested_revision FROM context_invalidations WHERE scope_type=? AND scope_id=?",
@@ -28,12 +50,8 @@ def enqueue_context_invalidations(
                  last_error=NULL,updated_at=excluded.updated_at""",
             (scope_type, scope_id, revision, now),
         )
-        conn.execute(
-            """INSERT INTO ai_batch_invalidations(batch_id,scope_type,scope_id,requested_revision)
-               VALUES (?,?,?,?) ON CONFLICT(batch_id,scope_type,scope_id)
-               DO UPDATE SET requested_revision=excluded.requested_revision,integrated_at=NULL""",
-            (batch_id, scope_type, scope_id, revision),
-        )
+        revisions[(scope_type, scope_id)] = revision
+    return revisions
 
 
 async def refresh_pending_context(

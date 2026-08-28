@@ -28,9 +28,9 @@ from .intelligence import (
     attention_items,
     manually_update_follow_up,
     profile,
-    refresh_operational_state,
     reject_task,
 )
+from .context.refresh import enqueue_context_refresh, refresh_pending_context
 from .profile_summary import refresh_all_person_profiles
 from .models import DialogInfo
 from .retrieval import SearchResult
@@ -653,13 +653,12 @@ class AlexMemoryApp:
             elif command == "settings":
                 show_settings(self.settings, self.console)
             elif command == "refresh":
-                follow_ups, projects = refresh_operational_state(
-                    self.conn, self.settings
-                )
+                enqueue_context_refresh(self.conn, {("global", 0)})
+                completed = await refresh_pending_context(self.conn, self.settings, 1)
                 self.conn.commit()
                 self.console.print(
                     notice(
-                        f"Reconciled {follow_ups} follow-up(s) and updated {projects} project health record(s).",
+                        f"Completed {completed} queued global refresh scope(s).",
                         title="Operational state refreshed",
                         tone="success",
                     )

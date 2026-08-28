@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-28 — Global refresh ownership
+
+The explicit terminal operational refresh now queues and drains the durable
+`global` invalidation scope rather than directly invoking operational refresh.
+The worker owns the resulting global snapshot, project-health, and follow-up
+refresh. Temporary-SQLite coverage proves the scope's revision stays pending
+until this work completes.
+
 ## 2026-08-28 — AM-074 derived-state repair readiness inventory
 
 AM-074 now has a bounded read-only inventory for task-project, segment-chat,
