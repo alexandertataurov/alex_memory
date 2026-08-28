@@ -323,6 +323,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     classifications or AI analyses stale, so deterministic repair does not
     requeue unrelated source messages. Freshness metrics remain this task's
     next increment. No schema, replay, or live action ran.
+  - Progress 2026-08-28: runtime context freshness now includes pending,
+    running, and failed revisioned refresh scopes, rather than treating only
+    source-message stale flags as dirty. This is read-only status reporting;
+    no schema, replay, or live action ran.
 
 - [x] AM-093 [P0] [Retrieval / Context grounding / Anti-vibe] — Completed related, temporal, and supporting-evidence retrieval alignment.
   - Progress 2026-08-26: active Person Intelligence leaf. Textual “Search this

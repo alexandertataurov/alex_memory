@@ -145,6 +145,17 @@ class RuntimeStatusTests(unittest.TestCase):
             any("writer: disk write failed" in error for error in status.recent_errors)
         )
 
+    def test_pending_context_invalidation_is_not_reported_fresh(self) -> None:
+        self.conn.execute(
+            """INSERT INTO context_invalidations(
+                   scope_type,scope_id,requested_revision,completed_revision,status,updated_at
+               ) VALUES ('person',1,1,0,'pending','2026-08-24T10:00:00+00:00')"""
+        )
+        status = self.service.snapshot(self._live(), now=self.now)
+        self.assertEqual(1, status.context.dirty_count)
+        self.assertFalse(status.quality.context_fresh)
+        self.assertEqual(7200, status.context.oldest_dirty_age_seconds)
+
     def test_home_and_status_screens_render_authoritative_snapshot(self) -> None:
         output = StringIO()
         console = Console(file=output, force_terminal=False, width=120)

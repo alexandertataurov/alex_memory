@@ -234,7 +234,11 @@ class RuntimeStatusService:
                SELECT COUNT(*), MIN(COALESCE(m.date, mc.classified_at))
                FROM message_classifications AS mc
                LEFT JOIN messages AS m ON m.chat_id=mc.chat_id AND m.message_id=mc.message_id
-               WHERE mc.context_stale=1"""
+               WHERE mc.context_stale=1
+               UNION ALL
+               SELECT COUNT(*), MIN(updated_at)
+               FROM context_invalidations
+               WHERE status IN ('pending','running','failed')"""
         ).fetchall()
         dirty_count = sum(int(row[0] or 0) for row in dirty_rows)
         dirty_dates = [str(row[1]) for row in dirty_rows if row[1]]

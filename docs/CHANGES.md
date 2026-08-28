@@ -9,6 +9,12 @@ graph-to-AI re-analysis loop. This is a derived-context scheduling change only;
 freshness metrics remain subsequent AM-057 work. No schema, replay, or live
 operation changed.
 
+Runtime context freshness now includes pending, running, and failed revisioned
+refresh scopes as well as stale source interpretation. A high-value surface can
+therefore report refresh-pending rather than falsely calling derived context
+fresh. This is read-only reporting; no schema, replay, or live operation
+changed.
+
 ## 2026-08-28 — AM-099 override eligibility closure
 
 Forced and session-pinned model keys are now applied only after the normal
