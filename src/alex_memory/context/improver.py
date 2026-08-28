@@ -156,7 +156,9 @@ class ContextGraphImprover:
             )
             candidates += repair_candidates
             affected_chats.update(repair_chats)
-            changed = repaired or self._repair_temporal_segments()
+            if entity_type is None and entity_id is None and source_chat_id is None:
+                repaired = self._repair_temporal_segments() or repaired
+            changed = repaired
             after = self.conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[
                 0
             ]
@@ -222,7 +224,14 @@ class ContextGraphImprover:
         entity_id: int | None,
         source_chat_id: int | None,
     ) -> list[tuple]:
-        predicates = ["confidence >= 0.90", "project_id IS NOT NULL"]
+        predicates = [
+            "confidence >= 0.90",
+            "project_id IS NOT NULL",
+            "NOT EXISTS (SELECT 1 FROM user_feedback AS f "
+            "WHERE f.entity_type='ai_item' AND f.entity_id=ai_items.item_id "
+            "AND f.feedback_type LIKE 'review:%' "
+            "AND json_extract(f.payload_json, '$.action') IN ('reject','ignore'))",
+        ]
         parameters: list[object] = []
         if entity_type and entity_id is not None:
             column = {
