@@ -330,6 +330,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     the selected canonical health inputs plus evaluation date. It preserves
     terminal project states, rejects stale scope, and suppresses retroactive
     notifications. No operator apply command or live execution exists.
+  - Remaining lifecycle boundary: no task-lifecycle repair is authorized until
+    it can select exact accepted source items and replay the canonical
+    reconciler with resolved entity/project context. Task rows alone cannot
+    safely recover terminal state, manual locks, or Review-only ambiguity.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.
