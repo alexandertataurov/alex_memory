@@ -643,7 +643,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Acceptance: project creation requires durable-project evidence; likely duplicates become merge candidates with provenance; casual/social/event items remain events/tasks/topics instead of canonical projects.
   - Verification: duplicate project fixture, false-project fixture, manual merge authority, and no loss of historical source references.
 
-- [ ] AM-058 [P1] [AI routing] — Make fallback/session pinning reason-aware and make fallback telemetry truthful.
+- [x] AM-058 [P1] [AI routing] — Make fallback/session pinning reason-aware and make fallback telemetry truthful.
   - Current behavior: after any successful non-first route, `session_model_key` is promoted to the front for later requests regardless of why fallback happened.
   - Code evidence: once a fallback model is session-pinned to index 0, later requests report `fallback_used=False` even though routing is still intentionally displaced from the normal preferred chain; analytics therefore undercount prolonged fallback usage.
   - Policy:
@@ -654,6 +654,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - pinning is workload-compatible and must not inject a model that is ineligible for a future workload.
   - Telemetry must distinguish `preferred_route`, `temporary_fallback`, `session_pinned_fallback`, and `forced_override`.
   - Verification: RPD exhaustion, RPM/TPM pressure, provider outage, schema failure, one-off server error, recovery, cross-workload request, and fallback-count accuracy.
+  - Completed 2026-08-29: only typed daily quota exhaustion pins a compatible
+    fallback. Other failures remain temporary, and pinned fallback requests
+    remain counted as fallbacks with an explicit route kind. No schema,
+    migration, provider request, replay, backfill, or live action ran.
 
 - [ ] AM-061 [P1] [AI model registry] — Expand the registry only after provider execution and quota/capability routing are real.
   - Add `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, and a separate `groq/compound-mini` explicit external-research route.

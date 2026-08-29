@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-058 routing fallback truthfulness
+
+Typed daily quota exhaustion alone pins a compatible fallback. Other failures
+stay temporary, and session-pinned fallback use retains its fallback telemetry
+and explicit route kind. No schema, migration, replay, backfill, provider
+request, or live operation ran.
+
 ## 2026-08-29 — AM-103 diagnostics truthfulness
 
 History coverage now counts only current non-stale lifecycle records. Route

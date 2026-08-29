@@ -584,7 +584,7 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(2, gemini.calls)
             self.assertEqual([1, 60 / 13.5 - 1], delays)
             self.assertEqual(1, groq.calls)
-            self.assertEqual("groq", router.session_provider)
+            self.assertIsNone(router.session_provider)
 
     async def test_server_failure_does_not_set_provider_health_cooldown(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -935,7 +935,8 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory))
             gemini = FakeProvider(
-                "gemini", ProviderQuotaError("Gemini quota is exhausted")
+                "gemini",
+                ProviderQuotaError("Gemini daily quota is exhausted", dimension="rpd"),
             )
             groq = FakeProvider(
                 "groq", AIAnalysisResult("groq", "groq-test", "Fallback summary", [])
@@ -947,10 +948,32 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             second = await router.analyze(batch())
 
             self.assertTrue(first_used_fallback)
-            self.assertFalse(second.fallback_used)
+            self.assertTrue(second.fallback_used)
             self.assertEqual(1, gemini.calls)
             self.assertEqual(2, groq.calls)
-            self.assertEqual(1, router.fallbacks)
+            self.assertEqual(2, router.fallbacks)
+            self.assertEqual("groq", router.session_provider)
+            self.assertEqual("session_pinned_fallback", second.usage["route_kind"])
+
+    async def test_quota_aware_daily_fallback_is_pinned_and_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory), ai_routing_mode="quota_aware")
+            gemini = FakeProvider(
+                "gemini", ProviderQuotaError("daily exhausted", dimension="tpd")
+            )
+            groq = FakeProvider(
+                "groq", AIAnalysisResult("groq", "groq-test", "Fallback", [])
+            )
+            router = AIRouter(settings, {"gemini": gemini, "groq": groq})
+
+            first = await router.analyze(batch())
+            second = await router.analyze(batch())
+
+            self.assertTrue(first.fallback_used)
+            self.assertTrue(second.fallback_used)
+            self.assertEqual("groq", router.session_model_key)
+            self.assertEqual("session_pinned_fallback", second.usage["route_kind"])
+            self.assertEqual(2, router.fallbacks)
 
     async def test_router_retries_gemini_after_quota_cooldown(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1015,7 +1038,7 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(2, gemini.calls)
             self.assertEqual(0, groq.calls)
 
-    async def test_router_keeps_a_successful_fallback_for_the_run(self) -> None:
+    async def test_one_off_failure_does_not_pin_a_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(Path(directory))
             gemini = FakeProvider("gemini", ProviderError("offline"))
@@ -1029,9 +1052,9 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             second = await router.analyze(batch())
 
             self.assertTrue(first_used_fallback)
-            self.assertFalse(second.fallback_used)
-            self.assertEqual("groq", router.session_provider)
-            self.assertEqual(1, gemini.calls)
+            self.assertTrue(second.fallback_used)
+            self.assertIsNone(router.session_provider)
+            self.assertEqual(2, gemini.calls)
             self.assertEqual(2, groq.calls)
 
     async def test_groq_uses_the_configured_output_budget(self) -> None:

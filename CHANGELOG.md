@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-058 makes fallback selection reason-aware: only typed daily quota
+  exhaustion pins a compatible fallback, and repeated pinned use remains
+  truthfully recorded as fallback. No schema, migration, replay, backfill, or
+  live action ran.
 - AM-103 makes history/graph/provider diagnostics truthful: coverage requires
   current non-stale rows, unknown failures remain router-attributed, route
   counts are exclusive, and monitors display actual routing state. No routing

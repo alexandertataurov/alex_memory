@@ -101,6 +101,7 @@ class AIRouter:
             ]
         errors: list[str] = []
         retryable_failure = False
+        daily_quota_exhausted = False
         for index, name in enumerate(names):
             unavailable = self._unavailable.get(name)
             if unavailable and self._clock() < unavailable[0]:
@@ -127,14 +128,21 @@ class AIRouter:
                             requests_per_minute=None,
                         )
                     )
-                    result.fallback_used = index > 0
+                    result.fallback_used = name != self.settings.ai_primary_provider
                     if result.fallback_used:
                         self.fallbacks += 1
                         result.usage["fallback_reason"] = (
                             errors[-1] if errors else "primary unavailable"
                         )
-                        self.session_provider = name
+                        result.usage["route_kind"] = (
+                            "session_pinned_fallback"
+                            if self.session_provider == name
+                            else "temporary_fallback"
+                        )
+                        if daily_quota_exhausted:
+                            self.session_provider = name
                     else:
+                        result.usage["route_kind"] = "preferred_route"
                         self.last_error = None
                     self.active_state = "response received"
                     return result
@@ -170,6 +178,9 @@ class AIRouter:
                         self.retry_at = None
                         continue
                     if isinstance(error, ProviderQuotaError):
+                        daily_quota_exhausted = daily_quota_exhausted or (
+                            error.dimension in {"rpd", "tpd"}
+                        )
                         self._unavailable[name] = (
                             self._clock() + (retry_after or 60),
                             reason,
@@ -193,10 +204,11 @@ class AIRouter:
         )
         errors: list[str] = []
         retryable_failure = False
+        daily_quota_exhausted = False
         candidates = self._candidates(
             workload, requires_structured_output=request.requires_structured_output
         )
-        for index, profile in enumerate(candidates):
+        for _index, profile in enumerate(candidates):
             provider_health = self._provider_unavailable.get(profile.provider)
             if provider_health and self._clock() < provider_health[0]:
                 self._set_active(profile, "model cooldown; trying next route")
@@ -230,6 +242,10 @@ class AIRouter:
                             ProviderTransientError,
                         ),
                     )
+                    if isinstance(error, ProviderQuotaError):
+                        daily_quota_exhausted = daily_quota_exhausted or (
+                            error.dimension in {"rpd", "tpd"}
+                        )
                     detail = self._record_failure(
                         workload, priority, profile, estimated, reason, error
                     )
@@ -249,7 +265,11 @@ class AIRouter:
                     errors.append(f"{profile.key}: {detail}")
                     self._mark_provider_unavailable(profile, error)
                     break
-                result.fallback_used = index > 0
+                route_kind, fallback_used = self._route_kind(
+                    workload, profile, request.requires_structured_output
+                )
+                result.fallback_used = fallback_used
+                result.usage["route_kind"] = route_kind
                 if result.fallback_used:
                     self.fallbacks += 1
                     result.usage["fallback_reason"] = (
@@ -260,7 +280,7 @@ class AIRouter:
                     workload, priority, profile, estimated, reason, "success"
                 )
                 self.active_state, self.last_error = "response received", None
-                if index > 0:
+                if daily_quota_exhausted and result.fallback_used:
                     self.session_provider, self.session_model_key = (
                         profile.provider,
                         profile.key,
@@ -439,6 +459,27 @@ class AIRouter:
             now.date() + timedelta(days=1), datetime.min.time(), UTC
         )
         return max(1.0, (next_day - now).total_seconds())
+
+    def _route_kind(
+        self,
+        workload: AIWorkload,
+        profile: ModelProfile,
+        requires_structured_output: bool,
+    ) -> tuple[str, bool]:
+        baseline = self.registry.candidates(
+            workload, requires_structured_output=requires_structured_output
+        )
+        if not baseline:
+            return "temporary_fallback", True
+        forced = self.registry.forced()
+        if forced is not None and forced.key == profile.key:
+            return "forced_override", False
+        preferred = baseline[0]
+        if profile.key == preferred.key:
+            return "preferred_route", False
+        if self.session_model_key == profile.key:
+            return "session_pinned_fallback", True
+        return "temporary_fallback", True
 
     def _mark_provider_unavailable(
         self, profile: ModelProfile, error: Exception
