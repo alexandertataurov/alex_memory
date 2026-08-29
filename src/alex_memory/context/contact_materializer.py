@@ -497,13 +497,19 @@ def _starts_new_segment(previous: list[dict], current: dict) -> bool:
         after = datetime.fromisoformat(
             str(current["occurred_at"]).replace("Z", "+00:00")
         )
-        return after - before > timedelta(days=60)
+        return after - before > timedelta(days=90)
     except ValueError:
         return False
 
 
 def _segment_end(items: list[dict]) -> str | None:
-    return items[-1]["occurred_at"] if len(items) > 1 else None
+    try:
+        last = datetime.fromisoformat(
+            str(items[-1]["occurred_at"]).replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    return (last + timedelta(days=90)).isoformat()
 
 
 def _dominant(records: list[dict], key: str) -> int | None:

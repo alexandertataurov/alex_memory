@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-110 gives project and contact segments the same 90-day half-open interval
+  semantics, splits inactive same-project returns, and bases confidence on
+  distinct anchors. No migration, rebuild, replay, or live action ran.
 - AM-109 bounds automatic graph repair to two distinct nearby source-message
   anchors for one unambiguous project. Single, stale, competing, or rejected
   evidence remains unlinked or Review-only; unsupported derived links are

@@ -599,6 +599,20 @@ class ClassificationAndGraphTests(unittest.TestCase):
             ],
         )
         self.assertEqual(3, ConversationSegmenter(self.conn).rebuild_chat(9))
+        self.assertEqual(
+            [
+                (first, "2024-01-01", "2024-03-31T00:00:00"),
+                (second, "2026-05-01", "2026-07-30T00:00:00"),
+                (first, "2026-08-01", "2026-10-30T00:00:00"),
+            ],
+            [
+                tuple(row)
+                for row in self.conn.execute(
+                    """SELECT project_id,started_at,ended_at FROM conversation_segments
+                       WHERE chat_id=9 ORDER BY started_at"""
+                )
+            ],
+        )
         may = classify_message(
             self.conn,
             AIMessage(
@@ -613,6 +627,34 @@ class ClassificationAndGraphTests(unittest.TestCase):
         )
         self.assertEqual("project", may.information_scope)
         self.assertEqual("personal", inactive.information_scope)
+
+    def test_same_project_segments_split_only_after_ninety_days(self):
+        project = EntityResolver(self.conn).entity(
+            "project", "Georgia LP", source="manual"
+        )
+        assert project is not None
+        self.conn.execute(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (12,'Michael','user')"
+        )
+        self.conn.executemany(
+            """INSERT INTO tasks(title,normalized_title,status,owner,related_project_id,
+               source_chat_id,confidence,created_at,updated_at)
+               VALUES (?,?,'open','me',?,12,1.0,?,?)""",
+            [
+                ("First", "first", project, "2026-01-01", "2026-01-01"),
+                ("Eighty nine", "eighty nine", project, "2026-03-31", "2026-03-31"),
+                ("Ninety one", "ninety one", project, "2026-06-30", "2026-06-30"),
+            ],
+        )
+
+        self.assertEqual(2, ConversationSegmenter(self.conn).rebuild_chat(12))
+        self.assertEqual(
+            [("2026-01-01", 2), ("2026-06-30", 1)],
+            self.conn.execute(
+                """SELECT started_at,anchor_count FROM conversation_segments
+                   WHERE chat_id=12 ORDER BY started_at"""
+            ).fetchall(),
+        )
 
     def test_graph_improvement_is_provenance_backed_and_idempotent(self):
         now = "2026-01-01T00:00:00+00:00"

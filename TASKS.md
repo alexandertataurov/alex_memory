@@ -505,7 +505,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 
 
-- [ ] AM-110 [P1] [Conversation segmentation] — Make project/contact periods represent bounded activity intervals instead of anchor-count illusions.
+- [x] AM-110 [P1] [Conversation segmentation] — Make project/contact periods represent bounded activity intervals instead of anchor-count illusions.
   - Code evidence: `ConversationSegmenter` starts a new project period only when `project_id` changes. Two anchors for the same project separated by years are merged into one period; the 90-day expiry is applied only after the **last** anchor, so the segment can incorrectly span the entire multi-year gap.
   - Code evidence: confidence becomes `0.95` merely because there are two anchors, even if they are not temporally close or independent.
   - Contact-materializer evidence: contact segments use a different 60-day split rule and `_segment_end()` ends a multi-record segment at its last activity; historical conversation lookup then ignores `ended_at`, so the two segment systems have incompatible interval semantics.
@@ -516,6 +516,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - historical lookup requires the segment to be active at `as_of` when asking for active state, while timeline views may list completed periods;
     - rebuild is deterministic/idempotent.
   - Verification: same project after 2 years, 89/91-day gaps, A→B→A return, one/two duplicated anchors, historical midpoint query, and contact/project segment consistency.
+  - Completed 2026-08-29: project and contact periods share a 90-day,
+    half-open interval convention. Distinct source anchors determine confidence;
+    repeated projects after inactivity form a new period. No migration, rebuild,
+    replay, or live operation ran.
 
 
 

@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-110 conversation intervals
+
+Project and contact segments now share a 90-day `[started_at, ended_at)` rule.
+Same-project activity after an inactive period begins a new segment, while
+confidence counts distinct source anchors rather than duplicate rows. No
+migration, rebuild, replay, or live operation ran.
+
 ## 2026-08-29 — AM-109 local graph repair
 
 Automatic repair now requires an unambiguous project with two distinct source
