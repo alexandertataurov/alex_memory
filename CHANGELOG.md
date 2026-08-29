@@ -16,6 +16,8 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-059 adds migration 23 for structured and rendered global snapshots while
+  preserving existing snapshot text.
 - AM-058 makes fallback selection reason-aware: only typed daily quota
   exhaustion pins a compatible fallback, and repeated pinned use remains
   truthfully recorded as fallback. No schema, migration, replay, backfill, or
