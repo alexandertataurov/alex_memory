@@ -673,7 +673,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - the model reported in result/usage/diagnostics must equal the selected registry profile.
   - Verification: model-limit admission, daily-token pressure, exact selected-model execution, workload suitability, prompt-size guards, external-research separation, and fallback behavior.
 
-- [ ] AM-062 [P1] [Documentation truthfulness] — Repair current documentation drift and make docs checks catch claims that are not true in runtime.
+- [x] AM-062 [P1] [Documentation truthfulness] — Repair current documentation drift and make docs checks catch claims that are not true in runtime.
   - Progress 2026-08-26: the migration ledger is unique and ordered through
     migration 19 (including migration 16); TD-006/TD-007 now describe the
     remaining bounded debt instead of removed foundations; AM-118 identifies
@@ -686,6 +686,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - generated config/schema docs come from effective authoritative definitions;
     - add focused checks for unique/ordered migration numbers and other machine-verifiable invariants.
   - Verification: `make docs-check` plus focused migration/config/runtime-contract checks.
+  - Completed 2026-08-29: current documentation labels planned/degraded work
+    accurately, generated configuration/schema references remain authoritative,
+    and migration/config/runtime contract checks are green. No product, schema,
+    replay, backfill, or live action ran.
 
 ## Backlog
 
