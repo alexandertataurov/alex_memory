@@ -1466,6 +1466,12 @@ def _add_deep_dive_session_metadata(conn: sqlite3.Connection) -> None:
     )
 
 
+def _add_global_snapshot_payload(conn: sqlite3.Connection) -> None:
+    """Add an unambiguous structured payload without rewriting old text rows."""
+    _add_column_if_missing(conn, "global_state_snapshots", "state_payload_json TEXT")
+    _add_column_if_missing(conn, "global_state_snapshots", "rendered_state TEXT")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "bootstrap_schema", _bootstrap_schema),
     Migration(2, "compatibility_columns", _apply_compatibility_columns),
@@ -1501,6 +1507,7 @@ MIGRATIONS: tuple[Migration, ...] = (
         21, "context_dependency_memberships", _add_context_dependency_memberships
     ),
     Migration(22, "deep_dive_session_metadata", _add_deep_dive_session_metadata),
+    Migration(23, "global_snapshot_payload", _add_global_snapshot_payload),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 

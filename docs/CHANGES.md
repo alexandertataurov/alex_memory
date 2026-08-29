@@ -1,5 +1,10 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-059 data-model truthfulness
+
+Migration 23 adds structured and rendered global snapshot fields.
+Existing snapshot text remains unchanged.
+
 ## 2026-08-29 — AM-058 routing fallback truthfulness
 
 Typed daily quota exhaustion alone pins a compatible fallback. Other failures

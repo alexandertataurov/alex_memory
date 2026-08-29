@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import datetime
@@ -114,6 +115,11 @@ class ContextEngineTests(unittest.TestCase):
                 0
             ],
         )
+        payload, rendered = self.conn.execute(
+            "SELECT state_payload_json,rendered_state FROM global_state_snapshots"
+        ).fetchone()
+        self.assertIsInstance(json.loads(payload), dict)
+        self.assertTrue(rendered)
 
     def test_ordinary_observation_does_not_create_a_context_event(self) -> None:
         ContextService(self.conn, self.settings).process_ai_item(

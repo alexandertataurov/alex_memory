@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 
@@ -111,9 +112,11 @@ class ContextService:
         rendered = context.render(self.settings.context_max_chars)
         timestamp = context.as_of[:10]
         self.conn.execute(
-            "INSERT INTO global_state_snapshots(as_of,state_json,summary,created_at) VALUES (?, ?, ?, ?) ON CONFLICT(as_of) DO UPDATE SET state_json=excluded.state_json,summary=excluded.summary,created_at=excluded.created_at",
+            "INSERT INTO global_state_snapshots(as_of,state_json,state_payload_json,rendered_state,summary,created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(as_of) DO UPDATE SET state_json=excluded.state_json,state_payload_json=excluded.state_payload_json,rendered_state=excluded.rendered_state,summary=excluded.summary,created_at=excluded.created_at",
             (
                 timestamp,
+                json.dumps(context.global_state, sort_keys=True),
+                json.dumps(context.global_state, sort_keys=True),
                 rendered,
                 f"{context.global_state['open_tasks']} open tasks; {context.global_state['at_risk_projects']} at-risk projects",
                 utc_now(),

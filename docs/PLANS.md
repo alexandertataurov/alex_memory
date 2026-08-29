@@ -20,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-059 data-model truthfulness](exec-plans/completed/AM-059-data-model-truthfulness.md)
 - [AM-058 routing fallbacks](exec-plans/completed/AM-058-routing-fallbacks.md)
 - [AM-103 diagnostics truthfulness](exec-plans/completed/AM-103-diagnostics-truthfulness.md)
 - [AM-072 project health](exec-plans/completed/AM-072-project-health.md)

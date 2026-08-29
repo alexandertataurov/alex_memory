@@ -44,6 +44,11 @@ Run `make db-check` to see the active schema version without inspecting tables.
     queue index. It preserves every job and exact job-message membership, then
     requeues only pre-existing failed history jobs for the new durable retry
     policy; it does not submit, scan, or project evidence.
+21. `context_dependency_memberships` records exact accepted batch dependencies
+    for revision-aware context integration.
+22. `deep_dive_session_metadata` adds reproducible Task Deep Dive parameters.
+23. `global_snapshot_payload` adds structured and rendered snapshot fields
+    without rewriting older `state_json` text rows.
 
 Existing installations that predate this ledger are adopted safely: their next
 database open runs the idempotent sequence and records it. This is a baseline

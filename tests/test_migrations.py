@@ -14,6 +14,7 @@ from alex_memory.database import (
     _add_profile_ai_lane,
     _add_ai_job_retry_schedule,
     _add_deep_dive_session_metadata,
+    _add_global_snapshot_payload,
     connect,
     migration_history,
     schema_version,
@@ -164,6 +165,26 @@ class MigrationLedgerTests(unittest.TestCase):
                     "SELECT evidence_id FROM task_deep_dive_evidence WHERE session_id=?",
                     (session_id,),
                 ).fetchall(),
+            )
+        finally:
+            conn.close()
+
+    def test_global_snapshot_payload_upgrade_preserves_historical_text(self) -> None:
+        conn = connect(self.settings)
+        try:
+            conn.execute(
+                """INSERT INTO global_state_snapshots(
+                       as_of,state_json,summary,created_at
+                   ) VALUES ('old','historical rendered text','summary','old')"""
+            )
+            with conn:
+                _add_global_snapshot_payload(conn)
+            self.assertEqual(
+                ("historical rendered text", None, None),
+                conn.execute(
+                    """SELECT state_json,state_payload_json,rendered_state
+                       FROM global_state_snapshots WHERE as_of='old'"""
+                ).fetchone(),
             )
         finally:
             conn.close()

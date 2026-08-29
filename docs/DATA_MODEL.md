@@ -69,6 +69,22 @@ derived tables: deleted messages and merged entities are excluded, and migration
 and `make health` report source/index coverage; a broken present FTS index is a
 failure, while an SQLite build without FTS5 uses bounded SQL retrieval.
 
+## Authority and rebuild contracts
+
+| Layer | Tables | Authority and rebuild behavior |
+| --- | --- | --- |
+| SOURCE | `messages`, `message_versions`, `source_evidence`, `source_evidence_versions` | Immutable/archive evidence of record; never rebuilt from AI or context. |
+| CANONICAL | `people`, `companies`, `projects`, `tasks`, `task_events`, `context_events`, `context_facts`, `relationships`, `semantic_claims` and claim evidence | Accepted state with source lineage and manual/Review authority; projections do not replace it. |
+| MATERIALIZED | `person_context_state`, conversation segment/context/loop tables, `context_summary_versions`, `global_state_snapshots` | Deterministically refreshed from canonical/source inputs through the context invalidation worker; stale work remains visible until the required revision is clean. |
+| WORK-DIAGNOSTIC | AI jobs/batches/message state, classifications, review/conflict records, invalidations, route usage, notifications | Operational queue, audit, and diagnostic state; it does not become source evidence or canonical state by itself. |
+| DETERMINISTIC ROLLUP | `memory_chunks`, `chat_daily_summaries`, `chat_monthly_summaries`, `daily_briefs` | Bounded summaries or concatenated rollups of their named source rows; they are not independent semantic truth. |
+
+`global_state_snapshots.state_json` is retained for historical compatibility.
+Migration 23 adds `state_payload_json` for structured current snapshots and
+`rendered_state` for presentation text; old text rows are never rewritten at
+startup. `entity_memory` is an inert compatibility table after AM-085 and is
+not a current source, canonical, or materialized consumer path.
+
 For a Telegram direct chat (`chats.chat_type='user'`), `chats.chat_id` is the
 deterministic peer identity. The matching `people.telegram_user_id` is the only
 canonical owner for that conversation. Display names and aliases can suggest a

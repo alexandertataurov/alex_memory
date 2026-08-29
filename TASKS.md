@@ -702,11 +702,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - do not add risky FK table rebuilds merely for architectural purity; use application checks where safer.
   - Verification: injected-orphan fixtures are detected with actionable table/key output, declared FK violations fail at write time, and current DB passes after repair.
 
-- [ ] AM-059 [P2] [Data model truthfulness] — Document every persisted layer by source-of-truth, consumer, rebuildability, and actual stored representation.
+- [x] AM-059 [P2] [Data model truthfulness] — Document every persisted layer by source-of-truth, consumer, rebuildability, and actual stored representation.
   - Acceptance: every important table is labelled SOURCE / CANONICAL / MATERIALIZED / WORK-DIAGNOSTIC / deterministic rollup, with exact rebuild inputs and stale/invalidated behavior.
   - Code evidence: daily/monthly “summaries” are deterministic dedupe/concatenate rollups rather than fresh semantic summaries; document them accordingly.
   - Code evidence: `snapshot_global_state()` inserts `BuiltContext.render(...)` plain text into a column named `global_state_snapshots.state_json`. Either store actual JSON matching the column/consumer contract or rename/migrate the representation; do not keep a field name that lies about its contents.
   - Goal: prevent future changes from treating caches as evidence, derived observations as canonical state, or text blobs as structured JSON merely because the schema name says so.
+  - Completed 2026-08-29: migration 23 adds explicit structured and rendered
+    snapshot fields while preserving historical text rows. No live operation
+    ran.
 
 - [ ] AM-060 [P1] [Task Deep Dive / QA truthfulness] — Either implement real evidence-grounded Deep Dive Q&A or rename the current helper so it does not pretend to answer questions.
   - Code evidence: `TaskDeepDiveService.ask()` is not semantic Q&A. It splits the question and evidence on whitespace, selects evidence with exact token overlap, and otherwise returns the first five selected evidence rows as bullet text.
