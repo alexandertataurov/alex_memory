@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+from datetime import date
 from pathlib import Path
 from typing import cast
 
@@ -14,10 +15,13 @@ from .database import set_app_meta
 from .context.segments import ConversationSegmenter
 from .context.refresh import refresh_selected_conversations
 from .operational import backfill_task_project_links
+from .intelligence import evaluate_project_health
 from .schema_support import fts5_available, fts_source_fingerprint, rebuild_fts
 
 
-REPAIR_OPERATIONS = frozenset({"fts", "task-project", "segments", "context"})
+REPAIR_OPERATIONS = frozenset(
+    {"fts", "task-project", "segments", "context", "project-health"}
+)
 
 
 def derived_state_repair_inventory(
@@ -56,6 +60,13 @@ def derived_state_repair_inventory(
         probe_limit,
     )
     context_unit_fingerprint = _context_unit_fingerprint(conn, limit)
+    project_health = _bounded_count(
+        conn,
+        """SELECT 1 FROM projects WHERE status NOT IN ('completed','archived')
+           ORDER BY project_id LIMIT ?""",
+        probe_limit,
+    )
+    project_health_unit_fingerprint = _project_health_unit_fingerprint(conn, limit)
     return {
         "fts_rebuild_available": fts5_available(conn),
         "fts_unit_fingerprint": fts_source_fingerprint(conn),
@@ -68,6 +79,9 @@ def derived_state_repair_inventory(
         "pending_context_candidates": min(pending_context, limit),
         "pending_context_truncated": pending_context > limit,
         "pending_context_unit_fingerprint": context_unit_fingerprint,
+        "project_health_candidates": min(project_health, limit),
+        "project_health_truncated": project_health > limit,
+        "project_health_unit_fingerprint": project_health_unit_fingerprint,
     }
 
 
@@ -377,6 +391,79 @@ def apply_context_repair(
     return {"status": "completed", **outcome}
 
 
+def apply_project_health_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+    limit: int = 500,
+) -> dict[str, object]:
+    """Recompute one exact bounded project-health set without notifications."""
+    _validate_recovery_receipt(settings, recovery_receipt)
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(
+        conn, operations={"project-health"}, limit=limit
+    )
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    project_ids = _project_health_candidate_ids(conn, limit)
+    checkpoint: dict[str, object] = {
+        "status": "running",
+        "operation": "project-health",
+        "limit": limit,
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+        "project_ids": project_ids,
+        "evaluation_date": date.today().isoformat(),
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        with conn:
+            changed = evaluate_project_health(
+                conn,
+                settings,
+                date.fromisoformat(str(checkpoint["evaluation_date"])),
+                project_ids=tuple(project_ids),
+                emit_notifications=False,
+            )
+            outcome = {
+                "fingerprint": dry_run_fingerprint,
+                "projects": len(project_ids),
+                "changed": changed,
+            }
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {**checkpoint, "status": "completed", "outcome": outcome},
+                    sort_keys=True,
+                ),
+            )
+    except Exception as error:
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
+
+
 def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, object]:
     if name == "fts":
         return {
@@ -388,6 +475,7 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
         "task-project": "task_project",
         "segments": "segment_chat",
         "context": "pending_context",
+        "project-health": "project_health",
     }[name]
     report: dict[str, object] = {
         "eligible_units": cast(int, inventory[f"{prefix}_candidates"]),
@@ -399,6 +487,8 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
         report["unit_fingerprint"] = str(inventory["segment_chat_unit_fingerprint"])
     elif name == "context":
         report["unit_fingerprint"] = str(inventory["pending_context_unit_fingerprint"])
+    elif name == "project-health":
+        report["unit_fingerprint"] = str(inventory["project_health_unit_fingerprint"])
     return report
 
 
@@ -478,6 +568,62 @@ def _context_revision_completed(
         (conversation_id,),
     ).fetchone()
     return row is not None and int(row[0]) >= revision
+
+
+def _project_health_candidate_ids(conn: sqlite3.Connection, limit: int) -> list[int]:
+    return [
+        int(row[0])
+        for row in conn.execute(
+            """SELECT project_id FROM projects WHERE status NOT IN ('completed','archived')
+               ORDER BY project_id LIMIT ?""",
+            (limit,),
+        )
+    ]
+
+
+def _project_health_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
+    project_ids = _project_health_candidate_ids(conn, limit)
+    digest = hashlib.sha256()
+    digest.update(date.today().isoformat().encode())
+    if not project_ids:
+        return digest.hexdigest()
+    placeholders = ",".join("?" for _ in project_ids)
+    for query, params in (
+        (
+            f"""SELECT project_id,status,health_score,last_activity_at,updated_at FROM projects
+                WHERE project_id IN ({placeholders}) ORDER BY project_id""",
+            tuple(project_ids),
+        ),
+        (
+            f"""SELECT task_id,related_project_id,status,due_date,created_at,updated_at,source_item_id
+                FROM tasks WHERE related_project_id IN ({placeholders})
+                ORDER BY related_project_id,task_id""",
+            tuple(project_ids),
+        ),
+        (
+            f"""SELECT item_id,project_id,source_date,created_at FROM ai_items
+                WHERE project_id IN ({placeholders}) OR item_id IN (
+                    SELECT source_item_id FROM tasks
+                    WHERE related_project_id IN ({placeholders})
+                ) ORDER BY item_id""",
+            tuple(project_ids) * 2,
+        ),
+        (
+            f"""SELECT event_id,project_id,occurred_at,observed_at FROM context_events
+                WHERE project_id IN ({placeholders}) ORDER BY project_id,event_id""",
+            tuple(project_ids),
+        ),
+        (
+            f"""SELECT segment_id,project_id,started_at,ended_at,updated_at
+                FROM conversation_segments WHERE project_id IN ({placeholders})
+                ORDER BY project_id,segment_id""",
+            tuple(project_ids),
+        ),
+    ):
+        digest.update(query.encode())
+        for row in conn.execute(query, params):
+            digest.update(json.dumps(tuple(row), separators=(",", ":")).encode())
+    return digest.hexdigest()
 
 
 def _validate_recovery_receipt(settings: Settings, recovery_receipt: Path) -> None:

@@ -814,7 +814,7 @@ def main() -> int:
     parser.add_argument(
         "--operation",
         action="append",
-        choices=("fts", "task-project", "segments", "context"),
+        choices=("fts", "task-project", "segments", "context", "project-health"),
         help="One repair operation to include; required for repair-dry-run.",
     )
     parser.add_argument("--limit", type=int, default=500)

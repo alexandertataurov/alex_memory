@@ -22,6 +22,14 @@ revisions through its dry run and checkpoint. It rejects stale scope and leaves
 person/global invalidations pending, preventing profile/provider work from this
 fixture-only path. No operator command or live execution exists.
 
+## 2026-08-29 — AM-074 project-health repair unit
+
+Project-health repair now fingerprints its bounded non-terminal project set,
+canonical health inputs, and evaluation date. It uses the existing evaluator
+without notifications, preserves terminal rows, rejects stale scope, and
+returns the recorded result on retry. No operator command or live execution
+exists.
+
 ## 2026-08-29 — AM-061 provider model registry
 
 The registry now uses Groq's verified IDs and published local Developer-plan

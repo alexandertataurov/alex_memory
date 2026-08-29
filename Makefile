@@ -90,7 +90,7 @@ db-backup:
 	$(PYTHON) scripts/dev_tools.py db-backup
 
 repair-dry-run:
-	@test -n "$(OPERATION)" || { echo "Set OPERATION to fts, task-project, segments, or context."; exit 2; }
+	@test -n "$(OPERATION)" || { echo "Set OPERATION to fts, task-project, segments, context, or project-health."; exit 2; }
 	$(PYTHON) scripts/dev_tools.py repair-dry-run --operation "$(OPERATION)" --limit $(LIMIT)
 
 docs:

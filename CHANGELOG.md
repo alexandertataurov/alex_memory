@@ -28,6 +28,10 @@ All notable user- and developer-visible changes are recorded here. This project 
   selected conversation revisions to the dry run, rejects stale scope, and does
   not touch person/global invalidations or profile/provider work. No operator
   command or live execution exists.
+- AM-074 adds fixture-only bounded project-health recomputation. Its dry run
+  binds canonical health inputs and date, preserves terminal projects, and
+  suppresses retroactive notifications. No operator command or live execution
+  exists.
 - AM-061 adds provider-verified Groq profiles for GPT-OSS 120B, Qwen 3.6, and
   Compound Mini. The router applies published local RPM/TPM/RPD/TPD guards to
   the reasoning profiles, scopes 120B and Qwen to explicit high-value policies,

@@ -338,11 +338,26 @@ def manually_update_follow_up(
 
 
 def evaluate_project_health(
-    conn: sqlite3.Connection, settings: Settings, today: date | None = None
+    conn: sqlite3.Connection,
+    settings: Settings,
+    today: date | None = None,
+    *,
+    project_ids: tuple[int, ...] | None = None,
+    emit_notifications: bool = True,
 ) -> int:
     today = today or date.today()
+    if project_ids is not None and (not project_ids or len(project_ids) > 500):
+        raise ValueError("project health IDs must be non-empty and within 500")
+    where = "status NOT IN ('completed','archived')"
+    params: tuple[int, ...] = ()
+    if project_ids is not None:
+        where += " AND project_id IN (" + ",".join("?" for _ in project_ids) + ")"
+        params = project_ids
     projects = conn.execute(
-        "SELECT project_id,canonical_name FROM projects WHERE status NOT IN ('completed','archived')"
+        "SELECT project_id,canonical_name FROM projects WHERE "
+        + where
+        + " ORDER BY project_id",
+        params,
     ).fetchall()
     changed = 0
     for project_id, name in projects:
@@ -414,7 +429,7 @@ def evaluate_project_health(
                 (status, score, last_activity, utc_now(), project_id),
             )
             changed += 1
-        if project_changed and status in {"stale", "critical"}:
+        if emit_notifications and project_changed and status in {"stale", "critical"}:
             key = f"project-{status}:{project_id}:{today.isoformat()}"
             _notify(
                 conn,

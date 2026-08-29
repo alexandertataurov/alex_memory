@@ -30,6 +30,7 @@ from alex_memory.operational import (
 from alex_memory.repair import (
     apply_context_repair,
     apply_fts_repair,
+    apply_project_health_repair,
     apply_segment_repair,
     apply_task_project_repair,
     derived_state_repair_dry_run,
@@ -574,6 +575,78 @@ class OperationalMemoryTests(unittest.TestCase):
                 self.assertEqual(
                     "already-complete",
                     apply_context_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )["status"],
+                )
+            finally:
+                conn.close()
+
+    def test_project_health_repair_binds_inputs_and_suppresses_notifications(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                resolver = EntityResolver(conn)
+                project_id = resolver.entity("project", "Georgia LP", source="manual")
+                terminal_id = resolver.entity("project", "Closed LP", source="manual")
+                assert project_id is not None and terminal_id is not None
+                conn.execute(
+                    "UPDATE projects SET status='completed' WHERE project_id=?",
+                    (terminal_id,),
+                )
+                first = derived_state_repair_dry_run(
+                    conn, operations={"project-health"}, limit=1
+                )
+                self.assertEqual(
+                    1, first["operations"]["project-health"]["eligible_units"]
+                )
+                conn.execute(
+                    "UPDATE projects SET updated_at='changed' WHERE project_id=?",
+                    (project_id,),
+                )
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    apply_project_health_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(first["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+
+                report = derived_state_repair_dry_run(
+                    conn, operations={"project-health"}, limit=1
+                )
+                with patch("alex_memory.intelligence._notify") as notify:
+                    outcome = apply_project_health_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+                notify.assert_not_called()
+                self.assertEqual(
+                    {"status": "completed", "projects": 1},
+                    {key: outcome[key] for key in ("status", "projects")},
+                )
+                self.assertEqual(
+                    "completed",
+                    conn.execute(
+                        "SELECT status FROM projects WHERE project_id=?", (terminal_id,)
+                    ).fetchone()[0],
+                )
+                self.assertEqual(
+                    "already-complete",
+                    apply_project_health_repair(
                         conn,
                         settings,
                         dry_run_fingerprint=str(report["fingerprint"]),
