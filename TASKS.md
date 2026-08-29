@@ -42,6 +42,13 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     No reader cutover, relationship conversion, replay, graph repair,
     migration, or live action is authorized.
 
+- [x] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for candidate cross-chat relationships that deterministic repair cannot prove.
+  - Plan: `docs/exec-plans/active/AM-056-graph-discovery.md`.
+  - Acceptance: AI may propose person/project/company/task/event/topic links only as source-backed candidates; canonical graph state changes only through existing high-confidence deterministic rules or manual Review acceptance.
+  - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
+  - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
+  - Completed 2026-08-29: bounded discovery queues only `graph_link` Review candidates when two non-deleted exact messages identify the same resolved person in distinct chats and time-local project evidence. Candidate payloads retain confidence, evidence path, and reasons; only existing manual Review acceptance can create canonical/project graph state. No provider call, migration, replay, backfill, repair, or live operation ran.
+
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
   - Plan: `docs/exec-plans/active/AM-118-application-remediation.md`.
@@ -304,11 +311,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.
   - Verification: run on copied fixture DB twice with no duplicate side effects.
-
-- [ ] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for candidate cross-chat relationships that deterministic repair cannot prove.
-  - Acceptance: AI may propose person/project/company/task/event/topic links only as source-backed candidates; canonical graph state changes only through existing high-confidence deterministic rules or manual Review acceptance.
-  - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
-  - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
 
 - [x] AM-057 [P1] [Context freshness] — Add explicit freshness/current-enough metrics and selective stale-work scheduling based on dependency footprint.
   - Plan: `docs/exec-plans/completed/AM-057-context-freshness.md`.

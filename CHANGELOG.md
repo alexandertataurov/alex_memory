@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-056 adds a bounded cross-chat candidate selector. It queues Review-only
+  project links for same-person, distinct-chat, exact-message evidence within
+  90 days, records its evidence path and reason, and excludes rejected,
+  untraceable, stale, or already-linked records. No provider call, migration,
+  replay, backfill, repair, or live action ran.
 - AM-108 makes explicit historical context fail closed: mutable task/entity/global
   lifecycle and current person summaries are omitted, identity anchors are
   labelled partial, and contact segments use their half-open validity interval.

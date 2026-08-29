@@ -680,7 +680,7 @@ class AlexMemoryApp:
                 show_context_graph(graph_diagnostics(self.conn), self.console)
                 action = (
                     Prompt.ask(
-                        "Context graph [dim](improve, status, blank to return)[/dim]",
+                        "Context graph [dim](improve, discover, status, blank to return)[/dim]",
                         default="",
                     )
                     .strip()
@@ -690,6 +690,18 @@ class AlexMemoryApp:
                     report = ContextGraphImprover(self.conn).improve()
                     show_context_graph(
                         report.diagnostics, self.console, report.relationships_added
+                    )
+                elif action == "discover":
+                    candidates = ContextGraphImprover(
+                        self.conn
+                    ).discover_cross_chat_candidates()
+                    self.conn.commit()
+                    self.console.print(
+                        notice(
+                            f"Queued {candidates} cross-chat candidate(s) for Review.",
+                            title="Cross-chat discovery",
+                            tone="success",
+                        )
                     )
             elif command == "context_diagnostics":
                 scope = Prompt.ask(

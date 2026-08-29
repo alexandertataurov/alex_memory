@@ -294,6 +294,153 @@ class ContextGraphImprover:
             )
         return self.improve(source_chat_id=chat_id)
 
+    def discover_cross_chat_candidates(self, *, limit: int = 40) -> int:
+        """Queue bounded, source-backed cross-chat project candidates for Review.
+
+        This selector deliberately does not call ``improve()``: it creates
+        Review candidates only and never mutates canonical rows or graph edges.
+        A candidate requires the same resolved person in two different chats,
+        exact source messages, and project evidence no more than 90 days away.
+        """
+        if not 1 <= limit <= 80:
+            raise ValueError("Cross-chat discovery limit must be between 1 and 80")
+        rows = self.conn.execute(
+            """SELECT candidate.item_id,candidate.person_id,candidate.source_chat_id,
+                      candidate.source_message_id,candidate.source_date,
+                      candidate.confidence,anchor.item_id,anchor.project_id,
+                      anchor.source_chat_id,anchor.source_message_id,
+                      anchor.source_date,anchor.confidence
+                 FROM ai_items AS candidate
+                 JOIN ai_items AS anchor ON anchor.person_id=candidate.person_id
+                 JOIN messages AS candidate_message
+                   ON candidate_message.chat_id=candidate.source_chat_id
+                  AND candidate_message.message_id=candidate.source_message_id
+                 JOIN messages AS anchor_message
+                   ON anchor_message.chat_id=anchor.source_chat_id
+                  AND anchor_message.message_id=anchor.source_message_id
+                WHERE candidate.person_id IS NOT NULL
+                  AND candidate.project_id IS NULL
+                  AND candidate.source_chat_id IS NOT NULL
+                  AND candidate.source_message_id IS NOT NULL
+                  AND candidate.source_date IS NOT NULL
+                  AND candidate.confidence>=0.90
+                  AND COALESCE(candidate_message.is_deleted,0)=0
+                  AND anchor.project_id IS NOT NULL
+                  AND anchor.source_chat_id IS NOT NULL
+                  AND anchor.source_message_id IS NOT NULL
+                  AND anchor.source_date IS NOT NULL
+                  AND anchor.confidence>=0.90
+                  AND COALESCE(anchor_message.is_deleted,0)=0
+                  AND anchor.source_chat_id<>candidate.source_chat_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_feedback AS feedback
+                       WHERE feedback.entity_type='ai_item'
+                         AND feedback.entity_id=candidate.item_id
+                         AND feedback.feedback_type LIKE 'review:%'
+                         AND json_extract(feedback.payload_json, '$.action')
+                             IN ('reject','ignore')
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_feedback AS feedback
+                       WHERE feedback.entity_type='ai_item'
+                         AND feedback.entity_id=anchor.item_id
+                         AND feedback.feedback_type LIKE 'review:%'
+                         AND json_extract(feedback.payload_json, '$.action')
+                             IN ('reject','ignore')
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM relationships AS relationship
+                       WHERE relationship.is_current=1
+                         AND (
+                             (relationship.from_type='person'
+                              AND relationship.from_id=candidate.person_id
+                              AND relationship.to_type='project'
+                              AND relationship.to_id=anchor.project_id)
+                             OR
+                             (relationship.to_type='person'
+                              AND relationship.to_id=candidate.person_id
+                              AND relationship.from_type='project'
+                              AND relationship.from_id=anchor.project_id)
+                         )
+                  )
+                ORDER BY candidate.source_date DESC,candidate.item_id DESC,
+                         anchor.source_date DESC,anchor.item_id DESC
+                LIMIT ?""",
+            (limit * 4,),
+        ).fetchall()
+        created = 0
+        for row in rows:
+            (
+                candidate_id,
+                person_id,
+                candidate_chat_id,
+                candidate_message_id,
+                candidate_at,
+                candidate_confidence,
+                anchor_id,
+                project_id,
+                anchor_chat_id,
+                anchor_message_id,
+                anchor_at,
+                anchor_confidence,
+            ) = row
+            candidate_time = _parse_timestamp(str(candidate_at))
+            anchor_time = _parse_timestamp(str(anchor_at))
+            if (
+                candidate_time is None
+                or anchor_time is None
+                or abs(candidate_time - anchor_time) > timedelta(days=90)
+            ):
+                continue
+            exists = self.conn.execute(
+                """SELECT 1 FROM review_queue WHERE review_type='graph_link'
+                   AND subject_type='ai_item' AND subject_id=?
+                   AND json_extract(payload_json, '$.candidate_project_id')=? LIMIT 1""",
+                (candidate_id, project_id),
+            ).fetchone()
+            if exists:
+                continue
+            confidence = min(float(candidate_confidence), float(anchor_confidence))
+            self.conn.execute(
+                """INSERT INTO review_queue(
+                       review_type,subject_type,subject_id,payload_json,confidence,created_at
+                   ) VALUES ('graph_link','ai_item',?,?,?,?)""",
+                (
+                    candidate_id,
+                    json.dumps(
+                        {
+                            "source_item_id": candidate_id,
+                            "chat_id": candidate_chat_id,
+                            "message_id": candidate_message_id,
+                            "candidate_project_id": project_id,
+                            "candidate_kind": "cross_chat_relationship",
+                            "relationship_path": [
+                                {"entity_type": "person", "entity_id": person_id},
+                                {"entity_type": "project", "entity_id": project_id},
+                            ],
+                            "candidate_evidence": [
+                                {
+                                    "source_item_id": anchor_id,
+                                    "chat_id": anchor_chat_id,
+                                    "message_id": anchor_message_id,
+                                }
+                            ],
+                            "reasons": [
+                                "same resolved person across distinct chats",
+                                "project evidence is within 90 days",
+                            ],
+                        },
+                        sort_keys=True,
+                    ),
+                    confidence,
+                    utc_now(),
+                ),
+            )
+            created += 1
+            if created >= limit:
+                break
+        return created
+
     def _accepted_item_links(
         self,
         entity_type: str | None,

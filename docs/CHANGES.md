@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-056 cross-chat candidate discovery
+
+The Context Graph operation can now queue bounded Review candidates from two
+non-deleted exact source messages with the same resolved person across distinct
+chats and time-local project evidence. Candidate payloads retain the evidence
+path, confidence, and reason; Review acceptance remains the sole canonical
+relationship path. No provider call, migration, replay, backfill, repair, or
+live operation ran.
+
 ## 2026-08-29 — AM-108 historical-context truthfulness
 
 An explicit `as_of` request now fails closed for mutable entity and task state,

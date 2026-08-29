@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from datetime import datetime
@@ -744,6 +745,136 @@ class ClassificationAndGraphTests(unittest.TestCase):
         self.assertGreaterEqual(report.relationships_added, 1)
         self.assertEqual(1, report.review_candidates_created)
         self.assertEqual(1, graph_diagnostics(self.conn)["graph_link_candidates"])
+
+    def test_cross_chat_discovery_queues_review_with_exact_evidence(self):
+        now = "2026-01-01T00:00:00+00:00"
+        resolver = EntityResolver(self.conn)
+        person = resolver.person("Michael", source="manual")
+        project = resolver.entity("project", "Georgia LP", source="manual")
+        assert person is not None and project is not None
+        self.conn.executemany(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (?,?,'user')",
+            [(10, "Michael"), (20, "Michael work")],
+        )
+        self.conn.executemany(
+            "INSERT INTO messages(chat_id,message_id,date,text) VALUES (?,?,?,?)",
+            [
+                (10, 1, now, "Please send the documents."),
+                (20, 1, "2026-01-15T00:00:00+00:00", "Georgia documents."),
+            ],
+        )
+        candidate_id = self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+               VALUES (1,'task','Send documents','','open','me',0.95,10,1,?,?,?,'cross-chat-candidate')""",
+            (now, person, now),
+        ).lastrowid
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,project_id,created_at,dedupe_key)
+               VALUES (1,'project','Georgia LP','','informational','unknown',0.95,20,1,?,?,?,?,
+                       'cross-chat-anchor')""",
+            ("2026-01-15T00:00:00+00:00", person, project, now),
+        )
+        self.conn.commit()
+        assert candidate_id is not None
+
+        improver = ContextGraphImprover(self.conn)
+        self.assertEqual(1, improver.discover_cross_chat_candidates())
+        self.assertEqual(0, improver.discover_cross_chat_candidates())
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT project_id FROM ai_items WHERE item_id=?", (candidate_id,)
+            ).fetchone()[0]
+        )
+        payload_json, confidence = self.conn.execute(
+            "SELECT payload_json,confidence FROM review_queue WHERE review_type='graph_link'"
+        ).fetchone()
+        payload = json.loads(payload_json)
+        self.assertEqual("cross_chat_relationship", payload["candidate_kind"])
+        self.assertEqual(project, payload["candidate_project_id"])
+        self.assertEqual(
+            [{"chat_id": 20, "message_id": 1, "source_item_id": 2}],
+            payload["candidate_evidence"],
+        )
+        self.assertEqual(0.95, confidence)
+
+        review_id = self.conn.execute(
+            "SELECT review_id FROM review_queue WHERE review_type='graph_link'"
+        ).fetchone()[0]
+        resolve_review_item(self.conn, review_id, "accept")
+        self.assertEqual(
+            project,
+            self.conn.execute(
+                "SELECT project_id FROM ai_items WHERE item_id=?", (candidate_id,)
+            ).fetchone()[0],
+        )
+
+    def test_cross_chat_discovery_rejects_unshared_stale_or_untraceable_evidence(self):
+        resolver = EntityResolver(self.conn)
+        michael = resolver.person("Michael", source="manual")
+        george = resolver.person("George", source="manual")
+        project = resolver.entity("project", "Georgia LP", source="manual")
+        assert michael is not None and george is not None and project is not None
+        self.conn.executemany(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (?,?,'user')",
+            [(10, "Michael"), (20, "George")],
+        )
+        self.conn.executemany(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,project_id,created_at,dedupe_key)
+               VALUES (1,'task',?,'','open','me',0.95,?,?,?, ?,?,?,'cross-chat-' || ?)""",
+            [
+                (
+                    "Same words",
+                    10,
+                    1,
+                    "2026-01-01T00:00:00+00:00",
+                    michael,
+                    None,
+                    "now",
+                    "candidate",
+                ),
+                (
+                    "Same words",
+                    20,
+                    1,
+                    "2026-01-02T00:00:00+00:00",
+                    george,
+                    project,
+                    "now",
+                    "other-person",
+                ),
+                (
+                    "Old evidence",
+                    20,
+                    2,
+                    "2025-01-01T00:00:00+00:00",
+                    michael,
+                    project,
+                    "now",
+                    "stale",
+                ),
+                (
+                    "No raw source",
+                    20,
+                    3,
+                    "2026-01-02T00:00:00+00:00",
+                    michael,
+                    project,
+                    "now",
+                    "untraceable",
+                ),
+            ],
+        )
+        self.conn.commit()
+
+        self.assertEqual(
+            0, ContextGraphImprover(self.conn).discover_cross_chat_candidates()
+        )
+        self.assertEqual(
+            0, self.conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+        )
 
     def test_graph_repairs_strongly_anchored_orphan_task_event_and_fact(self):
         now = "2026-01-01T00:00:00+00:00"

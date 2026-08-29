@@ -64,9 +64,8 @@ links remain the source of truth for graph repair.
 pipeline. It derives temporal relationships only when accepted canonical tasks
 already connect people, companies, projects, and source evidence. It never
 auto-merges identities: ambiguous aliases remain in the review queue. Existing
-links are checked before insertion, so repeated passes are idempotent; affected
-high-importance classifications and semantic analyses are marked stale for
-selective refresh.
+links are checked before insertion, so repeated passes are idempotent; changed
+canonical scopes enter the revisioned context-refresh ledger.
 High-confidence accepted items can add directly provenanced links. An ambiguous
 chat-to-project suggestion is placed in the regular review queue only when the
 chat has one unambiguous canonical project; the candidate does not change graph
@@ -79,6 +78,12 @@ For orphan tasks, entity-free events, and person/company facts, it requires two
 independently anchored task links to the same project in the source chat before
 applying a project connection. A single anchor becomes a review candidate; a
 competing project consensus remains untouched.
+
+Cross-chat discovery is a separate, bounded Review-only operation. It requires
+two non-deleted exact source messages, the same resolved person, distinct chats,
+and project evidence within 90 days. It stores the evidence path, confidence,
+and reason in a `graph_link` review item, but does not alter canonical or graph
+state until an owner accepts that review.
 
 ## Task-specific investigation
 
