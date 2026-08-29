@@ -12,7 +12,7 @@ from .config import Settings
 from .database import set_app_meta
 from .context.segments import ConversationSegmenter
 from .operational import backfill_task_project_links
-from .schema_support import fts5_available
+from .schema_support import fts5_available, fts_source_fingerprint, rebuild_fts
 
 
 REPAIR_OPERATIONS = frozenset({"fts", "task-project", "segments", "context"})
@@ -55,6 +55,7 @@ def derived_state_repair_inventory(
     )
     return {
         "fts_rebuild_available": fts5_available(conn),
+        "fts_unit_fingerprint": fts_source_fingerprint(conn),
         "task_project_candidates": min(task_links, limit),
         "task_project_truncated": task_links > limit,
         "task_project_unit_fingerprint": task_project_unit_fingerprint,
@@ -235,11 +236,77 @@ def apply_segment_repair(
     return {"status": "completed", **outcome}
 
 
+def apply_fts_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+) -> dict[str, object]:
+    """Rebuild all FTS-derived rows atomically from one verified source state."""
+    _validate_recovery_receipt(settings, recovery_receipt)
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(conn, operations={"fts"})
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    operations = cast(dict[str, dict[str, object]], report["operations"])
+    unit_fingerprint = operations["fts"]["unit_fingerprint"]
+    if unit_fingerprint is None:
+        raise ValueError("FTS repair is unavailable on this SQLite build")
+    checkpoint: dict[str, object] = {
+        "status": "running",
+        "operation": "fts",
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+        "source_fingerprint": unit_fingerprint,
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        rebuild_fts(conn)
+        outcome = {
+            "fingerprint": dry_run_fingerprint,
+            "source_fingerprint": unit_fingerprint,
+        }
+        set_app_meta(
+            conn,
+            key,
+            json.dumps(
+                {**checkpoint, "status": "completed", "outcome": outcome},
+                sort_keys=True,
+            ),
+        )
+        conn.commit()
+    except Exception as error:
+        conn.rollback()
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
+
+
 def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, object]:
     if name == "fts":
         return {
             "eligible_units": int(bool(inventory["fts_rebuild_available"])),
             "truncated": False,
+            "unit_fingerprint": inventory["fts_unit_fingerprint"],
         }
     prefix = {
         "task-project": "task_project",

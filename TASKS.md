@@ -317,6 +317,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     task-project repair. It rebuilds only `task_anchors` rows from selected
     canonical task inputs; interrupted work rolls back and retry uses the same
     private chat set. No operator apply command or live execution exists.
+  - Progress 2026-08-29: fixture-only FTS rebuilding now binds its dry-run to
+    a non-disclosing hash of the exact authoritative source rows. A source
+    change rejects the stale run, while the existing atomic writer restores
+    source/index parity and records a retry-safe checkpoint. No operator apply
+    command or live execution exists.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.

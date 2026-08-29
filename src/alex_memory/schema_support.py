@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from types import MappingProxyType
 
@@ -13,6 +15,14 @@ FTS_TABLES = (
     "summaries_fts",
     "entities_fts",
 )
+
+FTS_SOURCE_QUERIES = {
+    "messages": "SELECT text,chat_id,message_id FROM messages WHERE is_deleted=0 AND trim(COALESCE(text,''))<>'' ORDER BY chat_id,message_id",
+    "tasks": "SELECT title,COALESCE(details,''),task_id FROM tasks WHERE trim(COALESCE(title,'') || COALESCE(details,''))<>'' ORDER BY task_id",
+    "memory": "SELECT title,details,item_id FROM ai_items WHERE trim(COALESCE(title,'') || COALESCE(details,''))<>'' ORDER BY item_id",
+    "summaries": "SELECT summary,'chunk',chunk_id FROM memory_chunks WHERE trim(COALESCE(summary,''))<>'' ORDER BY chunk_id",
+    "entities": "SELECT canonical_name,'person',person_id FROM people WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'company',company_id FROM companies WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'project',project_id FROM projects WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' ORDER BY 2,3",
+}
 
 FTS_TRIGGERS = (
     "messages_fts_insert",
@@ -365,30 +375,16 @@ def fts_index_health(conn: sqlite3.Connection) -> dict[str, object]:
     """Compare each FTS index against its authoritative current source rows."""
     if not fts5_available(conn):
         return {"available": False, "healthy": True, "indexes": {}}
-    contracts = {
-        "messages": (
-            "SELECT text,chat_id,message_id FROM messages WHERE is_deleted=0 AND trim(COALESCE(text,''))<>''",
-            "SELECT text,chat_id,message_id FROM messages_fts",
-        ),
-        "tasks": (
-            "SELECT title,COALESCE(details,''),task_id FROM tasks WHERE trim(COALESCE(title,'') || COALESCE(details,''))<>''",
-            "SELECT title,details,task_id FROM tasks_fts",
-        ),
-        "memory": (
-            "SELECT title,details,item_id FROM ai_items WHERE trim(COALESCE(title,'') || COALESCE(details,''))<>''",
-            "SELECT title,details,item_id FROM memory_fts",
-        ),
-        "summaries": (
-            "SELECT summary,'chunk',chunk_id FROM memory_chunks WHERE trim(COALESCE(summary,''))<>''",
-            "SELECT summary,source_type,source_id FROM summaries_fts",
-        ),
-        "entities": (
-            "SELECT canonical_name,'person',person_id FROM people WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'company',company_id FROM companies WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>'' UNION ALL SELECT canonical_name,'project',project_id FROM projects WHERE status<>'merged' AND trim(COALESCE(canonical_name,''))<>''",
-            "SELECT name,entity_type,entity_id FROM entities_fts",
-        ),
+    index_queries = {
+        "messages": "SELECT text,chat_id,message_id FROM messages_fts",
+        "tasks": "SELECT title,details,task_id FROM tasks_fts",
+        "memory": "SELECT title,details,item_id FROM memory_fts",
+        "summaries": "SELECT summary,source_type,source_id FROM summaries_fts",
+        "entities": "SELECT name,entity_type,entity_id FROM entities_fts",
     }
     indexes: dict[str, dict[str, int | bool]] = {}
-    for name, (source_sql, index_sql) in contracts.items():
+    for name, source_sql in FTS_SOURCE_QUERIES.items():
+        index_sql = index_queries[name]
         source_rows = [tuple(row) for row in conn.execute(source_sql)]
         index_rows = [tuple(row) for row in conn.execute(index_sql)]
         source_counts: dict[tuple, int] = {}
@@ -417,3 +413,19 @@ def fts_index_health(conn: sqlite3.Connection) -> dict[str, object]:
         "healthy": all(bool(index["healthy"]) for index in indexes.values()),
         "indexes": indexes,
     }
+
+
+def fts_source_fingerprint(conn: sqlite3.Connection) -> str | None:
+    """Hash the exact FTS source rows without returning their private content."""
+    if not fts5_available(conn):
+        return None
+    digest = hashlib.sha256()
+    for name, query in FTS_SOURCE_QUERIES.items():
+        digest.update(name.encode())
+        for row in conn.execute(query):
+            digest.update(
+                json.dumps(
+                    tuple(row), ensure_ascii=False, separators=(",", ":")
+                ).encode()
+            )
+    return digest.hexdigest()

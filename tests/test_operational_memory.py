@@ -28,11 +28,13 @@ from alex_memory.operational import (
     resolve_task_project,
 )
 from alex_memory.repair import (
+    apply_fts_repair,
     apply_segment_repair,
     apply_task_project_repair,
     derived_state_repair_dry_run,
     derived_state_repair_inventory,
 )
+from alex_memory.schema_support import fts_index_health
 
 from test_ai_pipeline import make_settings
 
@@ -446,6 +448,57 @@ class OperationalMemoryTests(unittest.TestCase):
                         dry_run_fingerprint=str(report["fingerprint"]),
                         recovery_receipt=receipt,
                         limit=1,
+                    )["status"],
+                )
+            finally:
+                conn.close()
+
+    def test_fts_repair_rejects_stale_scope_and_is_retry_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                if not fts_index_health(conn)["available"]:
+                    self.skipTest("SQLite was built without optional FTS5")
+                resolver = EntityResolver(conn)
+                resolver.entity("person", "Ari", source="manual")
+                first = derived_state_repair_dry_run(conn, operations={"fts"})
+                self.assertRegex(
+                    str(first["operations"]["fts"]["unit_fingerprint"]),
+                    r"^[0-9a-f]{64}$",
+                )
+                resolver.entity("company", "Beta", source="manual")
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    apply_fts_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(first["fingerprint"]),
+                        recovery_receipt=receipt,
+                    )
+
+                report = derived_state_repair_dry_run(conn, operations={"fts"})
+                conn.execute(
+                    "DELETE FROM entities_fts WHERE name='Beta' AND entity_type='company'"
+                )
+                self.assertFalse(fts_index_health(conn)["healthy"])
+                outcome = apply_fts_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                )
+                self.assertEqual("completed", outcome["status"])
+                self.assertTrue(fts_index_health(conn)["healthy"])
+                self.assertEqual(
+                    "already-complete",
+                    apply_fts_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
                     )["status"],
                 )
             finally:

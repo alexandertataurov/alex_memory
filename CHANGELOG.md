@@ -20,6 +20,10 @@ All notable user- and developer-visible changes are recorded here. This project 
   fingerprinted conversation-segment unit. It rebuilds only task-anchored
   segments from selected canonical task inputs, rolls back partial work, and
   makes a completed retry a no-op. No operator command or live execution exists.
+- AM-074 also binds its fixture-only atomic FTS rebuild to a non-disclosing
+  authoritative-source fingerprint. Stale dry runs are rejected, successful
+  rebuilds prove FTS parity, and recorded retries are no-ops. No operator command
+  or live execution exists.
 - AM-061 adds provider-verified Groq profiles for GPT-OSS 120B, Qwen 3.6, and
   Compound Mini. The router applies published local RPM/TPM/RPD/TPD guards to
   the reasoning profiles, scopes 120B and Qwen to explicit high-value policies,

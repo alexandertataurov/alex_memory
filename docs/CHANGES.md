@@ -8,6 +8,13 @@ rebuilds only task-anchored derived segments, rolls back a partial unit, and
 returns the recorded outcome on retry. No operator command or live execution
 exists.
 
+## 2026-08-29 — AM-074 FTS repair unit
+
+The fixture-only atomic FTS operation is now bound to a hash of its exact
+authoritative inputs without exposing their content. Source changes reject stale
+dry runs; the existing parity-checked writer and checkpoint complete together,
+and a completed retry is a no-op. No operator command or live execution exists.
+
 ## 2026-08-29 — AM-061 provider model registry
 
 The registry now uses Groq's verified IDs and published local Developer-plan
