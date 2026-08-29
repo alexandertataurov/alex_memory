@@ -146,6 +146,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Prefer an explicit unknown/empty result to unsupported inference; no new
     persisted profile state, source, model work, graph projection, or live
     refresh is authorized.
+  - Owner validation gate: final acceptance requires 10–20 real contacts across
+    recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
+    shapes. Every displayed claim must retain exact evidence or be unknown/
+    omitted; third-party/inference labels must not appear as canonical state;
+    profile reads must not write. Synthetic fixtures do not satisfy this gate.
   - Progress 2026-08-26: contact briefing coverage now proves that long,
     unlinked recent history cannot displace a direct group-context record;
     changed-context rows remain capped and retain their exact message evidence.

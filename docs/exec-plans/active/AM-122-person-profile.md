@@ -165,3 +165,17 @@ The screen renders separate exact-evidence and durable-window progress bars.
 Both the displayed counts and the profile worker claim use the current profile
 extractor version, avoiding legacy extractor windows inflating current coverage
 or being silently claimed during a v2 scan.
+
+## Owner validation gate
+
+Final acceptance requires the owner to inspect 10–20 real canonical contacts;
+synthetic fixtures remain regression evidence only. Select contacts spanning a
+recent direct conversation, dormant history, group-only context, multiple
+projects, an ambiguous identity, and limited or absent evidence. For each
+profile, verify that identity, commitments, current work, communication, and
+the contact briefing either link to the exact cited source or are explicitly
+unknown/omitted. Confirm that third-party and inference labels remain distinct
+from current canonical state, and that opening the profile performs no source,
+canonical, graph, or refresh write. Record only aggregate pass/fail findings
+and any reproducible profile IDs for follow-up; do not place conversation
+content in the validation record.
