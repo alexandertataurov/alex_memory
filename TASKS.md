@@ -414,7 +414,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     context marked background. Typed provider failures preserve local fallback;
     unexpected errors are visible.
 
-- [ ] AM-096 [P1] [Database migrations / Anti-slop] — Make schema evolution have one truthful source of behavior and freeze old migrations.
+- [x] AM-096 [P1] [Database migrations / Anti-slop] — Make schema evolution have one truthful source of behavior and freeze old migrations.
   - Code evidence: the giant `SCHEMA` bootstrap already creates tables that are later “added” again by migrations 4–10 (`source_evidence`, classification state, conflict review, conversation segments, conversation intelligence, etc.).
   - Code evidence: migration 2 and migration 7 both delegate to the same mutable `COMPATIBILITY_COLUMNS` map. Changing that shared map changes what old migration versions do on a fresh/legacy adoption path, violating immutable migration semantics.
   - Code evidence: a fresh database therefore receives a hybrid sequence: migration 1 creates much of the future schema, migration 2 fills omitted columns, later migrations often no-op, and migration 8 rebuilds a policy table that bootstrap already created in its current form.
@@ -427,6 +427,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - fresh and every supported legacy fixture converge to the same schema and invariants.
   - Safety: do not rewrite migration history already recorded in the live database; introduce forward-only fixes.
   - Verification: fresh DB, pre-ledger DB, each representative legacy schema, interrupted migration/reopen, and schema-diff tests.
+  - Completed 2026-08-29: bootstrap owns only its stable baseline, migrations
+    retain independent frozen compatibility snapshots, and fresh/legacy
+    temporary-SQLite fixtures converge through the ordered ledger. No live
+    migration, repair, backfill, or source-data action ran.
 
 
 - [ ] AM-103 [P1] [Analytics / Diagnostics truthfulness] — Stop diagnostics from presenting guessed, stale, or dimensionally invalid metrics as system health.
