@@ -122,7 +122,10 @@ coverage rather than refresh count.
 1. Complete AM-093: true entity scope, exact message closure, stable provenance,
    bounded SQL fallback, and no implicit global leakage.
 2. Complete AM-108 and AM-107: historical requests fail closed when unsupported,
-   and Deep Dive rows prove task membership.
+   and Deep Dive rows prove task membership. Completed 2026-08-29: explicit
+   historical context omits mutable task/entity/global lifecycle state and
+   current person summaries, reports partial fidelity, and retains only
+   interval/version/event-backed records.
 3. Complete AM-094 through the central router; every citable fact has an allowed
    identity and the deterministic answer remains available. Follow with AM-056
    and AM-110–AM-112 as candidate-only/reproducible extensions.

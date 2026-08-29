@@ -175,7 +175,8 @@ class ContextQualityTests(unittest.TestCase):
         self.assertIn("Georgia LP", rendered)
         self.assertIn("received", rendered)
         self.assertIn("unresolved", rendered)
-        self.assertIn("Send flow-of-funds structure", rendered)
+        self.assertNotIn("Send flow-of-funds structure", rendered)
+        self.assertEqual([], context.tasks)
         self.assertIn("Hedge FX difference", rendered)
         hedge = next(
             event for event in context.events if event["title"] == "Hedge FX difference"

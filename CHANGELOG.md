@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-108 makes explicit historical context fail closed: mutable task/entity/global
+  lifecycle and current person summaries are omitted, identity anchors are
+  labelled partial, and contact segments use their half-open validity interval.
+  Interval/version/event-backed records remain available. No migration,
+  backfill, replay, or live action ran.
 - AM-068 records an evidence-based no-refactor review: no remaining large
   module had a cohesive responsibility safe to extract without a cosmetic layer.
 - AM-065 documents an optional portable systemd user-unit template for the

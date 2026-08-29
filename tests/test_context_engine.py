@@ -104,7 +104,11 @@ class ContextEngineTests(unittest.TestCase):
             )
         )
         self.assertEqual("Michael", built.people[0]["canonical_name"])
-        self.assertTrue(built.tasks)
+        self.assertEqual([], built.tasks)
+        self.assertEqual(
+            "partial: mutable entity, task, global lifecycle, and current summary state omitted",
+            built.diagnostics["historical_fidelity"],
+        )
         self.assertEqual([], built.evidence)
 
     def test_global_snapshot_is_persisted(self) -> None:
@@ -120,6 +124,52 @@ class ContextEngineTests(unittest.TestCase):
         ).fetchone()
         self.assertIsInstance(json.loads(payload), dict)
         self.assertTrue(rendered)
+
+    def test_historical_global_context_fails_closed_for_lifecycle_state(self) -> None:
+        context = ContextService(self.conn, self.settings).get_global_context(
+            as_of=datetime.fromisoformat("2020-01-01T00:00:00+00:00")
+        )
+        self.assertIn("historical_fidelity", context.global_state)
+        self.assertNotIn("open_tasks", context.global_state)
+        snapshot = ContextService(self.conn, self.settings).snapshot_global_state(
+            as_of=datetime.fromisoformat("2020-01-01T00:00:00+00:00")
+        )
+        self.assertEqual(context.global_state, snapshot)
+
+    def test_historical_context_excludes_ended_contact_segment_and_current_summary(
+        self,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO conversation_contact_segments(person_id,source_type,conversation_id,
+                   chat_id,primary_project_id,started_at,ended_at,summary,confidence,source,
+                   created_at,updated_at)
+               VALUES (?,'telegram','100',100,?,'2026-08-19T00:00:00+00:00',
+                       '2026-08-20T00:00:00+00:00','Ended conversation',1,'test',?,?)""",
+            (
+                self.person_id,
+                self.project_id,
+                "2026-08-20T00:00:00+00:00",
+                "2026-08-20T00:00:00+00:00",
+            ),
+        )
+        self.conn.execute(
+            """INSERT INTO person_context_state(person_id,current_summary,long_term_summary,updated_at)
+               VALUES (?,'Current only','Current only',?)""",
+            (self.person_id, "2026-08-19T00:00:00+00:00"),
+        )
+        self.conn.commit()
+
+        context = ContextBuilder(self.conn, self.settings).build(
+            ContextRequest(
+                person_ids=[self.person_id],
+                project_ids=[self.project_id],
+                as_of=datetime.fromisoformat("2026-08-21T00:00:00+00:00"),
+            )
+        )
+
+        self.assertEqual([], context.segments)
+        self.assertNotIn("Current only", str(context.summaries))
+        self.assertNotIn("status", context.projects[0])
 
     def test_ordinary_observation_does_not_create_a_context_event(self) -> None:
         ContextService(self.conn, self.settings).process_ai_item(

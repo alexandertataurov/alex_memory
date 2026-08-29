@@ -25,6 +25,7 @@ class ContextBuilder:
         self.conn, self.settings = conn, settings
 
     def build(self, request: ContextRequest) -> BuiltContext:
+        historical = request.as_of is not None
         as_of = (
             request.as_of.isoformat()
             if request.as_of
@@ -33,19 +34,19 @@ class ContextBuilder:
         seed_distances = self._resolve_entities(request, as_of)
         relationships, distances = self._expand_relationships(seed_distances, as_of)
         people = self._entities(
-            "person", distances, as_of, self.settings.context_max_people
+            "person", distances, as_of, self.settings.context_max_people, historical
         )
         companies = self._entities(
-            "company", distances, as_of, self.settings.context_max_companies
+            "company", distances, as_of, self.settings.context_max_companies, historical
         )
         projects = self._entities(
-            "project", distances, as_of, self.settings.context_max_projects
+            "project", distances, as_of, self.settings.context_max_projects, historical
         )
-        tasks = self._tasks(distances, request, as_of)
+        tasks = self._tasks(distances, request, as_of, historical)
         events = self._events(distances, request, as_of)
         facts, historical_facts = self._facts(people, companies, projects, as_of)
         conflicts = self._conflicts(distances, as_of)
-        summaries = self._summaries(distances, as_of)
+        summaries = self._summaries(distances, as_of, historical)
         segments = self._segments(request, distances, as_of)
         evidence = self._evidence(request, tasks, events, facts, relationships, as_of)
 
@@ -65,6 +66,10 @@ class ContextBuilder:
             "raw_messages": len(evidence),
             "ambiguous_entities": 0,
         }
+        if historical:
+            diagnostics["historical_fidelity"] = (
+                "partial: mutable entity, task, global lifecycle, and current summary state omitted"
+            )
         diagnostics["context_score"] = round(
             sum(
                 float(item.get("score", 0))
@@ -84,7 +89,7 @@ class ContextBuilder:
         return BuiltContext(
             request.purpose,
             as_of,
-            self._global_state(as_of),
+            self._global_state(as_of, historical),
             people,
             projects,
             companies,
@@ -139,6 +144,8 @@ class ContextBuilder:
                     if entity_id is not None:
                         distances[(kind, int(entity_id))] = 0
         for task_id in request.task_ids:
+            if request.as_of is not None:
+                continue
             row = self.conn.execute(
                 "SELECT related_person_id,related_company_id,related_project_id FROM tasks WHERE task_id=?",
                 (task_id,),
@@ -216,7 +223,12 @@ class ContextBuilder:
         return highest(collected, 80), distances
 
     def _entities(
-        self, kind: str, distances: dict[tuple[str, int], int], as_of: str, limit: int
+        self,
+        kind: str,
+        distances: dict[tuple[str, int], int],
+        as_of: str,
+        limit: int,
+        historical: bool,
     ) -> list[dict]:
         table, key = _ENTITY_TABLES[kind]
         records: list[dict] = []
@@ -235,19 +247,28 @@ class ContextBuilder:
                 ).description
             ]
             record = dict(zip(columns, row, strict=True))
-            record.update(
-                {
+            if historical:
+                record = {
                     "id": entity_id,
                     "type": kind,
-                    "pinned": [
-                        item[0]
-                        for item in self.conn.execute(
-                            "SELECT content FROM pinned_memory WHERE entity_type=? AND entity_id=? ORDER BY updated_at DESC LIMIT 8",
-                            (kind, entity_id),
-                        )
-                    ],
+                    "canonical_name": record["canonical_name"],
+                    "historical_fidelity": "identity only; mutable entity state unavailable",
+                    "pinned": [],
                 }
-            )
+            else:
+                record.update(
+                    {
+                        "id": entity_id,
+                        "type": kind,
+                        "pinned": [
+                            item[0]
+                            for item in self.conn.execute(
+                                "SELECT content FROM pinned_memory WHERE entity_type=? AND entity_id=? ORDER BY updated_at DESC LIMIT 8",
+                                (kind, entity_id),
+                            )
+                        ],
+                    }
+                )
             record = rank_item(
                 record,
                 "pinned" if record["pinned"] else "relationship",
@@ -259,8 +280,14 @@ class ContextBuilder:
         return highest(records, limit)
 
     def _tasks(
-        self, distances: dict[tuple[str, int], int], request: ContextRequest, as_of: str
+        self,
+        distances: dict[tuple[str, int], int],
+        request: ContextRequest,
+        as_of: str,
+        historical: bool,
     ) -> list[dict]:
+        if historical:
+            return []
         predicates = ["status IN ('open','waiting')", "updated_at<=?"]
         params: list[object] = [as_of]
         ids_by_type = {
@@ -435,7 +462,10 @@ class ContextBuilder:
         ]
 
     def _summaries(
-        self, distances: dict[tuple[str, int], int], as_of: str
+        self,
+        distances: dict[tuple[str, int], int],
+        as_of: str,
+        historical: bool,
     ) -> list[dict]:
         result: list[dict] = []
         for (kind, entity_id), distance in distances.items():
@@ -469,7 +499,7 @@ class ContextBuilder:
                         now=as_of,
                     )
                 )
-            if kind == "person":
+            if kind == "person" and not historical:
                 contact = self.conn.execute(
                     """SELECT current_summary,long_term_summary,updated_at FROM person_context_state
                        WHERE person_id=? AND updated_at<=?""",
@@ -552,8 +582,9 @@ class ContextBuilder:
                     FROM conversation_contact_segments AS s
                     LEFT JOIN projects AS p ON p.project_id=s.primary_project_id
                     WHERE s.person_id IN ({placeholders}) AND s.started_at<=?
+                      AND (s.ended_at IS NULL OR s.ended_at>?)
                     ORDER BY s.started_at DESC LIMIT 12""",
-                [*person_ids, as_of],
+                [*person_ids, as_of, as_of],
             ).fetchall()
             result.extend(
                 {
@@ -669,7 +700,12 @@ class ContextBuilder:
             )
         return highest(result, self.settings.context_max_raw_messages)
 
-    def _global_state(self, as_of: str) -> dict:
+    def _global_state(self, as_of: str, historical: bool) -> dict:
+        if historical:
+            return {
+                "as_of": as_of,
+                "historical_fidelity": "partial: task, project, and open-loop lifecycle state is unavailable",
+            }
         open_tasks, waiting = self.conn.execute(
             "SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END),SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) FROM tasks WHERE status IN ('open','waiting') AND updated_at<=?",
             (as_of,),

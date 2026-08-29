@@ -118,7 +118,7 @@ class ContextService:
                 json.dumps(context.global_state, sort_keys=True),
                 json.dumps(context.global_state, sort_keys=True),
                 rendered,
-                f"{context.global_state['open_tasks']} open tasks; {context.global_state['at_risk_projects']} at-risk projects",
+                _global_state_summary(context.global_state),
                 utc_now(),
             ),
         )
@@ -168,3 +168,9 @@ def _event_type(kind: str, status: str) -> str | None:
     if kind == "project":
         return "project_blocked" if status == "waiting" else "project_updated"
     return None
+
+
+def _global_state_summary(state: dict) -> str:
+    if "historical_fidelity" in state:
+        return str(state["historical_fidelity"])
+    return f"{state['open_tasks']} open tasks; {state['at_risk_projects']} at-risk projects"

@@ -39,7 +39,10 @@ Raw messages remain traceable. AI findings become immutable semantic claims only
 after local validation against submitted source messages; claims are not
 canonical truth. Deterministic reducers and manual Review decide canonical
 state. Manual task state beats later AI inference. Current and historical facts
-are distinct. Provider failure must not stop Telegram ingestion.
+are distinct. An explicit historical context request returns only
+interval/version/event-backed state; mutable current rows are omitted and the
+package declares partial fidelity. Provider failure must not stop Telegram
+ingestion.
 
 For a direct Telegram chat, its peer ID is source metadata and establishes the
 conversation owner before prompt context or AI aliases are considered. A named

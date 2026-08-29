@@ -481,7 +481,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     report background. Dedupe retains strongest provenance with membership
     reasons. No migration or live operation ran.
 
-- [ ] AM-108 [P0] [Historical context / `as_of`] — Make historical context and Task Deep Dive fail-closed; prevent current state from leaking into past views.
+- [x] AM-108 [P0] [Historical context / `as_of`] — Make historical context and Task Deep Dive fail-closed; prevent current state from leaking into past views.
   - ContextBuilder evidence: chat entity seeds come from current open tasks and `ai_items` without consistently applying `request.as_of`; future observations can influence a historical query.
   - ConversationContextService evidence: `_project_contexts(person_id)` ignores `as_of`; `_historical_conversation()` does not require the selected segment to still be active at the cutoff.
   - Global-state evidence: people-requiring-attention uses current open loops with no `as_of` cutoff; current task/project rows cannot reconstruct historical lifecycle merely from `updated_at<=as_of`.
@@ -494,6 +494,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - current materialized rows are never silently reused as historical truth;
     - report/diagnostics state when historical fidelity is partial.
   - Verification: Deep Dive before/after completion, title/due-date change after cutoff, project relink after cutoff, future contact project, ended segment, future AI observation, and current open loop absent from past snapshot.
+  - Completed 2026-08-29: historical context now exposes only identity anchors plus interval/version/event-backed records; mutable task/entity/global lifecycle and current person summaries are omitted with an explicit partial-fidelity diagnostic. Ended contact segments are excluded at the cutoff. No migration, backfill, replay, or live action ran.
 
 - [x] AM-109 [P0] [Context graph repair / Canonical safety] — Make deterministic graph repair truly local in evidence and time before it is allowed to mutate canonical links.
   - Code evidence: `_chat_project_consensus()` treats all project-linked tasks in a chat as one consensus regardless of when they occurred.

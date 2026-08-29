@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-108 historical-context truthfulness
+
+An explicit `as_of` request now fails closed for mutable entity and task state,
+global lifecycle totals, and current person materializations. It keeps only
+identity anchors and interval/version/event-backed context, labels the package
+partial, and excludes contact segments outside their half-open interval. No
+migration, backfill, replay, or live operation ran.
+
 ## 2026-08-29 — AM-068 architecture review
 
 The post-remediation review found no cohesive responsibility safe to extract
