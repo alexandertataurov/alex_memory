@@ -30,6 +30,7 @@ def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
         "identity": _identity_state(conn, person_id, entity),
         "aliases": _aliases(conn, person_id),
         "contact": _contact(conn, person_id),
+        "context_freshness": _context_freshness(conn, person_id),
         "topics": _topics(conn, person_id),
         "facts": _facts(conn, person_id),
         "relationships": _relationships(conn, person_id),
@@ -239,6 +240,53 @@ def _contact(conn: sqlite3.Connection, person_id: int) -> dict:
         "profile_summary_updated_at",
     )
     return dict(zip(keys, row, strict=True)) if row else {}
+
+
+def _context_freshness(conn: sqlite3.Connection, person_id: int) -> dict:
+    """Expose materialized conversation freshness without reading message content."""
+    updated_at, evidence_through_at, latest_message = conn.execute(
+        """SELECT MAX(context.updated_at),MAX(context.evidence_through_at),MAX(message.date)
+           FROM current_conversation_context AS context
+           LEFT JOIN messages AS message ON message.chat_id=context.chat_id
+           WHERE context.person_id=?""",
+        (person_id,),
+    ).fetchone()
+    materialization_dirty = bool(
+        conn.execute(
+            """SELECT 1 FROM context_invalidations
+               WHERE scope_type='person' AND scope_id=?
+                 AND status IN ('pending','running','failed') LIMIT 1""",
+            (person_id,),
+        ).fetchone()
+    )
+    semantic_pending = bool(
+        conn.execute(
+            """SELECT 1 FROM current_conversation_context AS context
+               LEFT JOIN ai_message_state AS analysis ON analysis.chat_id=context.chat_id
+               LEFT JOIN message_classifications AS classification
+                 ON classification.chat_id=context.chat_id
+               WHERE context.person_id=?
+                 AND (COALESCE(analysis.analysis_stale,0)=1 OR COALESCE(classification.context_stale,0)=1)
+               LIMIT 1""",
+            (person_id,),
+        ).fetchone()
+    )
+    raw_pending = bool(latest_message) and (
+        evidence_through_at is None or str(latest_message) > str(evidence_through_at)
+    )
+    return {
+        "state": (
+            "materialization dirty"
+            if materialization_dirty
+            else "semantic pending"
+            if semantic_pending
+            else "new raw evidence pending"
+            if raw_pending
+            else "fresh"
+        ),
+        "context_updated_at": updated_at,
+        "evidence_through_at": evidence_through_at,
+    }
 
 
 def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:

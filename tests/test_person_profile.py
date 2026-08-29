@@ -107,6 +107,18 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(2, profile["stats"]["total"])
         self.assertEqual(2, profile["stats"]["conversations"][0]["incoming"])
 
+    def test_profile_exposes_pending_raw_conversation_evidence(self) -> None:
+        self.conn.execute(
+            """INSERT INTO current_conversation_context(
+                   person_id,source_type,conversation_id,chat_id,evidence_through_at,updated_at
+               ) VALUES (?, 'telegram', '100', 100, '2026-08-23T12:00:00+00:00', 'now')""",
+            (self.person_id,),
+        )
+        profile = build_person_profile(self.conn, int(self.person_id))
+        self.assertEqual(
+            "new raw evidence pending", profile["context_freshness"]["state"]
+        )
+
     def test_profile_summary_is_cited_and_presentation_only(self) -> None:
         before = self.conn.execute("SELECT COUNT(*) FROM context_facts").fetchone()[0]
         self.assertTrue(

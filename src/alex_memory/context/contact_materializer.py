@@ -123,6 +123,15 @@ class ContactContextMaterializer:
         states = [_fact_text(str(predicate), str(value)) for predicate, value in facts]
         task_states = [f"{loop['status']}: {loop['title']}" for loop in loops[:4]]
         last_at = records[-1]["occurred_at"] if records else None
+        evidence_through_at = self.conn.execute(
+            """SELECT MAX(occurred_at) FROM (
+                   SELECT date AS occurred_at FROM messages WHERE chat_id=?
+                   UNION ALL
+                   SELECT occurred_at FROM source_evidence
+                   WHERE source_name='telegram' AND conversation_id=?
+               )""",
+            (chat_id, str(chat_id)),
+        ).fetchone()[0]
         self.conn.execute(
             """INSERT INTO current_conversation_context(
                    person_id,source_type,conversation_id,chat_id,primary_project_id,
@@ -136,8 +145,25 @@ class ContactContextMaterializer:
                    open_loops_json=excluded.open_loops_json,recent_summary=excluded.recent_summary,
                    last_meaningful_at=excluded.last_meaningful_at,
                    evidence_through_at=excluded.evidence_through_at,
-                   context_version=current_conversation_context.context_version+1,
-                   updated_at=excluded.updated_at""",
+                   context_version=CASE WHEN
+                       current_conversation_context.primary_project_id IS NOT excluded.primary_project_id OR
+                       current_conversation_context.primary_company_id IS NOT excluded.primary_company_id OR
+                       current_conversation_context.current_state IS NOT excluded.current_state OR
+                       current_conversation_context.topic_json IS NOT excluded.topic_json OR
+                       current_conversation_context.open_loops_json IS NOT excluded.open_loops_json OR
+                       current_conversation_context.recent_summary IS NOT excluded.recent_summary OR
+                       current_conversation_context.last_meaningful_at IS NOT excluded.last_meaningful_at
+                       THEN current_conversation_context.context_version+1
+                       ELSE current_conversation_context.context_version END,
+                   updated_at=excluded.updated_at
+               WHERE current_conversation_context.primary_project_id IS NOT excluded.primary_project_id OR
+                     current_conversation_context.primary_company_id IS NOT excluded.primary_company_id OR
+                     current_conversation_context.current_state IS NOT excluded.current_state OR
+                     current_conversation_context.topic_json IS NOT excluded.topic_json OR
+                     current_conversation_context.open_loops_json IS NOT excluded.open_loops_json OR
+                     current_conversation_context.recent_summary IS NOT excluded.recent_summary OR
+                     current_conversation_context.last_meaningful_at IS NOT excluded.last_meaningful_at OR
+                     current_conversation_context.evidence_through_at IS NOT excluded.evidence_through_at""",
             (
                 person_id,
                 str(chat_id),
@@ -149,7 +175,7 @@ class ContactContextMaterializer:
                 json.dumps(loops, ensure_ascii=False),
                 _summary(records[-5:]),
                 last_at,
-                last_at,
+                evidence_through_at,
                 now,
             ),
         )
@@ -290,7 +316,14 @@ class ContactContextMaterializer:
                        task_id,source_chat_id,source_message_id,confidence,created_at,updated_at
                    ) VALUES (?, ?, 'telegram', ?, 'task', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(person_id,source_type,conversation_id,loop_type,title,source_chat_id,source_message_id)
-                   DO UPDATE SET status=excluded.status,task_id=excluded.task_id,updated_at=excluded.updated_at""",
+                   DO UPDATE SET project_id=excluded.project_id,owner=excluded.owner,
+                       status=excluded.status,task_id=excluded.task_id,
+                       confidence=excluded.confidence,updated_at=excluded.updated_at
+                   WHERE conversation_open_loops.project_id IS NOT excluded.project_id OR
+                         conversation_open_loops.owner IS NOT excluded.owner OR
+                         conversation_open_loops.status IS NOT excluded.status OR
+                         conversation_open_loops.task_id IS NOT excluded.task_id OR
+                         conversation_open_loops.confidence IS NOT excluded.confidence""",
                 (
                     person_id,
                     project_id,

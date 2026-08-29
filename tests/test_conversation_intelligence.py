@@ -133,6 +133,40 @@ class ConversationIntelligenceTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_refresh_version_tracks_semantic_content_not_refresh_count(self) -> None:
+        service = ConversationContextService(self.conn, self.settings)
+        service.refresh_conversation(self.person_id, 10)
+        first = self.conn.execute(
+            """SELECT context_version,evidence_through_at
+               FROM current_conversation_context
+               WHERE person_id=? AND conversation_id='10'""",
+            (self.person_id,),
+        ).fetchone()
+        service.refresh_conversation(self.person_id, 10)
+        self.assertEqual(
+            first,
+            self.conn.execute(
+                """SELECT context_version,evidence_through_at
+                   FROM current_conversation_context
+                   WHERE person_id=? AND conversation_id='10'""",
+                (self.person_id,),
+            ).fetchone(),
+        )
+        self.conn.execute(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (10,99,'2026-09-01T09:00:00+00:00','Archived later source.',0,0)"""
+        )
+        service.refresh_conversation(self.person_id, 10)
+        self.assertEqual(
+            (1, "2026-09-01T09:00:00+00:00"),
+            self.conn.execute(
+                """SELECT context_version,evidence_through_at
+                   FROM current_conversation_context
+                   WHERE person_id=? AND conversation_id='10'""",
+                (self.person_id,),
+            ).fetchone(),
+        )
+
     def test_temporal_package_uses_the_matching_historical_period(self) -> None:
         service = ConversationContextService(self.conn, self.settings)
         service.refresh_person(self.person_id)

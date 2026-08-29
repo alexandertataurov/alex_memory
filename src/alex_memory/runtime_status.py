@@ -49,6 +49,11 @@ class AIRuntimeStatus:
 class ContextRuntimeStatus:
     dirty_count: int
     oldest_dirty_age_seconds: int | None
+    freshness: str
+    raw_pending: int
+    semantic_pending: int
+    materialization_dirty: int
+    context_updated_at: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,10 +245,41 @@ class RuntimeStatusService:
                FROM context_invalidations
                WHERE status IN ('pending','running','failed')"""
         ).fetchall()
-        dirty_count = sum(int(row[0] or 0) for row in dirty_rows)
+        semantic_pending = sum(int(row[0] or 0) for row in dirty_rows[:2])
+        materialization_dirty = int(dirty_rows[2][0] or 0)
+        dirty_count = semantic_pending + materialization_dirty
         dirty_dates = [str(row[1]) for row in dirty_rows if row[1]]
         oldest_dirty = min(dirty_dates) if dirty_dates else None
-        return ContextRuntimeStatus(dirty_count, _age_seconds(oldest_dirty, now))
+        latest_message, evidence_through, context_updated_at = self.conn.execute(
+            """SELECT
+                   (SELECT MAX(date) FROM messages),
+                   (SELECT MAX(evidence_through_at) FROM current_conversation_context),
+                   (SELECT MAX(updated_at) FROM current_conversation_context)"""
+        ).fetchone()
+        raw_pending = int(
+            bool(latest_message)
+            and (
+                evidence_through is None or str(latest_message) > str(evidence_through)
+            )
+        )
+        freshness = (
+            "materialization dirty"
+            if materialization_dirty
+            else "semantic pending"
+            if semantic_pending
+            else "new raw evidence pending"
+            if raw_pending
+            else "fresh"
+        )
+        return ContextRuntimeStatus(
+            dirty_count,
+            _age_seconds(oldest_dirty, now),
+            freshness,
+            raw_pending,
+            semantic_pending,
+            materialization_dirty,
+            str(context_updated_at) if context_updated_at else None,
+        )
 
     def _quality_status(self, context: ContextRuntimeStatus) -> DataQualityStatus:
         fts = fts_index_health(self.conn)
@@ -316,7 +352,7 @@ class RuntimeStatusService:
             classified,
             source_identified,
             direct_chats,
-            context.dirty_count == 0,
+            context.freshness == "fresh",
             tuple(warnings),
         )
 

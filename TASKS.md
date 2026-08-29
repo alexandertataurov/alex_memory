@@ -729,7 +729,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     evidence with citations or explicit `Unknown`; provider synthesis remains
     unimplemented rather than implied.
 
-- [ ] AM-063 [P1] [Conversation intelligence / Freshness] — Make context revisions and evidence-through markers mean actual content freshness, not refresh count.
+- [x] AM-063 [P1] [Conversation intelligence / Freshness] — Make context revisions and evidence-through markers mean actual content freshness, not refresh count.
   - Code evidence: `current_conversation_context.context_version` increments on **every** refresh, even if the resulting state is identical. The version therefore measures executions, not semantic revision.
   - Code evidence: `evidence_through_at` is set to the last task/AI activity record, not the latest archived/classified/semantically integrated source evidence; raw messages can be newer without the field explaining whether that is expected or stale.
   - Code evidence: `person_context_state` has no matching content revision and can be rewritten by multiple producers (resolved by AM-067).
@@ -739,6 +739,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - expose `context_updated_at`, dependency revision, new evidence since materialization, and pending semantic/refresh work without scanning lifetime history;
     - RuntimeStatus and profiles can distinguish `fresh`, `new raw evidence pending`, `semantic pending`, and `materialization dirty`.
   - Verification: no-op refresh, new irrelevant raw message, new relevant semantic evidence, task-state update, project relink, and restart tests.
+  - Completed 2026-08-29: context revisions advance only with materialized
+    semantic content; evidence-through uses the latest archived conversation
+    evidence. Runtime status and profiles distinguish fresh, raw pending,
+    semantic pending, and materialization dirty state without scanning content.
 
 - [ ] AM-064 [P2] [Configuration simplification] — Remove the legacy provider/model configuration surface after AM-052 establishes one authoritative effective configuration.
   - Current duplication: `AI_PRIMARY_PROVIDER` / `AI_FALLBACK_PROVIDER`, `GEMINI_MODEL`, `gemini_model`, `gemini_primary_model`, `GEMINI_REQUESTS_PER_MINUTE`, and per-model quota fields describe overlapping routing concepts.

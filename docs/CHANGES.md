@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-063 conversation freshness
+
+Conversation materialization now advances its version only for semantic
+content changes, while the evidence watermark follows archived source evidence.
+Runtime status and profiles expose fresh, raw-pending, semantic-pending, and
+materialization-dirty states without reading message content.
+
 ## 2026-08-29 — AM-060 Deep Dive truthfulness
 
 Task Deep Dive's deterministic action is now labelled evidence lookup rather

@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-063 makes materialized conversation revisions semantic rather than
+  refresh-count based, records true archive evidence-through watermarks, and
+  exposes fresh/raw/semantic/materialization freshness states in runtime status
+  and profiles.
 - AM-060 renames Task Deep Dive's token-overlap path to evidence lookup. It
   returns only matching selected evidence with citations or explicit `Unknown`,
   and does not present offline retrieval as a synthesized answer.

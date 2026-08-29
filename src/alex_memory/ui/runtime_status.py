@@ -88,6 +88,11 @@ def show_status(status: RuntimeStatus, console: Console) -> None:
         f"{status.history['context_integrated']:,} integrated · "
         f"{status.history['current_enough']:,} current-enough",
     )
+    ai_table.add_row("Context freshness", safe_text(status.context.freshness))
+    ai_table.add_row(
+        "Context work",
+        f"{status.context.raw_pending:,} raw · {status.context.semantic_pending:,} semantic · {status.context.materialization_dirty:,} dirty",
+    )
     ai_table.add_row("Context dirty", f"{status.context.dirty_count:,}")
     ai_table.add_row(
         "Oldest dirty",
@@ -124,9 +129,7 @@ def show_status(status: RuntimeStatus, console: Console) -> None:
         "Source contact identity",
         f"{quality.source_identity_coverage:.1%} · {quality.source_identified_chats:,}/{quality.direct_chats:,}",
     )
-    quality_table.add_row(
-        "Context freshness", "fresh" if quality.context_fresh else "refresh pending"
-    )
+    quality_table.add_row("Context freshness", safe_text(status.context.freshness))
     quality_table.add_row(
         "Graph maintenance",
         f"{int(status.graph.get('graph_link_candidates', 0)):,} links pending · {int(status.graph.get('stale_analyses', 0)):,} stale analyses",

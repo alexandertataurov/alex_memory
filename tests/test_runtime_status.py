@@ -155,6 +155,20 @@ class RuntimeStatusTests(unittest.TestCase):
         self.assertEqual(1, status.context.dirty_count)
         self.assertFalse(status.quality.context_fresh)
         self.assertEqual(7200, status.context.oldest_dirty_age_seconds)
+        self.assertEqual("materialization dirty", status.context.freshness)
+        self.assertEqual(1, status.context.materialization_dirty)
+
+    def test_new_archive_evidence_is_distinct_from_semantic_work(self) -> None:
+        self._message(self.now)
+        self.conn.execute(
+            """INSERT INTO current_conversation_context(
+                   person_id,source_type,conversation_id,evidence_through_at,updated_at
+               ) VALUES (1,'telegram','1','2026-08-23T12:00:00+00:00','now')"""
+        )
+        status = self.service.snapshot(self._live(), now=self.now)
+        self.assertEqual("new raw evidence pending", status.context.freshness)
+        self.assertEqual(1, status.context.raw_pending)
+        self.assertEqual(0, status.context.semantic_pending)
 
     def test_home_and_status_screens_render_authoritative_snapshot(self) -> None:
         output = StringIO()
