@@ -393,7 +393,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     those consumers directly with item provenance. Existing rows are inert
     legacy state; no deletion, migration, replay, or live action ran.
 
-- [ ] AM-094 [P0] [Ask Memory / AI routing / Anti-vibe] — Rebuild Ask Memory around one real retrieval→evidence→router pipeline and remove its private provider stack.
+- [x] AM-094 [P0] [Ask Memory / AI routing / Anti-vibe] — Rebuild Ask Memory around one real retrieval→evidence→router pipeline and remove its private provider stack.
   - Plan: `docs/exec-plans/completed/AM-094-ask-memory-pipeline.md`.
   - Code evidence: `answer_question_with_ai()` directly calls `_gemini_qa()` and then `_groq_qa()`; it never uses the quota-aware `AIRouter`, model registry, workload policy, persistent model usage, cooldown reasons, or configured fallback chain.
   - Code evidence: `answer_question()` reduces retrieval to at most **5** selected rows. If any returned task is `WAITING`, it discards all non-waiting evidence and returns only waiting tasks; `answer_question_with_ai()` then sends that already-truncated set to the model.
