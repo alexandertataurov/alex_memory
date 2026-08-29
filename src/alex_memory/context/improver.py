@@ -5,9 +5,19 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from ..utils import utc_now
 from .repository import ensure_relationship
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +53,15 @@ class ContextGraphImprover:
         refresh_scopes: set[tuple[str, int]] = set()
         changed = False
         with self.conn:
+            stale_chats = self._supersede_unsupported_relationships(
+                entity_type, entity_id, source_chat_id
+            )
+            if stale_chats:
+                changed = True
+                affected_chats.update(stale_chats)
+                refresh_scopes.update(
+                    ("conversation", chat_id) for chat_id in stale_chats
+                )
             for row in rows:
                 (
                     task_id,
@@ -176,6 +195,63 @@ class ContextGraphImprover:
             added, len(affected_chats), candidates, graph_diagnostics(self.conn)
         )
 
+    def _supersede_unsupported_relationships(
+        self,
+        entity_type: str | None,
+        entity_id: int | None,
+        source_chat_id: int | None,
+    ) -> set[int]:
+        """Close derived task/event links once their canonical project changes."""
+        if entity_type is not None and source_chat_id is None:
+            return set()
+        filters = ["r.is_current=1"]
+        parameters: list[object] = []
+        if source_chat_id is not None:
+            filters.append("r.source_chat_id=?")
+            parameters.append(source_chat_id)
+        if entity_type == "task" and entity_id is not None:
+            filters.append("r.from_type='task' AND r.from_id=?")
+            parameters.append(entity_id)
+        now = utc_now()
+        stale = self.conn.execute(
+            f"""SELECT r.relationship_id,r.source_chat_id FROM relationships AS r
+                JOIN tasks AS t ON r.from_type='task' AND r.from_id=t.task_id
+                WHERE {" AND ".join(filters)} AND r.to_type='project'
+                  AND r.relationship_type='supports'
+                  AND (t.related_project_id IS NULL OR t.related_project_id<>r.to_id)
+                UNION ALL
+                SELECT r.relationship_id,r.source_chat_id FROM relationships AS r
+                JOIN context_events AS e ON r.from_type='event' AND r.from_id=e.event_id
+                WHERE {" AND ".join(filters)} AND r.to_type='project'
+                  AND r.relationship_type='relates_to'
+                  AND (e.project_id IS NULL OR e.project_id<>r.to_id)""",
+            [*parameters, *parameters],
+        ).fetchall()
+        fact_links = self.conn.execute(
+            f"""SELECT r.relationship_id,r.source_chat_id,r.to_id,f.valid_from
+                FROM relationships AS r
+                JOIN context_facts AS f ON r.from_type=f.subject_type
+                  AND r.from_id=f.subject_id
+                WHERE {" AND ".join(filters)} AND r.to_type='project'
+                  AND r.relationship_type='context_fact_about'
+                  AND r.confidence<1.0""",
+            parameters,
+        ).fetchall()
+        for relationship_id, chat_id, project_id, occurred_at in fact_links:
+            if chat_id is None:
+                continue
+            candidate = self._local_project_consensus(int(chat_id), str(occurred_at))
+            if candidate is None or candidate[0] != int(project_id):
+                stale.append((relationship_id, chat_id))
+        if not stale:
+            return set()
+        self.conn.executemany(
+            """UPDATE relationships SET valid_to=?,is_current=0,updated_at=?
+               WHERE relationship_id=?""",
+            [(now, now, int(row[0])) for row in stale],
+        )
+        return {int(row[1]) for row in stale if row[1] is not None}
+
     def improve_global(self) -> GraphImprovementReport:
         return self.improve()
 
@@ -267,22 +343,22 @@ class ContextGraphImprover:
             predicates.append("i.source_chat_id=?")
             parameters.append(source_chat_id)
         rows = self.conn.execute(
-            f"""SELECT i.item_id,i.source_chat_id,i.source_message_id,
-                       chat_project.project_id,i.confidence
+            f"""SELECT i.item_id,i.source_chat_id,i.source_message_id,i.source_date,
+                       i.confidence
                 FROM ai_items AS i
                 JOIN message_classifications AS mc
                   ON mc.chat_id=i.source_chat_id AND mc.message_id=i.source_message_id
-                JOIN (
-                    SELECT source_chat_id,MIN(related_project_id) AS project_id
-                    FROM tasks WHERE related_project_id IS NOT NULL
-                    GROUP BY source_chat_id
-                    HAVING COUNT(DISTINCT related_project_id)=1
-                ) AS chat_project ON chat_project.source_chat_id=i.source_chat_id
                 WHERE {" AND ".join(predicates)}""",
             parameters,
         ).fetchall()
         created = 0
-        for item_id, chat_id, message_id, project_id, confidence in rows:
+        for item_id, chat_id, message_id, occurred_at, confidence in rows:
+            candidate = self._local_project_consensus(
+                int(chat_id), str(occurred_at) if occurred_at else None
+            )
+            if candidate is None:
+                continue
+            project_id, _anchor_count = candidate
             exists = self.conn.execute(
                 """SELECT 1 FROM review_queue WHERE review_type='graph_link'
                    AND json_extract(payload_json, '$.source_item_id')=? LIMIT 1""",
@@ -316,43 +392,47 @@ class ContextGraphImprover:
         competing projects remain untouched. This deliberately avoids lexical
         matching and never changes entities or raw evidence.
         """
-        consensus = self._chat_project_consensus(source_chat_id)
         candidates = 0
         affected: set[int] = set()
         changed = False
-        for chat_id, project_id, anchor_count in consensus:
+        chat_ids = self._repair_chat_ids(source_chat_id)
+        for chat_id in chat_ids:
             task_rows = self.conn.execute(
-                """SELECT task_id FROM tasks
-                   WHERE source_chat_id=? AND status IN ('open','waiting')
-                     AND related_person_id IS NULL AND related_company_id IS NULL
-                     AND related_project_id IS NULL""",
+                """SELECT t.task_id,i.source_chat_id,i.source_message_id,
+                          COALESCE(i.source_date,t.created_at)
+                   FROM tasks AS t LEFT JOIN ai_items AS i ON i.item_id=t.source_item_id
+                   WHERE t.source_chat_id=? AND t.status IN ('open','waiting')
+                     AND t.related_person_id IS NULL AND t.related_company_id IS NULL
+                     AND t.related_project_id IS NULL""",
                 (chat_id,),
             ).fetchall()
             event_rows = self.conn.execute(
-                """SELECT event_id FROM context_events
+                """SELECT event_id,source_chat_id,source_message_id,
+                          COALESCE(occurred_at,observed_at,created_at)
+                   FROM context_events
                    WHERE source_chat_id=? AND project_id IS NULL
                      AND person_id IS NULL AND company_id IS NULL AND task_id IS NULL""",
                 (chat_id,),
             ).fetchall()
             fact_rows = self.conn.execute(
-                """SELECT f.fact_id,f.subject_type,f.subject_id FROM context_facts AS f
+                """SELECT f.fact_id,f.subject_type,f.subject_id,f.source_chat_id,
+                          f.source_message_id,f.valid_from FROM context_facts AS f
                    WHERE f.source_chat_id=? AND f.subject_type IN ('person','company')
-                     AND NOT EXISTS (
-                         SELECT 1 FROM relationships AS r
-                         WHERE ((r.from_type=f.subject_type AND r.from_id=f.subject_id
-                                 AND r.to_type='project' AND r.to_id=?)
-                             OR (r.to_type=f.subject_type AND r.to_id=f.subject_id
-                                 AND r.from_type='project' AND r.from_id=?))
-                           AND r.is_current=1
-                     )""",
-                (chat_id, project_id, project_id),
+                """,
+                (chat_id,),
             ).fetchall()
             if not task_rows and not event_rows and not fact_rows:
                 continue
-            if anchor_count >= 2:
-                for (task_id,) in task_rows:
-                    if self._rejected_link("task", int(task_id), project_id):
-                        continue
+            for task_id, record_chat_id, message_id, occurred_at in task_rows:
+                candidate = self._local_project_consensus(chat_id, occurred_at)
+                if candidate is None:
+                    continue
+                project_id, anchor_count = candidate
+                if self._has_project_relationship("task", int(task_id), project_id):
+                    continue
+                if anchor_count >= 2 and not self._rejected_link(
+                    "task", int(task_id), project_id
+                ):
                     self.conn.execute(
                         "UPDATE tasks SET related_project_id=?,updated_at=? WHERE task_id=?",
                         (project_id, utc_now(), task_id),
@@ -365,14 +445,24 @@ class ContextGraphImprover:
                         project_id,
                         "supports",
                         0.95,
-                        chat_id,
-                        None,
-                        utc_now(),
+                        record_chat_id,
+                        message_id,
+                        occurred_at,
                     )
                     changed = True
-                for (event_id,) in event_rows:
-                    if self._rejected_link("context_event", int(event_id), project_id):
-                        continue
+                    affected.add(chat_id)
+                else:
+                    candidates += self._queue_repair_candidate(
+                        "graph_task_link", "task", int(task_id), chat_id, project_id
+                    )
+            for event_id, record_chat_id, message_id, occurred_at in event_rows:
+                candidate = self._local_project_consensus(chat_id, occurred_at)
+                if candidate is None:
+                    continue
+                project_id, anchor_count = candidate
+                if anchor_count >= 2 and not self._rejected_link(
+                    "context_event", int(event_id), project_id
+                ):
                     self.conn.execute(
                         "UPDATE context_events SET project_id=? WHERE event_id=?",
                         (project_id, event_id),
@@ -385,14 +475,39 @@ class ContextGraphImprover:
                         project_id,
                         "relates_to",
                         0.95,
-                        chat_id,
-                        None,
-                        utc_now(),
+                        record_chat_id,
+                        message_id,
+                        occurred_at,
                     )
                     changed = True
-                for fact_id, subject_type, subject_id in fact_rows:
-                    if self._rejected_link("context_fact", int(fact_id), project_id):
-                        continue
+                    affected.add(chat_id)
+                else:
+                    candidates += self._queue_repair_candidate(
+                        "graph_event_link",
+                        "context_event",
+                        int(event_id),
+                        chat_id,
+                        project_id,
+                    )
+            for (
+                fact_id,
+                subject_type,
+                subject_id,
+                record_chat_id,
+                message_id,
+                occurred_at,
+            ) in fact_rows:
+                candidate = self._local_project_consensus(chat_id, occurred_at)
+                if candidate is None:
+                    continue
+                project_id, anchor_count = candidate
+                if self._has_project_relationship(
+                    str(subject_type), int(subject_id), project_id
+                ):
+                    continue
+                if anchor_count >= 2 and not self._rejected_link(
+                    "context_fact", int(fact_id), project_id
+                ):
                     ensure_relationship(
                         self.conn,
                         str(subject_type),
@@ -401,30 +516,20 @@ class ContextGraphImprover:
                         project_id,
                         "context_fact_about",
                         0.95,
-                        chat_id,
-                        None,
-                        utc_now(),
+                        record_chat_id,
+                        message_id,
+                        occurred_at,
                     )
                     changed = True
-                if changed:
                     affected.add(chat_id)
-                continue
-            for (task_id,) in task_rows:
-                candidates += self._queue_repair_candidate(
-                    "graph_task_link", "task", int(task_id), chat_id, project_id
-                )
-            for (event_id,) in event_rows:
-                candidates += self._queue_repair_candidate(
-                    "graph_event_link",
-                    "context_event",
-                    int(event_id),
-                    chat_id,
-                    project_id,
-                )
-            for fact_id, _, _ in fact_rows:
-                candidates += self._queue_repair_candidate(
-                    "graph_fact_link", "context_fact", int(fact_id), chat_id, project_id
-                )
+                else:
+                    candidates += self._queue_repair_candidate(
+                        "graph_fact_link",
+                        "context_fact",
+                        int(fact_id),
+                        chat_id,
+                        project_id,
+                    )
         return candidates, affected, changed
 
     def _repair_temporal_segments(self) -> bool:
@@ -464,24 +569,64 @@ class ContextGraphImprover:
                 changed = True
         return changed
 
-    def _chat_project_consensus(
-        self, source_chat_id: int | None
-    ) -> list[tuple[int, int, int]]:
-        predicates = ["source_chat_id IS NOT NULL", "related_project_id IS NOT NULL"]
-        parameters: list[object] = []
+    def _repair_chat_ids(self, source_chat_id: int | None) -> list[int]:
         if source_chat_id is not None:
-            predicates.append("source_chat_id=?")
-            parameters.append(source_chat_id)
+            return [source_chat_id]
         return [
-            (int(chat_id), int(project_id), int(anchor_count))
-            for chat_id, project_id, anchor_count in self.conn.execute(
-                f"""SELECT source_chat_id,MIN(related_project_id),COUNT(*)
-                    FROM tasks WHERE {" AND ".join(predicates)}
-                    GROUP BY source_chat_id
-                    HAVING COUNT(DISTINCT related_project_id)=1""",
-                parameters,
+            int(row[0])
+            for row in self.conn.execute(
+                """SELECT DISTINCT source_chat_id FROM tasks
+                   WHERE source_chat_id IS NOT NULL AND related_project_id IS NOT NULL
+                   ORDER BY source_chat_id LIMIT 80"""
             )
         ]
+
+    def _local_project_consensus(
+        self, chat_id: int, occurred_at: str | None
+    ) -> tuple[int, int] | None:
+        """Return one nearby project supported by distinct source messages only."""
+        when = _parse_timestamp(occurred_at)
+        if when is None:
+            return None
+        anchors: dict[int, set[int]] = {}
+        rows = self.conn.execute(
+            """SELECT t.related_project_id,i.source_message_id,
+                      COALESCE(i.source_date,t.created_at)
+               FROM tasks AS t JOIN ai_items AS i ON i.item_id=t.source_item_id
+               WHERE t.source_chat_id=? AND t.related_project_id IS NOT NULL
+                 AND i.source_message_id IS NOT NULL
+               ORDER BY t.task_id DESC LIMIT 160""",
+            (chat_id,),
+        ).fetchall()
+        for project_id, message_id, anchor_at in rows:
+            anchor_time = _parse_timestamp(str(anchor_at) if anchor_at else None)
+            if anchor_time is None or abs(anchor_time - when) > timedelta(days=90):
+                continue
+            anchors.setdefault(int(project_id), set()).add(int(message_id))
+        if len(anchors) != 1:
+            return None
+        project_id, messages = next(iter(anchors.items()))
+        return project_id, len(messages)
+
+    def _has_project_relationship(
+        self, subject_type: str, subject_id: int, project_id: int
+    ) -> bool:
+        return bool(
+            self.conn.execute(
+                """SELECT 1 FROM relationships WHERE is_current=1 AND
+                   ((from_type=? AND from_id=? AND to_type='project' AND to_id=?)
+                    OR (to_type=? AND to_id=? AND from_type='project' AND from_id=?))
+                   LIMIT 1""",
+                (
+                    subject_type,
+                    subject_id,
+                    project_id,
+                    subject_type,
+                    subject_id,
+                    project_id,
+                ),
+            ).fetchone()
+        )
 
     def _queue_repair_candidate(
         self,

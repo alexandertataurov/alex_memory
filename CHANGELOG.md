@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-109 bounds automatic graph repair to two distinct nearby source-message
+  anchors for one unambiguous project. Single, stale, competing, or rejected
+  evidence remains unlinked or Review-only; unsupported derived links are
+  temporally superseded. No migration, replay, backfill, deletion, or live
+  action ran.
 - AM-079 removes generic task/document temporal-fact projection and suffix-based
   replacement authority. Changed facts default to Review, explicit replacement
   is limited to documented deterministic/manual callers, exact source replay is

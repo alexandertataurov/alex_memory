@@ -310,6 +310,32 @@ class ClassificationAndGraphTests(unittest.TestCase):
         self.conn.close()
         self.directory.cleanup()
 
+    def _task_with_source(
+        self, title: str, message_id: int, occurred_at: str, project_id: int | None
+    ) -> int:
+        item_id = self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+               VALUES (1,'task',?,'','open','me',1.0,1,?,?,?,'now',?)""",
+            (title, message_id, occurred_at, project_id, f"source-{message_id}"),
+        ).lastrowid
+        assert item_id is not None
+        task_id = self.conn.execute(
+            """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+               source_item_id,related_project_id,confidence,created_at,updated_at)
+               VALUES (?,?,'open','me',1,?,?,1.0,?,?)""",
+            (
+                title,
+                normalize_task_title(title),
+                item_id,
+                project_id,
+                occurred_at,
+                occurred_at,
+            ),
+        ).lastrowid
+        assert task_id is not None
+        return int(task_id)
+
     def test_waiting_context_disambiguates_short_state_change(self):
         self.conn.execute(
             "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Michael','user')"
@@ -664,6 +690,13 @@ class ClassificationAndGraphTests(unittest.TestCase):
                 ),
             ],
         )
+        direct_item_id = self.conn.execute(
+            "SELECT item_id FROM ai_items WHERE dedupe_key='direct-link'"
+        ).fetchone()[0]
+        self.conn.execute(
+            "UPDATE tasks SET source_item_id=? WHERE title='Georgia task'",
+            (direct_item_id,),
+        )
         self.conn.commit()
         report = ContextGraphImprover(self.conn).improve(source_chat_id=1)
         self.assertGreaterEqual(report.relationships_added, 1)
@@ -694,17 +727,44 @@ class ClassificationAndGraphTests(unittest.TestCase):
                VALUES ('Unlinked work','unlinked work','open','me',1,1.0,?,?)""",
             (now, now),
         ).lastrowid
+        self.conn.executemany(
+            "INSERT INTO messages(chat_id,message_id,date,text) VALUES (1,?,?,?)",
+            [(1, now, "Anchor one"), (2, now, "Anchor two"), (3, now, "Orphan")],
+        )
+        self.conn.executemany(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+               VALUES (1,'task',?,'','open','me',1.0,1,?,?,?,'now',?)""",
+            [
+                ("Anchor one", 1, now, project, "repair-anchor-one"),
+                ("Anchor two", 2, now, project, "repair-anchor-two"),
+                ("Unlinked work", 3, now, None, "repair-orphan"),
+            ],
+        )
+        for title, key in (
+            ("Anchor one", "repair-anchor-one"),
+            ("Anchor two", "repair-anchor-two"),
+            ("Unlinked work", "repair-orphan"),
+        ):
+            item_id = self.conn.execute(
+                "SELECT item_id FROM ai_items WHERE dedupe_key=?", (key,)
+            ).fetchone()[0]
+            self.conn.execute(
+                "UPDATE tasks SET source_item_id=? WHERE title=?", (item_id, title)
+            )
         event_id = self.conn.execute(
-            """INSERT INTO context_events(event_type,title,observed_at,source_chat_id,confidence,created_at)
-               VALUES ('update','Unlinked event',?,1,1.0,?)""",
+            """INSERT INTO context_events(event_type,title,observed_at,source_chat_id,
+               source_message_id,confidence,created_at)
+               VALUES ('update','Unlinked event',?,1,3,1.0,?)""",
             (now, now),
         ).lastrowid
-        self.conn.execute(
+        fact_id = self.conn.execute(
             """INSERT INTO context_facts(subject_type,subject_id,predicate,value_json,valid_from,
-               observed_at,confidence,source_chat_id,created_at,updated_at)
-               VALUES ('person',?,'topic','{}',?,?,1.0,1,?,?)""",
+               observed_at,confidence,source_chat_id,source_message_id,created_at,updated_at)
+               VALUES ('person',?,'topic','{}',?,?,1.0,1,3,?,?)""",
             (person, now, now, now, now),
-        )
+        ).lastrowid
+        assert fact_id is not None
         self.conn.commit()
 
         first = ContextGraphImprover(self.conn).improve(source_chat_id=1)
@@ -733,6 +793,38 @@ class ClassificationAndGraphTests(unittest.TestCase):
         )
         self.assertGreaterEqual(first.relationships_added, 5)
         self.assertEqual(0, second.relationships_added)
+        corrected_project = resolver.entity(
+            "project", "Corrected Project", source="manual"
+        )
+        assert corrected_project is not None
+        self.conn.execute(
+            "UPDATE tasks SET related_project_id=? WHERE task_id=?",
+            (corrected_project, orphan_task),
+        )
+        ContextGraphImprover(self.conn).improve(source_chat_id=1)
+        self.assertEqual(
+            0,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM relationships WHERE from_type='task' AND from_id=?
+                   AND to_type='project' AND to_id=? AND relationship_type='supports'
+                   AND is_current=1""",
+                (orphan_task, project),
+            ).fetchone()[0],
+        )
+        self.conn.execute(
+            "UPDATE context_facts SET valid_from='2030-01-01T00:00:00+00:00' WHERE fact_id=?",
+            (fact_id,),
+        )
+        ContextGraphImprover(self.conn).improve(source_chat_id=1)
+        self.assertEqual(
+            0,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM relationships WHERE from_type='person' AND from_id=?
+                   AND to_type='project' AND to_id=? AND relationship_type='context_fact_about'
+                   AND is_current=1""",
+                (person, project),
+            ).fetchone()[0],
+        )
 
     def test_graph_queues_single_anchor_orphan_repairs_for_review(self):
         now = "2026-01-01T00:00:00+00:00"
@@ -754,6 +846,29 @@ class ClassificationAndGraphTests(unittest.TestCase):
                VALUES ('Unlinked work','unlinked work','open','me',1,1.0,?,?)""",
             (now, now),
         ).lastrowid
+        self.conn.executemany(
+            "INSERT INTO messages(chat_id,message_id,date,text) VALUES (1,?,?,?)",
+            [(1, now, "Anchor"), (2, now, "Orphan")],
+        )
+        self.conn.executemany(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+               source_chat_id,source_message_id,source_date,project_id,created_at,dedupe_key)
+               VALUES (1,'task',?,'','open','me',1.0,1,?,?,?,'now',?)""",
+            [
+                ("Anchor", 1, now, project, "single-anchor"),
+                ("Unlinked work", 2, now, None, "single-orphan"),
+            ],
+        )
+        for title, key in (
+            ("Anchor", "single-anchor"),
+            ("Unlinked work", "single-orphan"),
+        ):
+            item_id = self.conn.execute(
+                "SELECT item_id FROM ai_items WHERE dedupe_key=?", (key,)
+            ).fetchone()[0]
+            self.conn.execute(
+                "UPDATE tasks SET source_item_id=? WHERE title=?", (item_id, title)
+            )
         self.conn.commit()
 
         report = ContextGraphImprover(self.conn).improve(source_chat_id=1)
@@ -777,6 +892,55 @@ class ClassificationAndGraphTests(unittest.TestCase):
             self.conn.execute(
                 "SELECT related_project_id FROM tasks WHERE task_id=?", (orphan_task,)
             ).fetchone()[0],
+        )
+
+    def test_graph_repair_ignores_years_apart_same_project_anchors(self):
+        project = EntityResolver(self.conn).entity(
+            "project", "Georgia LP", source="manual"
+        )
+        assert project is not None
+        self.conn.execute(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Michael','user')"
+        )
+        self._task_with_source(
+            "Old anchor one", 1, "2021-01-01T00:00:00+00:00", project
+        )
+        self._task_with_source(
+            "Old anchor two", 2, "2021-01-02T00:00:00+00:00", project
+        )
+        orphan = self._task_with_source(
+            "Current orphan", 3, "2026-01-01T00:00:00+00:00", None
+        )
+
+        report = ContextGraphImprover(self.conn).improve(source_chat_id=1)
+
+        self.assertEqual(0, report.review_candidates_created)
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT related_project_id FROM tasks WHERE task_id=?", (orphan,)
+            ).fetchone()[0]
+        )
+
+    def test_graph_repair_ignores_competing_local_projects(self):
+        resolver = EntityResolver(self.conn)
+        first = resolver.entity("project", "Georgia LP", source="manual")
+        second = resolver.entity("project", "Dubai LP", source="manual")
+        assert first is not None and second is not None
+        now = "2026-01-01T00:00:00+00:00"
+        self.conn.execute(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (1,'Michael','user')"
+        )
+        self._task_with_source("Georgia anchor", 1, now, first)
+        self._task_with_source("Dubai anchor", 2, now, second)
+        orphan = self._task_with_source("Ambiguous orphan", 3, now, None)
+
+        report = ContextGraphImprover(self.conn).improve(source_chat_id=1)
+
+        self.assertEqual(0, report.review_candidates_created)
+        self.assertIsNone(
+            self.conn.execute(
+                "SELECT related_project_id FROM tasks WHERE task_id=?", (orphan,)
+            ).fetchone()[0]
         )
 
     def test_graph_repairs_unambiguous_temporal_fact_intervals(self):

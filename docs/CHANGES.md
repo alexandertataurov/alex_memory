@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-109 local graph repair
+
+Automatic repair now requires an unambiguous project with two distinct source
+message anchors in the candidate's 90-day neighbourhood. One anchor is
+Review-only; stale, competing, and manually rejected evidence cannot establish
+canonical state. Derived task, event, and fact links close when their support is
+corrected or disappears. No migration, replay, backfill, deletion, or live
+operation ran.
+
 ## 2026-08-29 — AM-079 temporal fact authority
 
 Automatic task/document fact projection and predicate-suffix replacement rules

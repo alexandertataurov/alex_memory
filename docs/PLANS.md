@@ -20,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-109 local graph repair](exec-plans/completed/AM-109-local-graph-repair.md)
 - [AM-079 temporal fact authority](exec-plans/completed/AM-079-temporal-fact-authority.md)
 - [AM-107 Deep Dive evidence integrity](exec-plans/completed/AM-107-deep-dive-evidence-integrity.md)
 - [AM-094 Ask Memory evidence and router pipeline](exec-plans/completed/AM-094-ask-memory-pipeline.md)

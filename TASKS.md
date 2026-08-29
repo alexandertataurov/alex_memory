@@ -483,7 +483,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - report/diagnostics state when historical fidelity is partial.
   - Verification: Deep Dive before/after completion, title/due-date change after cutoff, project relink after cutoff, future contact project, ended segment, future AI observation, and current open loop absent from past snapshot.
 
-- [ ] AM-109 [P0] [Context graph repair / Canonical safety] — Make deterministic graph repair truly local in evidence and time before it is allowed to mutate canonical links.
+- [x] AM-109 [P0] [Context graph repair / Canonical safety] — Make deterministic graph repair truly local in evidence and time before it is allowed to mutate canonical links.
   - Code evidence: `_chat_project_consensus()` treats all project-linked tasks in a chat as one consensus regardless of when they occurred.
   - Code evidence: with two anchors to one project, `_repair_orphan_records()` auto-assigns **every** fully orphan open task, event, and person/company fact in that chat to the project, with no temporal proximity to the anchors/source message.
   - Example failure: two Project A tasks from 2021 can auto-link an unrelated orphan 2026 task/fact in the same long-lived chat to Project A.
@@ -497,6 +497,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - insufficient evidence creates Review candidates only;
     - relationships carry source provenance and can be superseded/removed when their canonical support is corrected.
   - Verification: years-apart same-chat anchors, two independent nearby anchors, competing projects, manual rejection, targeted person improvement with unrelated fact timeline, and relink/removal tests.
+  - Completed 2026-08-29: automatic repair now requires two distinct nearby
+    source-message anchors for one unambiguous project; a single local anchor
+    is Review-only and old/competing chat history is ignored. Unsupported
+    derived task/event/fact links close their temporal interval. No migration,
+    replay, backfill, deletion, or live operation ran.
 
 
 
