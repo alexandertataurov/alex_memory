@@ -184,23 +184,15 @@ def show_settings(settings: Settings, console: Console) -> None:
     table = Table()
     table.add_column("Area", style="bold")
     table.add_column("Value")
-    primary_model = (
-        settings.gemini_primary_model
-        if settings.ai_primary_provider == "gemini"
-        else settings.groq_model
-    )
-    fallback_model = (
-        settings.groq_model
-        if settings.ai_fallback_provider == "groq"
-        else settings.gemini_primary_model
+    table.add_row(
+        "AI routing",
+        safe_text(f"{settings.ai_routing_mode} registry"),
     )
     table.add_row(
-        "Primary AI",
-        safe_text(f"{settings.ai_primary_provider} / {primary_model}"),
-    )
-    table.add_row(
-        "Fallback AI",
-        safe_text(f"{settings.ai_fallback_provider} / {fallback_model}"),
+        "Registry models",
+        safe_text(
+            f"Gemini {settings.gemini_primary_model} · {settings.gemini_secondary_model} · Groq {settings.groq_model}"
+        ),
     )
     table.add_row(
         "Chat policy",

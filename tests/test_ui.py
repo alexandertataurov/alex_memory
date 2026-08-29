@@ -290,7 +290,7 @@ class ScreenStateTests(unittest.TestCase):
         show_settings(self.settings, console)
         rendered = output.getvalue()
         self.assertIn("Read-only runtime configuration", rendered)
-        self.assertIn("Primary AI", rendered)
+        self.assertIn("AI routing", rendered)
 
     def test_deep_dive_uses_safe_text_in_a_narrow_terminal(self) -> None:
         report = TaskDeepDiveReport(

@@ -16,6 +16,8 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-064 maps deprecated legacy routing mode to quota-aware registry routing
+  with a visible warning and shows effective registry configuration in the UI.
 - AM-063 makes materialized conversation revisions semantic rather than
   refresh-count based, records true archive evidence-through watermarks, and
   exposes fresh/raw/semantic/materialization freshness states in runtime status

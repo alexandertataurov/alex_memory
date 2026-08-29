@@ -133,6 +133,12 @@ def load_settings(root: Path | None = None) -> Settings:
         configuration_warnings.append(
             f"{gemini_model_source} is deprecated; use GEMINI_PRIMARY_MODEL"
         )
+    routing_mode = _choice("AI_ROUTING_MODE", "quota_aware", {"quota_aware", "legacy"})
+    if routing_mode == "legacy":
+        configuration_warnings.append(
+            "AI_ROUTING_MODE=legacy is deprecated; using quota_aware registry routing"
+        )
+        routing_mode = "quota_aware"
     api_id = os.getenv("TELEGRAM_API_ID", "").strip()
     api_hash = os.getenv("TELEGRAM_API_HASH", "").strip()
 
@@ -297,9 +303,7 @@ def load_settings(root: Path | None = None) -> Settings:
         task_deep_dive_max_context_chars=_positive_int(
             "TASK_DEEP_DIVE_MAX_CONTEXT_CHARS", "60000", minimum=1000
         ),
-        ai_routing_mode=_choice(
-            "AI_ROUTING_MODE", "quota_aware", {"quota_aware", "legacy"}
-        ),
+        ai_routing_mode=routing_mode,
         ai_routing_override=_choice(
             "AI_ROUTING_OVERRIDE",
             "auto",

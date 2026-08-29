@@ -28,17 +28,11 @@ def render_ai_progress(
     table.add_column(style="bold", width=18)
     table.add_column(ratio=1)
 
-    primary_model = (
-        settings.gemini_primary_model
-        if settings.ai_primary_provider == "gemini"
-        else settings.groq_model
-    )
     table.add_row("Lane", safe_text(lane.title()))
     table.add_row(
         "Provider",
         safe_text(
-            f"{settings.ai_primary_provider} / {primary_model}  ·  "
-            f"fallback {settings.ai_fallback_provider}"
+            f"{settings.ai_routing_mode} registry · {settings.gemini_primary_model}"
         ),
     )
     table.add_row("Batches", progress_meter(completed_batches, total_batches))

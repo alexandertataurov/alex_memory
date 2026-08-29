@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-064 configuration simplification
+
+The legacy routing mode now resolves to quota-aware registry routing with a
+diagnostic warning. Runtime screens show the effective registry and configured
+models rather than a deprecated primary/fallback provider order.
+
 ## 2026-08-29 — AM-063 conversation freshness
 
 Conversation materialization now advances its version only for semantic

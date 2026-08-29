@@ -140,6 +140,21 @@ class SettingsTests(unittest.TestCase):
                 settings.configuration_warnings,
             )
 
+    def test_legacy_routing_mode_is_mapped_to_registry_routing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_path = root / ("." + "env")
+            config_path.write_text(
+                "TELEGRAM_API_ID=1\nTELEGRAM_API_HASH=test\n", encoding="utf-8"
+            )
+            with patch.dict(os.environ, {"AI_ROUTING_MODE": "legacy"}, clear=True):
+                settings = load_settings(root)
+            self.assertEqual("quota_aware", settings.ai_routing_mode)
+            self.assertIn(
+                "AI_ROUTING_MODE=legacy is deprecated; using quota_aware registry routing",
+                settings.configuration_warnings,
+            )
+
     def test_history_limits_use_internal_names_with_legacy_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

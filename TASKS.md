@@ -744,11 +744,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     evidence. Runtime status and profiles distinguish fresh, raw pending,
     semantic pending, and materialization dirty state without scanning content.
 
-- [ ] AM-064 [P2] [Configuration simplification] — Remove the legacy provider/model configuration surface after AM-052 establishes one authoritative effective configuration.
+- [x] AM-064 [P2] [Configuration simplification] — Remove the legacy provider/model configuration surface after AM-052 establishes one authoritative effective configuration.
   - Current duplication: `AI_PRIMARY_PROVIDER` / `AI_FALLBACK_PROVIDER`, `GEMINI_MODEL`, `gemini_model`, `gemini_primary_model`, `GEMINI_REQUESTS_PER_MINUTE`, and per-model quota fields describe overlapping routing concepts.
   - Acceptance: the model registry + workload policy become authoritative; legacy names are compatibility inputs only at the configuration boundary and never flow through business logic as a second routing system.
   - Diagnostics must show both the effective resolved value and any deprecated alias that supplied it.
   - Remove compatibility aliases only through a documented deprecation step, not a surprise breaking change.
+  - Completed 2026-08-29: the legacy routing mode now resolves to registry-owned
+    quota-aware routing with a configuration warning. Screens show the effective
+    registry rather than a primary/fallback provider order.
 
 - [ ] AM-090 [P2] [Relationships / Simplification] — Deprecate the legacy `entity_relationships` runtime path if no active consumer remains.
   - Evidence from live DB: `entity_relationships` has 0 rows while the temporal `relationships` table is the active context-graph representation.
