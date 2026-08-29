@@ -20,6 +20,7 @@ fix.
 
 ## Completed
 
+- [AM-112 session reproducibility](exec-plans/completed/AM-112-deep-dive-sessions.md)
 - [AM-111 multilingual Deep Dive](exec-plans/completed/AM-111-multilingual-deep-dive.md)
 - [AM-110 conversation intervals](exec-plans/completed/AM-110-conversation-intervals.md)
 - [AM-109 local graph repair](exec-plans/completed/AM-109-local-graph-repair.md)

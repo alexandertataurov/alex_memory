@@ -177,10 +177,16 @@ class TaskDeepDiveTests(unittest.TestCase):
         note_id = self.service.add_note(
             self.task_id, "Ask Michael for the rate comparison."
         )
+        self.service.build(self.task_id)
         self.service.pin_evidence(self.task_id, "E-message-200-1")
         refreshed = self.service.build(self.task_id)
         self.assertEqual(note_id, refreshed.notes[0]["note_id"])
         self.assertIn("E-message-200-1", refreshed.pinned_evidence_ids)
+
+    def test_pin_rejects_evidence_outside_task_sessions(self) -> None:
+        self.service.build(self.task_id)
+        with self.assertRaisesRegex(ValueError, "investigation session"):
+            self.service.pin_evidence(self.task_id, "E-message-999-1")
 
     def test_question_answer_stays_grounded_in_selected_evidence(self) -> None:
         answer, sources = self.service.ask(

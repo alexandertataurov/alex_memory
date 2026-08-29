@@ -1451,6 +1451,21 @@ def _add_context_dependency_memberships(conn: sqlite3.Connection) -> None:
     )
 
 
+def _add_deep_dive_session_metadata(conn: sqlite3.Connection) -> None:
+    """Add reproducible investigation parameters without rewriting sessions."""
+    _add_column_if_missing(conn, "task_deep_dive_sessions", "query_text TEXT")
+    _add_column_if_missing(
+        conn, "task_deep_dive_sessions", "mode TEXT NOT NULL DEFAULT 'build'"
+    )
+    _add_column_if_missing(conn, "task_deep_dive_sessions", "as_of TEXT")
+    _add_column_if_missing(
+        conn, "task_deep_dive_sessions", "retrieval_version INTEGER NOT NULL DEFAULT 1"
+    )
+    _add_column_if_missing(
+        conn, "task_deep_dive_sessions", "diagnostics_json TEXT NOT NULL DEFAULT '{}'"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "bootstrap_schema", _bootstrap_schema),
     Migration(2, "compatibility_columns", _apply_compatibility_columns),
@@ -1485,6 +1500,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         21, "context_dependency_memberships", _add_context_dependency_memberships
     ),
+    Migration(22, "deep_dive_session_metadata", _add_deep_dive_session_metadata),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 

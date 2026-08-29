@@ -55,7 +55,15 @@ class TaskDeepDiveService:
             task, context, concepts, as_of_text
         )
         evidence = self._dedupe_and_limit([*evidence, *raw])
-        session_id = self._save_session(task_id, concepts, evidence)
+        session_id = self._save_session(
+            task_id,
+            concepts,
+            evidence,
+            query=None,
+            mode="build",
+            as_of=as_of_text,
+            diagnostics=diagnostics,
+        )
         return self._report(
             task, context, concepts, evidence, session_id, as_of_text, diagnostics
         )
@@ -72,7 +80,14 @@ class TaskDeepDiveService:
         )
         evidence = self._dedupe_and_limit([*report.evidence, *raw])
         session_id = self._save_session(
-            task_id, concepts, evidence, previous_session=report.session_id
+            task_id,
+            concepts,
+            evidence,
+            previous_session=report.session_id,
+            query=query,
+            mode="search",
+            as_of=report.as_of,
+            diagnostics=diagnostics,
         )
         return self._report(
             task, context, concepts, evidence, session_id, report.as_of, diagnostics
@@ -106,6 +121,17 @@ class TaskDeepDiveService:
         return int(cursor.lastrowid)
 
     def pin_evidence(self, task_id: int, evidence_id: str) -> None:
+        owned = self.conn.execute(
+            """SELECT 1 FROM task_deep_dive_sessions AS session
+               JOIN task_deep_dive_evidence AS evidence
+                 ON evidence.session_id=session.session_id
+               WHERE session.task_id=? AND evidence.evidence_id=? LIMIT 1""",
+            (task_id, evidence_id),
+        ).fetchone()
+        if owned is None:
+            raise ValueError(
+                "Evidence is not part of an investigation session for this task."
+            )
         self.conn.execute(
             "INSERT OR IGNORE INTO task_deep_dive_pins(task_id,evidence_id,created_at) VALUES (?,?,?)",
             (task_id, evidence_id, utc_now()),
@@ -146,6 +172,10 @@ class TaskDeepDiveService:
         concepts: list[str],
         evidence: list[EvidenceItem],
         *,
+        query: str | None,
+        mode: str,
+        as_of: str,
+        diagnostics: dict,
         previous_session: int | None = None,
     ) -> int:
         now = utc_now()
@@ -158,17 +188,40 @@ class TaskDeepDiveService:
         )
         if previous_session:
             self.conn.execute(
-                "UPDATE task_deep_dive_sessions SET summary_json=?,updated_at=? WHERE session_id=?",
-                (payload, now, previous_session),
+                """UPDATE task_deep_dive_sessions SET summary_json=?,query_text=?,mode=?,as_of=?,
+                   retrieval_version=1,diagnostics_json=?,updated_at=? WHERE session_id=?""",
+                (
+                    payload,
+                    query,
+                    mode,
+                    as_of,
+                    json.dumps(diagnostics, sort_keys=True),
+                    now,
+                    previous_session,
+                ),
             )
             session_id = previous_session
         else:
             cursor = self.conn.execute(
-                "INSERT INTO task_deep_dive_sessions(task_id,summary_json,started_at,updated_at) VALUES (?,?,?,?)",
-                (task_id, payload, now, now),
+                """INSERT INTO task_deep_dive_sessions(
+                   task_id,summary_json,query_text,mode,as_of,retrieval_version,diagnostics_json,started_at,updated_at
+                   ) VALUES (?,?,?,?,?,1,?,?,?)""",
+                (
+                    task_id,
+                    payload,
+                    query,
+                    mode,
+                    as_of,
+                    json.dumps(diagnostics, sort_keys=True),
+                    now,
+                    now,
+                ),
             )
             assert cursor.lastrowid is not None
             session_id = int(cursor.lastrowid)
+        self.conn.execute(
+            "DELETE FROM task_deep_dive_evidence WHERE session_id=?", (session_id,)
+        )
         self.conn.executemany(
             "INSERT OR REPLACE INTO task_deep_dive_evidence(session_id,evidence_type,evidence_id,relevance_score,discovered_at) VALUES (?,?,?,?,?)",
             [
@@ -414,7 +467,7 @@ class TaskDeepDiveService:
 
     def _discovered_terms(self, task_id: int, as_of: str) -> list[str]:
         row = self.conn.execute(
-            "SELECT summary_json FROM task_deep_dive_sessions WHERE task_id=? AND updated_at<=? ORDER BY updated_at DESC LIMIT 1",
+            "SELECT summary_json FROM task_deep_dive_sessions WHERE task_id=? AND as_of<=? ORDER BY as_of DESC,session_id DESC LIMIT 1",
             (task_id, as_of),
         ).fetchone()
         if not row:

@@ -543,7 +543,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 
 
-- [ ] AM-112 [P1] [Task Deep Dive / Session state] — Make investigation sessions reproducible, versioned, and internally consistent instead of being a loose write-side cache.
+- [x] AM-112 [P1] [Task Deep Dive / Session state] — Make investigation sessions reproducible, versioned, and internally consistent instead of being a loose write-side cache.
   - Code evidence: session `summary_json` stores only `concepts` and `evidence_ids`; it does not persist the query, `as_of`, deeper/search mode, retrieval/config version, or diagnostics needed to reproduce why evidence was selected.
   - Code evidence: `_discovered_terms(task_id, as_of)` compares **session `updated_at`** to evidence `as_of`. Investigation wall-clock time and historical evidence cutoff are different time axes.
   - Code evidence: updating an existing session inserts/replaces current evidence rows but does not delete evidence rows that disappeared from the session's new `evidence_ids`, leaving the session table with stale membership.
@@ -555,6 +555,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - pins validate task/session evidence ownership, while intentionally persistent pins are migrated explicitly between sessions;
     - build/search/ask side effects are documented as investigation-session persistence, not hidden retrieval mutation.
   - Verification: historical session created today, repeat search with evidence removed, retrieval-version change, invalid pin, session replay/explain output, and previous-session extension tests.
+  - Completed 2026-08-29: migration 22 adds explicit investigation metadata;
+    session updates replace selected membership exactly, cutoff selection uses
+    evidence time, and pins require task-session ownership. No live migration,
+    replay, rebuild, or source/canonical operation ran.
 
 - [x] AM-079 [P0] [Canonical facts / Anti-slop] — Replace keyword/suffix-driven “temporal facts” with a small explicit state-projection contract, or remove the layer.
   - Evidence from live DB: 550 `important_fact` AI items exist (536 at confidence >= 0.90), but `context_facts` has only 30 rows and **all 30 use `corporate_documents_status`**.

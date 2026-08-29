@@ -13,6 +13,7 @@ from alex_memory.database import (
     _apply_migrations,
     _add_profile_ai_lane,
     _add_ai_job_retry_schedule,
+    _add_deep_dive_session_metadata,
     connect,
     migration_history,
     schema_version,
@@ -128,6 +129,40 @@ class MigrationLedgerTests(unittest.TestCase):
                 conn.execute(
                     "SELECT chat_id,message_id FROM ai_job_messages WHERE job_id=?",
                     (job_id,),
+                ).fetchall(),
+            )
+        finally:
+            conn.close()
+
+    def test_deep_dive_session_metadata_upgrade_preserves_session_rows(self) -> None:
+        conn = connect(self.settings)
+        try:
+            session_id = conn.execute(
+                """INSERT INTO task_deep_dive_sessions(task_id,summary_json,started_at,updated_at)
+                   VALUES (7,'{\"concepts\":[\"hedge\"]}','old','old')"""
+            ).lastrowid
+            assert session_id is not None
+            conn.execute(
+                """INSERT INTO task_deep_dive_evidence(
+                       session_id,evidence_type,evidence_id,relevance_score,discovered_at
+                   ) VALUES (?,'message','E-message-1-1',1.0,'old')""",
+                (session_id,),
+            )
+            with conn:
+                _add_deep_dive_session_metadata(conn)
+            self.assertEqual(
+                ("build", None, None, 1, "{}"),
+                conn.execute(
+                    """SELECT mode,query_text,as_of,retrieval_version,diagnostics_json
+                       FROM task_deep_dive_sessions WHERE session_id=?""",
+                    (session_id,),
+                ).fetchone(),
+            )
+            self.assertEqual(
+                [("E-message-1-1",)],
+                conn.execute(
+                    "SELECT evidence_id FROM task_deep_dive_evidence WHERE session_id=?",
+                    (session_id,),
                 ).fetchall(),
             )
         finally:

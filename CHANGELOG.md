@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-112 makes Deep Dive sessions reproducible with additive metadata,
+  evidence-time cutoff selection, exact membership replacement, and
+  session-owned pin validation. No live migration, replay, rebuild, or source/
+  canonical action ran.
 - AM-111 removes English-only concept filtering from Deep Dive retrieval; its
   Unicode-aware canonical/entity/evidence terms now drive bounded expansion.
   No migration, replay, backfill, deletion, or live action ran.

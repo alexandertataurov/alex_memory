@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-112 Deep Dive session reproducibility
+
+Migration 22 records investigation parameters and diagnostics. Session updates
+replace selected evidence membership exactly; discovered-term selection uses the
+stored evidence cutoff rather than wall-clock update time, and pins require
+task-session evidence ownership. No live migration, replay, rebuild, or
+source/canonical operation ran.
+
 ## 2026-08-29 — AM-111 multilingual Deep Dive
 
 Deep Dive core concept discovery retains Unicode task terms without an
