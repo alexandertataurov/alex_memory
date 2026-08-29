@@ -133,6 +133,64 @@ class ConversationIntelligenceTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_bounded_rebuild_is_idempotent_and_preserves_profile_and_promise(
+        self,
+    ) -> None:
+        service = ConversationContextService(self.conn, self.settings)
+        service.refresh_person(self.person_id)
+        service.materializer.store_profile_summary(
+            self.person_id, "Manual profile summary", "profile-input"
+        )
+        self.conn.execute(
+            """INSERT INTO conversation_open_loops(person_id,source_type,conversation_id,
+                   loop_type,title,owner,status,source_chat_id,source_message_id,
+                   confidence,created_at,updated_at)
+               VALUES (?,'telegram','10','promise','Send signed terms','me','waiting',10,99,
+                       0.9,'now','now')""",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        first = service.rebuild_people(limit=1)
+        counts = tuple(
+            self.conn.execute(query, (self.person_id,)).fetchone()[0]
+            for query in (
+                "SELECT COUNT(*) FROM conversation_contact_segments WHERE person_id=?",
+                "SELECT COUNT(*) FROM current_conversation_context WHERE person_id=?",
+                "SELECT COUNT(*) FROM person_project_context WHERE person_id=?",
+                "SELECT COUNT(*) FROM conversation_open_loops WHERE person_id=?",
+            )
+        )
+        second = service.rebuild_people(limit=1)
+
+        self.assertEqual({"people": 1, "conversations": 1, "truncated": False}, first)
+        self.assertEqual(first, second)
+        self.assertEqual(
+            counts,
+            tuple(
+                self.conn.execute(query, (self.person_id,)).fetchone()[0]
+                for query in (
+                    "SELECT COUNT(*) FROM conversation_contact_segments WHERE person_id=?",
+                    "SELECT COUNT(*) FROM current_conversation_context WHERE person_id=?",
+                    "SELECT COUNT(*) FROM person_project_context WHERE person_id=?",
+                    "SELECT COUNT(*) FROM conversation_open_loops WHERE person_id=?",
+                )
+            ),
+        )
+        self.assertEqual(
+            "Manual profile summary",
+            self.conn.execute(
+                "SELECT profile_summary FROM person_context_state WHERE person_id=?",
+                (self.person_id,),
+            ).fetchone()[0],
+        )
+        self.assertEqual(
+            "promise",
+            self.conn.execute(
+                "SELECT loop_type FROM conversation_open_loops WHERE title='Send signed terms'"
+            ).fetchone()[0],
+        )
+
     def test_refresh_version_tracks_semantic_content_not_refresh_count(self) -> None:
         service = ConversationContextService(self.conn, self.settings)
         service.refresh_conversation(self.person_id, 10)

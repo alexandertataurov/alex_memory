@@ -32,6 +32,9 @@ class ConversationContextService:
     def refresh_conversation(self, person_id: int, chat_id: int) -> None:
         self.materializer.refresh_conversation(person_id, chat_id)
 
+    def rebuild_people(self, *, limit: int = 200) -> dict[str, int | bool]:
+        return self.materializer.rebuild_people(limit=limit)
+
     def build_for_conversation(
         self,
         *,

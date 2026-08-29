@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-087 materialization rebuild
+
+Bounded active-person rebuild now reuses the sole contact materializer. It
+clears only rows that writer owns, retains profile summaries and durable promise
+loops, and is idempotent on temporary fixtures. No live operation ran.
+
 ## 2026-08-29 — AM-077 project quality
 
 New project creation now requires a high-confidence project observation and an

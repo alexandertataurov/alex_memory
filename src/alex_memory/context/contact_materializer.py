@@ -76,6 +76,54 @@ class ContactContextMaterializer:
         self._refresh_person_state(person_id)
         return len(chat_ids)
 
+    def rebuild_people(self, *, limit: int = 200) -> dict[str, int | bool]:
+        """Recompute bounded derived contact state from accepted canonical rows."""
+        if not 1 <= limit <= 500:
+            raise ValueError(
+                "Contact materialization rebuild limit must be 1 through 500"
+            )
+        rows = self.conn.execute(
+            """SELECT person_id FROM people WHERE status<>'merged'
+               ORDER BY person_id LIMIT ?""",
+            (limit + 1,),
+        ).fetchall()
+        person_ids = [int(row[0]) for row in rows[:limit]]
+        conversations = 0
+        with self.conn:
+            for person_id in person_ids:
+                self._clear_derived_person_state(person_id)
+                conversations += self.refresh_person(person_id)
+        return {
+            "people": len(person_ids),
+            "conversations": conversations,
+            "truncated": len(rows) > limit,
+        }
+
+    def _clear_derived_person_state(self, person_id: int) -> None:
+        """Remove only rows that this materializer deterministically owns."""
+        self.conn.execute(
+            "DELETE FROM conversation_contact_segments WHERE person_id=? AND source='accepted_activity'",
+            (person_id,),
+        )
+        self.conn.execute(
+            "DELETE FROM current_conversation_context WHERE person_id=?",
+            (person_id,),
+        )
+        self.conn.execute(
+            "DELETE FROM person_project_context WHERE person_id=?",
+            (person_id,),
+        )
+        self.conn.execute(
+            """DELETE FROM conversation_open_loops WHERE person_id=?
+               AND loop_type IN ('task','question')""",
+            (person_id,),
+        )
+        self.conn.execute(
+            """UPDATE person_context_state SET last_contact_at=NULL,current_summary='',
+                   long_term_summary='' WHERE person_id=?""",
+            (person_id,),
+        )
+
     def store_profile_summary(
         self, person_id: int, summary: str, input_hash: str
     ) -> None:

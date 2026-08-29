@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-087 adds an explicit bounded contact-materialization rebuild through the
+  sole existing writer. It preserves profile summaries and durable promise
+  loops, and fixture reruns remain idempotent. No live operation ran.
 - AM-077 qualifies new canonical projects from accepted observations: a
   high-confidence project item requires an explicit same-batch reference;
   otherwise names resolve existing aliases only. Likely duplicates queue manual

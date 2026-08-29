@@ -608,11 +608,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     deletion, or live repair ran.
   - Verification: timelines, Search, context packages, and Deep Dive retain evidence coverage without duplicate entries.
 
-- [ ] AM-087 [P1] [Conversation intelligence] — Rebuild contact/conversation materializations after source-identity and freshness fixes.
+- [x] AM-087 [P1] [Conversation intelligence] — Rebuild contact/conversation materializations after source-identity and freshness fixes.
   - Depends on: AM-084 and AM-053.
   - Acceptance: rebuild `conversation_contact_segments`, `current_conversation_context`, `person_project_context`, `conversation_open_loops`, and related contact summaries only from corrected canonical identity and accepted source-backed state.
   - Safety: never rewrite raw Telegram messages, AI evidence, manual feedback, task locks, notes, or pins.
   - Verification: rebuild is bounded/idempotent and a second run produces no duplicate materialized state.
+  - Completed 2026-08-29: explicit bounded rebuild reuses the sole contact materializer for active people. It clears only materializer-owned rows, preserves profile summaries and durable promise loops, and is idempotent on temporary fixtures. No live operation ran.
 
 - [x] AM-088 [P0] [Open loops / Anti-slop] — Give conversation open loops a real lifecycle instead of append-only heuristic memory.
   - Plan: `docs/exec-plans/completed/AM-088-open-loop-lifecycle.md`.
