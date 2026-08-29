@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-074 extends fixture-only derived-state repair with a receipt-gated,
+  fingerprinted conversation-segment unit. It rebuilds only task-anchored
+  segments from selected canonical task inputs, rolls back partial work, and
+  makes a completed retry a no-op. No operator command or live execution exists.
 - AM-061 adds provider-verified Groq profiles for GPT-OSS 120B, Qwen 3.6, and
   Compound Mini. The router applies published local RPM/TPM/RPD/TPD guards to
   the reasoning profiles, scopes 120B and Qwen to explicit high-value policies,

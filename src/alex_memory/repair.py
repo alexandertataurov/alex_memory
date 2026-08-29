@@ -10,6 +10,7 @@ from typing import cast
 
 from .config import Settings
 from .database import set_app_meta
+from .context.segments import ConversationSegmenter
 from .operational import backfill_task_project_links
 from .schema_support import fts5_available
 
@@ -44,6 +45,7 @@ def derived_state_repair_inventory(
            ORDER BY source_chat_id LIMIT ?""",
         probe_limit,
     )
+    segment_chat_unit_fingerprint = _segment_chat_unit_fingerprint(conn, limit)
     pending_context = _bounded_count(
         conn,
         """SELECT 1 FROM context_invalidations
@@ -58,6 +60,7 @@ def derived_state_repair_inventory(
         "task_project_unit_fingerprint": task_project_unit_fingerprint,
         "segment_chat_candidates": min(segment_chats, limit),
         "segment_chat_truncated": segment_chats > limit,
+        "segment_chat_unit_fingerprint": segment_chat_unit_fingerprint,
         "pending_context_candidates": min(pending_context, limit),
         "pending_context_truncated": pending_context > limit,
     }
@@ -101,10 +104,7 @@ def apply_task_project_repair(
     Retrying a completed unit returns its recorded outcome; an interrupted unit
     reruns the same bounded, idempotent operation in one SQLite transaction.
     """
-    if not recovery_receipt.is_file():
-        raise ValueError("repair apply requires an existing recovery receipt")
-    if recovery_receipt.resolve() == settings.db_path.resolve():
-        raise ValueError("repair recovery receipt must not be the target database")
+    _validate_recovery_receipt(settings, recovery_receipt)
     key = f"derived_state_repair:{dry_run_fingerprint}"
     prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
     if prior is not None:
@@ -166,6 +166,75 @@ def apply_task_project_repair(
     return {"status": "completed", **outcome}
 
 
+def apply_segment_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+    limit: int = 500,
+) -> dict[str, object]:
+    """Rebuild one exact bounded set of task-anchored segment chats.
+
+    This fixture-only operation replaces only `task_anchors` segment rows from
+    their linked canonical task inputs. Its fingerprint and checkpoint prevent a
+    resume from silently changing the selected chats.
+    """
+    _validate_recovery_receipt(settings, recovery_receipt)
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(conn, operations={"segments"}, limit=limit)
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    chat_ids = _segment_chat_candidate_ids(conn, limit)
+    checkpoint: dict[str, object] = {
+        "status": "running",
+        "operation": "segments",
+        "limit": limit,
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+        "chat_ids": chat_ids,
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        with conn:
+            segments = ConversationSegmenter(conn).rebuild_chats(set(chat_ids))
+            outcome = {
+                "fingerprint": dry_run_fingerprint,
+                "chats": len(chat_ids),
+                "segments": segments,
+            }
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {**checkpoint, "status": "completed", "outcome": outcome},
+                    sort_keys=True,
+                ),
+            )
+    except Exception as error:
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
+
+
 def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, object]:
     if name == "fts":
         return {
@@ -177,15 +246,15 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
         "segments": "segment_chat",
         "context": "pending_context",
     }[name]
-    return {
+    report: dict[str, object] = {
         "eligible_units": cast(int, inventory[f"{prefix}_candidates"]),
         "truncated": bool(inventory[f"{prefix}_truncated"]),
-        **(
-            {"unit_fingerprint": str(inventory["task_project_unit_fingerprint"])}
-            if name == "task-project"
-            else {}
-        ),
     }
+    if name == "task-project":
+        report["unit_fingerprint"] = str(inventory["task_project_unit_fingerprint"])
+    elif name == "segments":
+        report["unit_fingerprint"] = str(inventory["segment_chat_unit_fingerprint"])
+    return report
 
 
 def _bounded_count(conn: sqlite3.Connection, query: str, limit: int) -> int:
@@ -211,3 +280,30 @@ def _task_project_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
             _task_project_candidate_ids(conn, limit), separators=(",", ":")
         ).encode()
     ).hexdigest()
+
+
+def _segment_chat_candidate_ids(conn: sqlite3.Connection, limit: int) -> list[int]:
+    return [
+        int(row[0])
+        for row in conn.execute(
+            """SELECT DISTINCT source_chat_id FROM tasks
+               WHERE related_project_id IS NOT NULL AND source_chat_id IS NOT NULL
+               ORDER BY source_chat_id LIMIT ?""",
+            (limit,),
+        )
+    ]
+
+
+def _segment_chat_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _segment_chat_candidate_ids(conn, limit), separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+
+
+def _validate_recovery_receipt(settings: Settings, recovery_receipt: Path) -> None:
+    if not recovery_receipt.is_file():
+        raise ValueError("repair apply requires an existing recovery receipt")
+    if recovery_receipt.resolve() == settings.db_path.resolve():
+        raise ValueError("repair recovery receipt must not be the target database")

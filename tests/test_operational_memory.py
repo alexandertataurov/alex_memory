@@ -28,6 +28,7 @@ from alex_memory.operational import (
     resolve_task_project,
 )
 from alex_memory.repair import (
+    apply_segment_repair,
     apply_task_project_repair,
     derived_state_repair_dry_run,
     derived_state_repair_inventory,
@@ -350,6 +351,103 @@ class OperationalMemoryTests(unittest.TestCase):
                         recovery_receipt=receipt,
                         limit=1,
                     )
+            finally:
+                conn.close()
+
+    def test_segment_repair_requires_matching_dry_run_and_is_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                project_id = EntityResolver(conn).entity("project", "Georgia LP")
+                assert project_id is not None
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (112,'Work','group')"
+                )
+                item_id = conn.execute(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                       source_chat_id,source_message_id,source_date,created_at,dedupe_key)
+                       VALUES (4,'task','Send docs','','open','me',0.96,112,1,
+                       '2026-08-22T09:00:00+00:00','now','repair-segments-task')"""
+                ).lastrowid
+                conn.execute(
+                    """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                       source_item_id,related_project_id,confidence,created_at,updated_at)
+                       VALUES ('Send docs','send docs','open','me',112,?,?,0.96,'now','now')""",
+                    (item_id, project_id),
+                )
+                conn.execute(
+                    """INSERT INTO conversation_segments(
+                       chat_id,project_id,started_at,ended_at,anchor_count,confidence,
+                       source,created_at,updated_at
+                   ) VALUES (112,?,'2020-01-01T00:00:00+00:00',NULL,1,0.75,
+                             'task_anchors','now','now')""",
+                    (project_id,),
+                )
+                report = derived_state_repair_dry_run(
+                    conn, operations={"segments"}, limit=1
+                )
+                self.assertRegex(
+                    str(report["operations"]["segments"]["unit_fingerprint"]),
+                    r"^[0-9a-f]{64}$",
+                )
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+
+                def partial_failure(_chat_ids: set[int]) -> int:
+                    conn.execute(
+                        "DELETE FROM conversation_segments WHERE chat_id=112 AND source='task_anchors'"
+                    )
+                    raise RuntimeError("injected segment repair failure")
+
+                with (
+                    patch(
+                        "alex_memory.repair.ConversationSegmenter.rebuild_chats",
+                        side_effect=partial_failure,
+                    ),
+                    self.assertRaisesRegex(RuntimeError, "injected"),
+                ):
+                    apply_segment_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+                self.assertEqual(
+                    1,
+                    conn.execute(
+                        "SELECT COUNT(*) FROM conversation_segments WHERE chat_id=112"
+                    ).fetchone()[0],
+                )
+                outcome = apply_segment_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                    limit=1,
+                )
+                self.assertEqual(
+                    {"status": "completed", "chats": 1, "segments": 1},
+                    {key: outcome[key] for key in ("status", "chats", "segments")},
+                )
+                self.assertEqual(
+                    "2026-08-22T09:00:00+00:00",
+                    conn.execute(
+                        "SELECT started_at FROM conversation_segments WHERE chat_id=112"
+                    ).fetchone()[0],
+                )
+                self.assertEqual(
+                    "already-complete",
+                    apply_segment_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )["status"],
+                )
             finally:
                 conn.close()
 

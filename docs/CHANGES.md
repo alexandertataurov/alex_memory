@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-074 segment repair unit
+
+Fixture-only segment rebuilding now has the same receipt-gated, fingerprinted
+restart contract as task-project repair. It selects exact chats privately,
+rebuilds only task-anchored derived segments, rolls back a partial unit, and
+returns the recorded outcome on retry. No operator command or live execution
+exists.
+
 ## 2026-08-29 — AM-061 provider model registry
 
 The registry now uses Groq's verified IDs and published local Developer-plan

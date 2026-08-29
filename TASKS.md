@@ -307,6 +307,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Progress 2026-08-28: task-project checkpoints retain the exact selected
     task IDs privately while dry-run output exposes only their digest; retry
     cannot drift to a newly eligible task set.
+  - Progress 2026-08-29: fixture-only conversation-segment rebuilding now has
+    the same bounded, fingerprinted, recovery-receipt-gated checkpoint as
+    task-project repair. It rebuilds only `task_anchors` rows from selected
+    canonical task inputs; interrupted work rolls back and retry uses the same
+    private chat set. No operator apply command or live execution exists.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.
