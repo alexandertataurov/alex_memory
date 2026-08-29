@@ -729,6 +729,162 @@ class OperationalMemoryTests(unittest.TestCase):
                 ).fetchone()[0],
             )
 
+    def test_casual_project_item_remains_an_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (103,'Friends','group')"
+            )
+            conn.execute(
+                """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+                   VALUES (103,1,'2026-08-22T09:00:00+00:00','BBQ this weekend',0,0)"""
+            )
+            batch = AIBatch(
+                103,
+                "Friends",
+                [
+                    AIMessage(
+                        103,
+                        1,
+                        None,
+                        "2026-08-22T09:00:00+00:00",
+                        "BBQ this weekend",
+                        False,
+                        "Friends",
+                        "group",
+                    )
+                ],
+                "prompt",
+            )
+            saved = save_ai_success(
+                conn,
+                batch,
+                {
+                    "summary": "A social plan was mentioned.",
+                    "items": [
+                        {
+                            "kind": "project",
+                            "title": "Weekend BBQ",
+                            "details": "Friends plan a barbecue.",
+                            "status": "informational",
+                            "owner": "unknown",
+                            "due_date": None,
+                            "person": None,
+                            "company": None,
+                            "project_name": None,
+                            "amount": None,
+                            "currency": None,
+                            "confidence": 0.99,
+                            "source_chat_id": 103,
+                            "source_message_id": 1,
+                        }
+                    ],
+                },
+                settings,
+            )
+
+            self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
+            self.assertEqual(
+                0, conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+            )
+            self.assertIsNone(
+                conn.execute("SELECT project_id FROM ai_items").fetchone()[0]
+            )
+            conn.close()
+
+    def test_near_duplicate_project_requires_manual_review(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            existing = EntityResolver(conn).entity(
+                "project", "Georgia LP", source="manual"
+            )
+            assert existing is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (104,'Work','group')"
+            )
+            conn.execute(
+                """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+                   VALUES (104,1,'2026-08-22T09:00:00+00:00','Georgia L.P. documents',0,0)"""
+            )
+            batch = AIBatch(
+                104,
+                "Work",
+                [
+                    AIMessage(
+                        104,
+                        1,
+                        None,
+                        "2026-08-22T09:00:00+00:00",
+                        "Georgia L.P. documents",
+                        False,
+                        "Work",
+                        "group",
+                    )
+                ],
+                "prompt",
+            )
+            items = [
+                {
+                    "kind": "project",
+                    "title": "Georgia L.P.",
+                    "details": "Document work.",
+                    "status": "informational",
+                    "owner": "unknown",
+                    "due_date": None,
+                    "person": None,
+                    "company": None,
+                    "project_name": None,
+                    "amount": None,
+                    "currency": None,
+                    "confidence": 0.96,
+                    "source_chat_id": 104,
+                    "source_message_id": 1,
+                },
+                {
+                    "kind": "task",
+                    "title": "Send documents",
+                    "details": "For Georgia L.P.",
+                    "status": "open",
+                    "owner": "me",
+                    "due_date": None,
+                    "person": None,
+                    "company": None,
+                    "project_name": "Georgia L.P.",
+                    "amount": None,
+                    "currency": None,
+                    "confidence": 0.96,
+                    "source_chat_id": 104,
+                    "source_message_id": 1,
+                },
+            ]
+            saved = save_ai_success(
+                conn, batch, {"summary": "Georgia documents.", "items": items}, settings
+            )
+
+            self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+            )
+            review_id = conn.execute(
+                "SELECT review_id FROM review_queue WHERE review_type='project_duplicate'"
+            ).fetchone()[0]
+            resolve_review_item(conn, review_id, "accept")
+            self.assertEqual(
+                existing,
+                conn.execute(
+                    "SELECT project_id FROM ai_items WHERE kind='project'"
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                existing,
+                EntityResolver(conn).entity(
+                    "project", "Georgia L.P.", allow_create=False
+                ),
+            )
+            conn.close()
+
     def test_single_batch_project_is_reviewed_without_stronger_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))
@@ -1196,6 +1352,54 @@ class OperationalMemoryTests(unittest.TestCase):
                 conn.execute("SELECT status FROM entity_merge_candidates").fetchone()[
                     0
                 ],
+            )
+            conn.close()
+
+    def test_project_merge_review_preserves_source_observation_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            keep = resolver.entity("project", "Georgia LP", source="manual")
+            discard = resolver.entity("project", "Georgia L.P.", source="manual")
+            assert keep is not None and discard is not None
+            item_id = conn.execute(
+                """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                       source_chat_id,source_message_id,project_id,created_at,dedupe_key)
+                   VALUES (1,'project','Georgia L.P.','','informational','unknown',0.96,
+                           1,1,?,'now','project-merge-source')""",
+                (discard,),
+            ).lastrowid
+            assert item_id is not None
+            review_id = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                   VALUES ('entity_merge','project',?,'now')""",
+                (json.dumps({"alias": "georgia l.p.", "entity_ids": [keep, discard]}),),
+            ).lastrowid
+            conn.execute(
+                """INSERT INTO entity_merge_candidates(entity_type,normalized_alias,entity_ids_json,
+                       reason,created_at) VALUES ('project','georgia l.p.',?,'test','now')""",
+                (json.dumps([keep, discard]),),
+            )
+            assert review_id is not None
+
+            resolve_review_item(
+                conn,
+                int(review_id),
+                "accept",
+                edited_payload={"keep_entity_id": keep},
+            )
+
+            self.assertEqual(
+                keep,
+                conn.execute(
+                    "SELECT project_id FROM ai_items WHERE item_id=?", (item_id,)
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                "merged",
+                conn.execute(
+                    "SELECT status FROM projects WHERE project_id=?", (discard,)
+                ).fetchone()[0],
             )
             conn.close()
 

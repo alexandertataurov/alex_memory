@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-077 qualifies new canonical projects from accepted observations: a
+  high-confidence project item requires an explicit same-batch reference;
+  otherwise names resolve existing aliases only. Likely duplicates queue manual
+  Review with provenance, and accepted Review attaches the observation to the
+  selected project. No schema or historical-data work ran.
 - AM-056 adds a bounded cross-chat candidate selector. It queues Review-only
   project links for same-person, distinct-chat, exact-message evidence within
   90 days, records its evidence path and reason, and excludes rejected,

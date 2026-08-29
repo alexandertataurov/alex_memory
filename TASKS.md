@@ -641,10 +641,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     their stored response payloads are persisted; structured ownership and raw
     Telegram evidence remain unchanged.
 
-- [ ] AM-077 [P1] [Project quality] — Add project qualification, deduplication, and merge/review so casual plans and near-duplicate deal names do not pollute canonical projects.
+- [x] AM-077 [P1] [Project quality] — Add project qualification, deduplication, and merge/review so casual plans and near-duplicate deal names do not pollute canonical projects.
   - Evidence from live DB: 100 projects include clear near-duplicates and items that look more like events/plans than durable projects (for example repeated cash-to-crypto variants, duplicate IT-product descriptions, meetings/road trips/BBQ-style items).
   - Acceptance: project creation requires durable-project evidence; likely duplicates become merge candidates with provenance; casual/social/event items remain events/tasks/topics instead of canonical projects.
   - Verification: duplicate project fixture, false-project fixture, manual merge authority, and no loss of historical source references.
+  - Completed 2026-08-29: new projects require a high-confidence project observation plus an explicit same-batch project reference. Casual standalone labels remain observations; project names otherwise resolve existing aliases only. Likely normalized-name duplicates enter a provenance-carrying Review and can attach to the selected project only by manual acceptance. Existing project rows were not changed.
 
 - [x] AM-058 [P1] [AI routing] — Make fallback/session pinning reason-aware and make fallback telemetry truthful.
   - Current behavior: after any successful non-first route, `session_model_key` is promoted to the front for later requests regardless of why fallback happened.

@@ -140,6 +140,7 @@ class EntityResolver:
         *,
         source: str = "ai",
         confidence: float = 1.0,
+        allow_create: bool = True,
     ) -> int | None:
         if not name or not normalize_alias(name):
             return None
@@ -160,6 +161,8 @@ class EntityResolver:
             return ids[0]
         if len(ids) > 1:
             self._ambiguous(entity_type, key, ids, "alias maps to multiple entities")
+            return None
+        if not allow_create:
             return None
         now = utc_now()
         cursor = self.conn.execute(
@@ -755,6 +758,56 @@ def backfill_task_project_links(
     return linked, reviewed
 
 
+def _likely_duplicate_project(conn: sqlite3.Connection, name: str) -> int | None:
+    """Return one bounded likely duplicate; do not create or merge anything."""
+    normalized = normalize_task_title(name)
+    if len(normalized) < 4:
+        return None
+    candidates: list[int] = []
+    for project_id, canonical_name in conn.execute(
+        """SELECT project_id,canonical_name FROM projects
+           WHERE status<>'merged' ORDER BY updated_at DESC,project_id DESC LIMIT 80"""
+    ):
+        existing = normalize_task_title(str(canonical_name))
+        if existing == normalized or (
+            len(existing) >= 4
+            and SequenceMatcher(a=normalized, b=existing).ratio() >= 0.92
+        ):
+            candidates.append(int(project_id))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _queue_project_duplicate_review(
+    conn: sqlite3.Connection, *, item_id: int, project_id: int, name: str
+) -> None:
+    exists = conn.execute(
+        """SELECT 1 FROM review_queue WHERE review_type='project_duplicate'
+           AND subject_type='ai_item' AND subject_id=?
+           AND json_extract(payload_json, '$.candidate_project_id')=? LIMIT 1""",
+        (item_id, project_id),
+    ).fetchone()
+    if exists is not None:
+        return
+    conn.execute(
+        """INSERT INTO review_queue(
+               review_type,subject_type,subject_id,payload_json,confidence,created_at
+           ) VALUES ('project_duplicate','ai_item',?,?,0.9,?)""",
+        (
+            item_id,
+            json.dumps(
+                {
+                    "source_item_id": item_id,
+                    "candidate_project_id": project_id,
+                    "proposed_project_name": name,
+                    "reason": "normalized project name is likely a duplicate",
+                },
+                sort_keys=True,
+            ),
+            utc_now(),
+        ),
+    )
+
+
 def _project_ai_batch(
     conn: sqlite3.Connection, batch_id: int, settings: Settings
 ) -> None:
@@ -806,14 +859,45 @@ def _project_ai_batch(
     graph_projector = SemanticGraphProjector(conn)
     project_items: dict[int, int] = {}
     message_projects: dict[int, set[int]] = {}
-    for item_id, kind, title, *_rest in rows:
+    referenced_project_names = {
+        normalize_task_title(str(row[11]))
+        for row in rows
+        if row[1] != "project" and row[11]
+    }
+    for (
+        item_id,
+        kind,
+        title,
+        _details,
+        _status,
+        _owner,
+        _due,
+        confidence,
+        *_rest,
+    ) in rows:
         if kind != "project":
             continue
-        project_id = resolver.entity("project", title)
+        project_name = normalize_task_title(str(title))
+        project_id = resolver.entity("project", title, allow_create=False)
+        if (
+            project_id is None
+            and float(confidence) >= settings.ai_auto_accept_confidence
+            and project_name in referenced_project_names
+        ):
+            duplicate_project_id = _likely_duplicate_project(conn, str(title))
+            if duplicate_project_id is not None:
+                _queue_project_duplicate_review(
+                    conn,
+                    item_id=int(item_id),
+                    project_id=duplicate_project_id,
+                    name=str(title),
+                )
+            else:
+                project_id = resolver.entity("project", title, confidence=confidence)
         if project_id is None:
             continue
         project_items[int(item_id)] = project_id
-        message_id = _rest[9]
+        message_id = _rest[4]
         if message_id is not None:
             message_projects.setdefault(int(message_id), set()).add(project_id)
     batch_projects = set(project_items.values())
@@ -838,7 +922,7 @@ def _project_ai_batch(
         person_id = resolver.entity("person", person, confidence=confidence)
         company_id = resolver.entity("company", company, confidence=confidence)
         project_id = project_items.get(int(item_id)) or resolver.entity(
-            "project", project_name, confidence=confidence
+            "project", project_name, confidence=confidence, allow_create=False
         )
         resolution = ProjectResolution(None, 0.0, (), ())
         if kind in TASK_KINDS and project_id is None:
@@ -1200,6 +1284,31 @@ def resolve_review_item(
         payload["manual_edit"] = edited_payload
     now = utc_now()
     with conn:
+        if action == "accept" and review_type == "project_duplicate":
+            item_id = payload.get("source_item_id")
+            project_id = payload.get("candidate_project_id")
+            name = payload.get("proposed_project_name")
+            if (
+                not isinstance(item_id, int)
+                or not isinstance(project_id, int)
+                or not isinstance(name, str)
+            ):
+                raise ValueError("Project-duplicate review has invalid provenance.")
+            if (
+                conn.execute(
+                    "SELECT 1 FROM projects WHERE project_id=? AND status<>'merged'",
+                    (project_id,),
+                ).fetchone()
+                is None
+            ):
+                raise ValueError("The selected canonical project is unavailable.")
+            conn.execute(
+                "UPDATE ai_items SET project_id=? WHERE item_id=?",
+                (project_id, item_id),
+            )
+            EntityResolver(conn)._alias(
+                "project", project_id, name, "manual_review", 1.0
+            )
         if action == "accept" and review_type == "graph_link":
             item_id = payload.get("source_item_id")
             project_id = payload.get("candidate_project_id")

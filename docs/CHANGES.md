@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-077 project quality
+
+New project creation now requires a high-confidence project observation and an
+explicit same-batch reference. Casual standalone labels remain observations,
+while other names resolve existing aliases only. Likely duplicate names enter a
+provenance-carrying Review; an accepted review links the observation to the
+selected project. Existing project rows were not changed.
+
 ## 2026-08-29 — AM-056 cross-chat candidate discovery
 
 The Context Graph operation can now queue bounded Review candidates from two
