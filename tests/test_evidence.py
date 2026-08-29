@@ -87,3 +87,24 @@ class EvidenceContractTests(unittest.TestCase):
         self.assertTrue(record.is_deleted)
         self.assertEqual({"chat_id": 10, "message_id": 2}, record.raw_locator)
         self.assertEqual("[Test] chat", record.metadata["chat_title"])
+
+    def test_repository_save_participates_in_outer_transaction(self) -> None:
+        record = EvidenceRecord(
+            source_name="gmail",
+            source_account_id="alex@example.test",
+            conversation_id="thread-rollback",
+            source_item_id="message-1",
+            observed_at="2026-08-22T10:00:00+00:00",
+            content="Uncommitted evidence",
+        )
+        repository = EvidenceRepository(self.conn)
+        repository.save(record)
+        self.conn.rollback()
+
+        self.assertIsNone(repository.get(record.identity))
+        self.assertEqual(
+            0,
+            self.conn.execute(
+                "SELECT COUNT(*) FROM source_evidence_versions"
+            ).fetchone()[0],
+        )

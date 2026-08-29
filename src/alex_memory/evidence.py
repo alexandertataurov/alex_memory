@@ -131,7 +131,6 @@ class EvidenceRepository:
                     evidence_id,
                 ),
             )
-        self.conn.commit()
         return evidence_id
 
     def get(self, identity: tuple[str, str, str, str]) -> EvidenceRecord | None:

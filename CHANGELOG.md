@@ -16,6 +16,8 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-097 makes EvidenceRepository caller-transaction-owned: current evidence
+  and version history are atomic without an internal commit.
 - AM-090 removes the unused `entity_relationships` merge mutation. The table is
   inert compatibility state; temporal `relationships` remains the sole
   maintained runtime model.

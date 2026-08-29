@@ -1,5 +1,10 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-097 evidence transaction ownership
+
+EvidenceRepository no longer commits internally. Its current-state and version
+history writes now participate atomically in the caller's transaction.
+
 ## 2026-08-29 — AM-090 relationship-path simplification
 
 The sole runtime mutation of the inert `entity_relationships` compatibility

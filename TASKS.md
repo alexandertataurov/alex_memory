@@ -762,7 +762,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     the unused table as inert compatibility state pending a future safe schema
     migration. Temporal `relationships` is the only maintained runtime path.
 
-- [ ] AM-097 [P2] [Source-neutral evidence / Transactions] — Give `EvidenceRepository` explicit caller-owned transaction semantics before adding a second ingestion source.
+- [x] AM-097 [P2] [Source-neutral evidence / Transactions] — Give `EvidenceRepository` explicit caller-owned transaction semantics before adding a second ingestion source.
   - Code evidence: `EvidenceRepository.save()` calls `self.conn.commit()` internally after every item.
   - Problem: a repository method can accidentally commit unrelated caller work, prevents a future Gmail/Drive importer from batching evidence atomically, and makes transaction ownership invisible.
   - Acceptance:
@@ -772,6 +772,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - retain the source-neutral contract without creating source-specific duplicate pipelines.
   - Priority remains P2 until a real second source writes through this repository.
   - Verification: outer transaction rollback, multi-record batch rollback, edit/delete version history, and standalone usage tests.
+  - Completed 2026-08-29: repository evidence and version writes now participate
+    atomically in the caller transaction; the repository commits no unrelated
+    work. Rollback coverage preserves the source-neutral contract.
 
 - [ ] AM-065 [P2] [Operations] — Add an optional supervised daemon deployment example once local runtime paths and ownership are finalized.
   - Scope: documented systemd user unit or equivalent; no hard-coded personal paths; restart policy must not create tight crash loops.
