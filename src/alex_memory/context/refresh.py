@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import cast
 
 from ..config import Settings
 from ..utils import utc_now
@@ -61,12 +62,47 @@ async def refresh_pending_context(
     """Refresh at most ``limit`` invalidated scopes; failures stay retryable."""
     if limit < 1:
         raise ValueError("context refresh limit must be positive")
-    rows = conn.execute(
-        """SELECT scope_type,scope_id,requested_revision FROM context_invalidations
+    rows = cast(
+        list[tuple[str, int, int]],
+        conn.execute(
+            """SELECT scope_type,scope_id,requested_revision FROM context_invalidations
            WHERE status IN ('pending','failed')
            ORDER BY updated_at,scope_type,scope_id LIMIT ?""",
-        (limit,),
-    ).fetchall()
+            (limit,),
+        ).fetchall(),
+    )
+    return await _refresh_rows(conn, settings, rows)
+
+
+async def refresh_selected_conversations(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    revisions: tuple[tuple[int, int], ...],
+) -> int:
+    """Refresh exact pending conversation revisions without invoking profile work."""
+    if not revisions:
+        raise ValueError("conversation refresh revisions must be non-empty")
+    if len(revisions) > 500:
+        raise ValueError("conversation refresh revisions must be bounded")
+    rows: list[tuple[str, int, int]] = []
+    for conversation_id, revision in revisions:
+        row = conn.execute(
+            """SELECT scope_type,scope_id,requested_revision FROM context_invalidations
+               WHERE scope_type='conversation' AND scope_id=? AND requested_revision=?
+                 AND status IN ('pending','failed')""",
+            (conversation_id, revision),
+        ).fetchone()
+        if row is not None:
+            rows.append(cast(tuple[str, int, int], row))
+    return await _refresh_rows(conn, settings, rows)
+
+
+async def _refresh_rows(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    rows: list[tuple[str, int, int]],
+) -> int:
+    """Claim and refresh already-selected durable invalidation rows."""
     completed = 0
     for scope_type, scope_id, revision in rows:
         with conn:

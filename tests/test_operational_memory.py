@@ -28,6 +28,7 @@ from alex_memory.operational import (
     resolve_task_project,
 )
 from alex_memory.repair import (
+    apply_context_repair,
     apply_fts_repair,
     apply_segment_repair,
     apply_task_project_repair,
@@ -499,6 +500,85 @@ class OperationalMemoryTests(unittest.TestCase):
                         settings,
                         dry_run_fingerprint=str(report["fingerprint"]),
                         recovery_receipt=receipt,
+                    )["status"],
+                )
+            finally:
+                conn.close()
+
+    def test_context_repair_refreshes_exact_conversation_revision_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (113,'Work','group')"
+                )
+                person_id = EntityResolver(conn).entity(
+                    "person", "Ari", source="manual"
+                )
+                assert person_id is not None
+                enqueue_context_refresh(
+                    conn, {("conversation", 113), ("person", person_id)}
+                )
+                first = derived_state_repair_dry_run(
+                    conn, operations={"context"}, limit=1
+                )
+                self.assertEqual(1, first["operations"]["context"]["eligible_units"])
+                self.assertRegex(
+                    str(first["operations"]["context"]["unit_fingerprint"]),
+                    r"^[0-9a-f]{64}$",
+                )
+                enqueue_context_refresh(conn, {("conversation", 113)})
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    apply_context_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(first["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+
+                report = derived_state_repair_dry_run(
+                    conn, operations={"context"}, limit=1
+                )
+                outcome = apply_context_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                    limit=1,
+                )
+                self.assertEqual(
+                    {"status": "completed", "conversations": 1},
+                    {key: outcome[key] for key in ("status", "conversations")},
+                )
+                self.assertEqual(
+                    (2, 2, "clean"),
+                    conn.execute(
+                        """SELECT requested_revision,completed_revision,status
+                           FROM context_invalidations
+                           WHERE scope_type='conversation' AND scope_id=113"""
+                    ).fetchone(),
+                )
+                self.assertEqual(
+                    "pending",
+                    conn.execute(
+                        """SELECT status FROM context_invalidations
+                           WHERE scope_type='person' AND scope_id=?""",
+                        (person_id,),
+                    ).fetchone()[0],
+                )
+                self.assertEqual(
+                    "already-complete",
+                    apply_context_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
                     )["status"],
                 )
             finally:

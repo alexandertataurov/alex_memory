@@ -15,6 +15,13 @@ authoritative inputs without exposing their content. Source changes reject stale
 dry runs; the existing parity-checked writer and checkpoint complete together,
 and a completed retry is a no-op. No operator command or live execution exists.
 
+## 2026-08-29 — AM-074 conversation-context repair unit
+
+Targeted context repair now carries the exact selected pending conversation
+revisions through its dry run and checkpoint. It rejects stale scope and leaves
+person/global invalidations pending, preventing profile/provider work from this
+fixture-only path. No operator command or live execution exists.
+
 ## 2026-08-29 — AM-061 provider model registry
 
 The registry now uses Groq's verified IDs and published local Developer-plan

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -11,6 +12,7 @@ from typing import cast
 from .config import Settings
 from .database import set_app_meta
 from .context.segments import ConversationSegmenter
+from .context.refresh import refresh_selected_conversations
 from .operational import backfill_task_project_links
 from .schema_support import fts5_available, fts_source_fingerprint, rebuild_fts
 
@@ -49,10 +51,11 @@ def derived_state_repair_inventory(
     pending_context = _bounded_count(
         conn,
         """SELECT 1 FROM context_invalidations
-           WHERE status IN ('pending','failed')
+           WHERE scope_type='conversation' AND status IN ('pending','failed')
            ORDER BY updated_at,scope_type,scope_id LIMIT ?""",
         probe_limit,
     )
+    context_unit_fingerprint = _context_unit_fingerprint(conn, limit)
     return {
         "fts_rebuild_available": fts5_available(conn),
         "fts_unit_fingerprint": fts_source_fingerprint(conn),
@@ -64,6 +67,7 @@ def derived_state_repair_inventory(
         "segment_chat_unit_fingerprint": segment_chat_unit_fingerprint,
         "pending_context_candidates": min(pending_context, limit),
         "pending_context_truncated": pending_context > limit,
+        "pending_context_unit_fingerprint": context_unit_fingerprint,
     }
 
 
@@ -301,6 +305,78 @@ def apply_fts_repair(
     return {"status": "completed", **outcome}
 
 
+def apply_context_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+    limit: int = 500,
+) -> dict[str, object]:
+    """Refresh only the exact selected deterministic conversation contexts."""
+    _validate_recovery_receipt(settings, recovery_receipt)
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(conn, operations={"context"}, limit=limit)
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    revisions = _context_candidate_revisions(conn, limit)
+    checkpoint: dict[str, object] = {
+        "status": "running",
+        "operation": "context",
+        "limit": limit,
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+        "conversation_revisions": revisions,
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        completed = asyncio.run(
+            refresh_selected_conversations(conn, settings, tuple(revisions))
+        )
+        unfinished = [
+            (conversation_id, revision)
+            for conversation_id, revision in revisions
+            if not _context_revision_completed(conn, conversation_id, revision)
+        ]
+        if unfinished:
+            raise RuntimeError("selected conversation context refresh did not complete")
+        outcome = {
+            "fingerprint": dry_run_fingerprint,
+            "conversations": completed,
+        }
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {**checkpoint, "status": "completed", "outcome": outcome},
+                    sort_keys=True,
+                ),
+            )
+    except Exception as error:
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
+
+
 def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, object]:
     if name == "fts":
         return {
@@ -321,6 +397,8 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
         report["unit_fingerprint"] = str(inventory["task_project_unit_fingerprint"])
     elif name == "segments":
         report["unit_fingerprint"] = str(inventory["segment_chat_unit_fingerprint"])
+    elif name == "context":
+        report["unit_fingerprint"] = str(inventory["pending_context_unit_fingerprint"])
     return report
 
 
@@ -367,6 +445,39 @@ def _segment_chat_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
             _segment_chat_candidate_ids(conn, limit), separators=(",", ":")
         ).encode()
     ).hexdigest()
+
+
+def _context_candidate_revisions(
+    conn: sqlite3.Connection, limit: int
+) -> list[tuple[int, int]]:
+    return [
+        (int(row[0]), int(row[1]))
+        for row in conn.execute(
+            """SELECT scope_id,requested_revision FROM context_invalidations
+               WHERE scope_type='conversation' AND status IN ('pending','failed')
+               ORDER BY updated_at,scope_id LIMIT ?""",
+            (limit,),
+        )
+    ]
+
+
+def _context_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            _context_candidate_revisions(conn, limit), separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+
+
+def _context_revision_completed(
+    conn: sqlite3.Connection, conversation_id: int, revision: int
+) -> bool:
+    row = conn.execute(
+        """SELECT completed_revision FROM context_invalidations
+           WHERE scope_type='conversation' AND scope_id=?""",
+        (conversation_id,),
+    ).fetchone()
+    return row is not None and int(row[0]) >= revision
 
 
 def _validate_recovery_receipt(settings: Settings, recovery_receipt: Path) -> None:
