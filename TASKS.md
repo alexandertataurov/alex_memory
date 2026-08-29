@@ -783,7 +783,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Tech Debt
 
-- [ ] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
+- [x] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
+  - Completed 2026-08-29: reviewed the remaining large modules and their callers;
+    no cohesive responsibility could be extracted without an architecture-only
+    wrapper. Existing packages retain their live ownership boundaries.
 
 ## Completed
 

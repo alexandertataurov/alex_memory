@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-068 architecture review
+
+The post-remediation review found no cohesive responsibility safe to extract
+from remaining large modules. Existing packages retain their live ownership
+boundaries; no architecture-only wrapper was added.
+
 ## 2026-08-29 — AM-065 supervised daemon example
 
 Operations documentation now includes an optional portable systemd user-unit

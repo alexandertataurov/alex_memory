@@ -16,6 +16,8 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-068 records an evidence-based no-refactor review: no remaining large
+  module had a cohesive responsibility safe to extract without a cosmetic layer.
 - AM-065 documents an optional portable systemd user-unit template for the
   local daemon with preflight and restart backoff.
 - AM-097 makes EvidenceRepository caller-transaction-owned: current evidence
