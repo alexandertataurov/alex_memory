@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-111 removes English-only concept filtering from Deep Dive retrieval; its
+  Unicode-aware canonical/entity/evidence terms now drive bounded expansion.
+  No migration, replay, backfill, deletion, or live action ran.
 - AM-110 gives project and contact segments the same 90-day half-open interval
   semantics, splits inactive same-project returns, and bases confidence on
   distinct anchors. No migration, rebuild, replay, or live action ran.

@@ -10,37 +10,15 @@ from ...schema_support import fts5_available
 from .models import EvidenceItem
 
 
-_STOP_WORDS = {
-    "about",
-    "after",
-    "again",
-    "and",
-    "are",
-    "for",
-    "from",
-    "have",
-    "into",
-    "need",
-    "that",
-    "the",
-    "this",
-    "with",
-    "will",
-    "your",
-    "send",
-    "structure",
-}
-
-
 def task_concepts(
     task: dict, context: BuiltContext, extra: Iterable[str] = ()
 ) -> list[str]:
-    """Expand only explicit task/entity terms and small auditable domain maps."""
+    """Expand only explicit task/entity and evidence-derived terms."""
     words = re.findall(
         r"[\w][\w-]{1,}",
         f"{task['title']} {task.get('details') or ''}".casefold(),
     )
-    concepts = [word for word in words if word not in _STOP_WORDS]
+    concepts = list(words)
     for entity in (*context.people, *context.projects, *context.companies):
         concepts.extend(
             re.findall(

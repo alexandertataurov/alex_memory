@@ -525,7 +525,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 
 
-- [ ] AM-111 [P1] [Task Deep Dive / Multilingual anti-slop] — Remove English-only concept extraction and hard-coded current-deal vocabulary from the core retrieval engine.
+- [x] AM-111 [P1] [Task Deep Dive / Multilingual anti-slop] — Remove English-only concept extraction and hard-coded current-deal vocabulary from the core retrieval engine.
   - Code evidence: `task_concepts()` and `_evidence_terms()` use `[a-z0-9...]` regexes, so Cyrillic/Georgian/non-Latin words are mostly discarded even though the archive is multilingual.
   - Code evidence: `_STOP_WORDS` is effectively English-only.
   - Code evidence: `_DOMAIN_TERMS` hard-codes current business vocabulary such as `tbc`, `hedging`, `flow-of-funds`, `fx`, and `spread` into generic Task Deep Dive core logic.
@@ -537,6 +537,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - any domain thesaurus is explicit configurable/domain-context data with provenance, not hard-coded to one user's current deals in core code;
     - SQLite LIKE fallback limitations for non-ASCII case matching are tested/documented; prefer working FTS for multilingual search.
   - Verification: Russian, Georgian, English, mixed-language task titles/messages, morphology/punctuation, TBC-like entity as canonical alias rather than magic token, and unrelated-domain regression tests.
+  - Completed 2026-08-29: core concepts/evidence terms are Unicode-aware; no
+    hard-coded deal vocabulary or English-only stopword gate remains. No
+    migration, replay, backfill, deletion, or live operation ran.
 
 
 

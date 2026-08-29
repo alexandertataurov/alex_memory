@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-111 multilingual Deep Dive
+
+Deep Dive core concept discovery retains Unicode task terms without an
+English-only stopword gate or a hard-coded current-deal thesaurus. Canonical
+entities and evidence-derived terms provide bounded expansion. No migration,
+replay, backfill, deletion, or live operation ran.
+
 ## 2026-08-29 — AM-110 conversation intervals
 
 Project and contact segments now share a 90-day `[started_at, ended_at)` rule.
