@@ -16,6 +16,8 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-065 documents an optional portable systemd user-unit template for the
+  local daemon with preflight and restart backoff.
 - AM-097 makes EvidenceRepository caller-transaction-owned: current evidence
   and version history are atomic without an internal commit.
 - AM-090 removes the unused `entity_relationships` merge mutation. The table is

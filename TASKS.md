@@ -776,8 +776,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     atomically in the caller transaction; the repository commits no unrelated
     work. Rollback coverage preserves the source-neutral contract.
 
-- [ ] AM-065 [P2] [Operations] — Add an optional supervised daemon deployment example once local runtime paths and ownership are finalized.
+- [x] AM-065 [P2] [Operations] — Add an optional supervised daemon deployment example once local runtime paths and ownership are finalized.
   - Scope: documented systemd user unit or equivalent; no hard-coded personal paths; restart policy must not create tight crash loops.
+  - Completed 2026-08-29: optional systemd user-unit guidance uses placeholder
+    checkout paths and a 30-second restart delay. No host service was enabled.
 
 ## Tech Debt
 

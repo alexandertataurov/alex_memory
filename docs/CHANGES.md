@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-065 supervised daemon example
+
+Operations documentation now includes an optional portable systemd user-unit
+template with explicit ownership, preflight, and a 30-second restart delay. No
+host service was installed or enabled.
+
 ## 2026-08-29 — AM-097 evidence transaction ownership
 
 EvidenceRepository no longer commits internally. Its current-state and version
