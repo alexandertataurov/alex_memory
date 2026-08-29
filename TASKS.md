@@ -617,10 +617,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Question loops resolve only to an adjacent substantive opposite-author
     reply and age to resolved history after 90 days.
 
-- [ ] AM-091 [P1] [Generated text quality] — Remove prompt-internal `ME` terminology from user-facing derived text.
+- [x] AM-091 [P1] [Generated text quality] — Remove prompt-internal `ME` terminology from user-facing derived text.
   - Evidence from live DB: the internal marker appears in hundreds of derived records, including AI item details, task details, memory chunks, daily/monthly summaries, and context summary versions.
   - Acceptance: keep `owner=me` as structured metadata; generated prose uses the configured user display name or neutral wording. Raw Telegram evidence is never rewritten.
   - Verification: prompt parsing still uses structured ownership while rendered/persisted human-readable summaries contain no internal control-token leakage.
+  - Completed 2026-08-29: profile and discovery evidence use neutral speaker
+    labels. Prompt-only labels are converted before AI summaries, items, and
+    their stored response payloads are persisted; structured ownership and raw
+    Telegram evidence remain unchanged.
 
 - [ ] AM-077 [P1] [Project quality] — Add project qualification, deduplication, and merge/review so casual plans and near-duplicate deal names do not pollute canonical projects.
   - Evidence from live DB: 100 projects include clear near-duplicates and items that look more like events/plans than durable projects (for example repeated cash-to-crypto variants, duplicate IT-product descriptions, meetings/road trips/BBQ-style items).

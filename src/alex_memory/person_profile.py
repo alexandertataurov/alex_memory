@@ -881,7 +881,7 @@ def _messages(conn: sqlite3.Connection, person_id: int) -> list[dict]:
             "message_id": int(row[1]),
             "date": row[2],
             "text": str(row[3])[:1_000],
-            "speaker": "ME" if row[4] else "OTHER",
+            "speaker": "You" if row[4] else "Other",
             "conversation": str(row[5]),
         }
         for row in rows
@@ -940,9 +940,9 @@ def _evidence(conn: sqlite3.Connection, record: dict) -> list[dict]:
             "message_id": int(row[1]),
             "date": row[2],
             "text": str(row[3] or "")[:500],
-            "speaker": "ME"
+            "speaker": "You"
             if row[5]
-            else (f"SENDER:{row[4]}" if row[4] is not None else "OTHER"),
+            else (f"Sender {row[4]}" if row[4] is not None else "Other"),
         }
         for row in rows
     ]

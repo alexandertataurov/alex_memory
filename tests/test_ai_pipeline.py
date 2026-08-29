@@ -195,6 +195,44 @@ class AIPipelineTests(unittest.TestCase):
                 1, conn.execute("SELECT COUNT(*) FROM ai_item_rejections").fetchone()[0]
             )
 
+    def test_prompt_speaker_labels_are_not_persisted_as_derived_prose(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            self.addCleanup(conn.close)
+            conn.execute(
+                "INSERT INTO chats (chat_id, title, chat_type) VALUES (100, 'Test chat', 'user')"
+            )
+            conn.execute(
+                "INSERT INTO messages (chat_id, message_id, text) VALUES (100, 1, 'Please send the invoice.')"
+            )
+            conn.commit()
+
+            item = valid_item() | {
+                "title": "Send the invoice for ME",
+                "details": "OTHER requested it from SENDER:200.",
+            }
+            save_ai_success(
+                conn,
+                AIBatch(100, "Test chat", [message()], "prompt"),
+                {"summary": "ME will reply to SENDER:200.", "items": [item]},
+                settings,
+            )
+
+            batch = conn.execute(
+                "SELECT summary,response_json FROM ai_batches"
+            ).fetchone()
+            saved_item = conn.execute("SELECT title,details FROM ai_items").fetchone()
+            self.assertEqual("you will reply to participant 200.", batch[0])
+            self.assertNotRegex(batch[1], r"\b(?:ME|OTHER|SENDER:\d+)\b")
+            self.assertEqual(
+                (
+                    "Send the invoice for you",
+                    "another participant requested it from participant 200.",
+                ),
+                saved_item,
+            )
+
     def test_invalid_top_level_response_is_diagnostic_not_analyzed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))

@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-091 prevents prompt-only speaker labels from leaking into stored AI
+  summaries, item prose, and profile/discovery evidence displays. Structured
+  ownership and raw Telegram evidence remain unchanged; no migration, replay,
+  backfill, deletion, or live action ran.
 - AM-112 makes Deep Dive sessions reproducible with additive metadata,
   evidence-time cutoff selection, exact membership replacement, and
   session-owned pin validation. No live migration, replay, rebuild, or source/

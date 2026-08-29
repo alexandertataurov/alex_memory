@@ -476,7 +476,7 @@ class SearchScreen(Screen[None]):
                     {
                         "date": row[0],
                         "text": row[1],
-                        "speaker": "ME" if row[2] else "OTHER",
+                        "speaker": "You" if row[2] else "Other",
                         "chat_id": result.chat_id,
                         "message_id": result.message_id,
                     }

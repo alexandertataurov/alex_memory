@@ -527,7 +527,7 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(0, result.inserted)
         profile = build_person_profile(self.conn, int(self.person_id))
         self.assertEqual("third_party", profile["uncertain"][0]["assertion_kind"])
-        self.assertEqual("ME", profile["uncertain"][0]["evidence"][0]["speaker"])
+        self.assertEqual("You", profile["uncertain"][0]["evidence"][0]["speaker"])
         package = profile_summary_package(self.conn, int(self.person_id))
         self.assertNotIn(
             "profile_claims", [record["section"] for record in package["records"]]

@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-091 generated text quality
+
+Prompt speaker labels remain an internal AI protocol but are converted to
+neutral human wording before derived summaries, item prose, and response
+payloads are stored. Profile and discovery evidence displays use the same
+neutral labels. Structured ownership and raw Telegram evidence remain
+unchanged; no migration, replay, backfill, deletion, or live operation ran.
+
 ## 2026-08-29 — AM-112 Deep Dive session reproducibility
 
 Migration 22 records investigation parameters and diagnostics. Session updates

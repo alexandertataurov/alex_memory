@@ -42,6 +42,9 @@ secret in a summary or item.
 10. due_date must be YYYY-MM-DD only when it can be resolved unambiguously from the text and message date; otherwise null.
 11. Keep title concise and action-oriented. Put necessary context in details.
 12. Preserve the natural language of the conversation for title/details when practical.
+12a. `ME`, `OTHER`, and `SENDER:<id>` are prompt labels only. Never use them in
+summaries, titles, or details; use natural wording such as "you", "another
+participant", or a supported name instead.
 13. Confidence must reflect evidence strength between 0 and 1.
 14. It is valid for items to be empty, but only when there truly is no useful task, commitment, project, payment, person/company fact, or important operational fact in the batch.
 15. project_name is required on every item: use null unless the cited message explicitly supports a project association. For a task with an explicit association, use the project name exactly as supported.

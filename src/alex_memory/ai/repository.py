@@ -23,6 +23,40 @@ from .extraction_contract import (
 from .providers import ProviderRetryableError
 
 
+_PROMPT_LABEL = re.compile(r"\bME\b|\bOTHER\b|\bSENDER:(\d+)\b")
+
+
+def _user_text(value: str) -> str:
+    """Replace prompt-only speaker labels before derived prose is persisted."""
+    return _PROMPT_LABEL.sub(
+        lambda match: (
+            f"participant {match[1]}"
+            if match[1] is not None
+            else "you"
+            if match[0] == "ME"
+            else "another participant"
+        ),
+        value,
+    )
+
+
+def _presentation_payload(payload: dict) -> dict:
+    items = [
+        {
+            **item,
+            **{
+                field: _user_text(item[field])
+                for field in ("title", "details")
+                if isinstance(item, dict) and isinstance(item.get(field), str)
+            },
+        }
+        if isinstance(item, dict)
+        else item
+        for item in payload["items"]
+    ]
+    return {"summary": _user_text(payload["summary"]), "items": items}
+
+
 def _context_graph_version(conn: sqlite3.Connection) -> int:
     row = conn.execute(
         "SELECT value FROM app_meta WHERE key='context_graph_version'"
@@ -837,6 +871,7 @@ def save_ai_success(
                     (f"validation: {error}"[:2000], job_id),
                 )
         return AISaveResult(rejected=1, rejection_reasons=[f"response: {error}"])
+    payload = _presentation_payload(payload)
     model_items = payload["items"]
 
     # One transaction guarantees a storage failure does not leave a batch
