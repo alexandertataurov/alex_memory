@@ -1221,7 +1221,7 @@ class AlexMemoryApp:
         while True:
             action = (
                 Prompt.ask(
-                    "Deep Dive [dim](ask, search, deeper, improve, note, pin, back)[/dim]",
+                    "Deep Dive [dim](lookup, search, deeper, improve, note, pin, back)[/dim]",
                     default="back",
                 )
                 .strip()
@@ -1241,15 +1241,15 @@ class AlexMemoryApp:
                     )
                 )
                 render_report(service.build(task_id), self.console)
-            elif action in {"ask", "search"}:
-                query = Prompt.ask("Question or search", default="").strip()
+            elif action in {"lookup", "search"}:
+                query = Prompt.ask("Evidence query or search", default="").strip()
                 if query:
-                    if action == "ask":
-                        answer, sources = service.ask(task_id, query)
+                    if action == "lookup":
+                        evidence, sources = service.lookup_evidence(task_id, query)
                         self.console.print(
                             Panel(
-                                safe_text(answer),
-                                title="Deep Dive answer",
+                                safe_text(evidence),
+                                title="Deep Dive evidence lookup",
                                 border_style="cyan",
                             )
                         )

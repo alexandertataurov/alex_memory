@@ -93,19 +93,22 @@ class TaskDeepDiveService:
             task, context, concepts, evidence, session_id, report.as_of, diagnostics
         )
 
-    def ask(self, task_id: int, question: str) -> tuple[str, list[EvidenceItem]]:
-        report = self.search(task_id, question)
-        terms = {word for word in question.casefold().split() if len(word) > 2}
+    def lookup_evidence(
+        self, task_id: int, query: str
+    ) -> tuple[str, list[EvidenceItem]]:
+        """Return selected supporting evidence, never a synthesized answer."""
+        report = self.search(task_id, query)
+        terms = {word for word in re.findall(r"\w+", query.casefold()) if len(word) > 2}
         matched = [
             item
             for item in report.evidence
-            if terms.intersection(item.text.casefold().split())
+            if terms.intersection(re.findall(r"\w+", item.text.casefold()))
         ]
-        sources = (matched or report.evidence)[:5]
+        sources = matched[:5]
         if not sources:
-            return "No source-backed evidence was found for this task yet.", []
-        answer = "\n".join(f"- {item.text[:500]} [{item.citation}]" for item in sources)
-        return answer, sources
+            return "Unknown: no selected task evidence supports that query.", []
+        result = "\n".join(f"- {item.text[:500]} [{item.citation}]" for item in sources)
+        return result, sources
 
     def add_note(self, task_id: int, content: str) -> int:
         text = content.strip()

@@ -714,7 +714,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     snapshot fields while preserving historical text rows. No live operation
     ran.
 
-- [ ] AM-060 [P1] [Task Deep Dive / QA truthfulness] — Either implement real evidence-grounded Deep Dive Q&A or rename the current helper so it does not pretend to answer questions.
+- [x] AM-060 [P1] [Task Deep Dive / QA truthfulness] — Either implement real evidence-grounded Deep Dive Q&A or rename the current helper so it does not pretend to answer questions.
   - Code evidence: `TaskDeepDiveService.ask()` is not semantic Q&A. It splits the question and evidence on whitespace, selects evidence with exact token overlap, and otherwise returns the first five selected evidence rows as bullet text.
   - Consequence: morphology, punctuation, synonyms, Russian inflection, and conceptual questions are missed; when nothing matches, unrelated high-ranked evidence is presented as an “answer”.
   - Acceptance:
@@ -724,6 +724,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - AI distinguishes fact / inference / recommendation and never controls retrieval;
     - no answer is produced when the selected evidence does not support one; return explicit unknown instead.
   - Verification: Russian/English question variants, punctuation/morphology, unsupported question, mixed evidence, valid/invalid citations, router fallback, and offline evidence-only mode.
+  - Completed 2026-08-29: the deterministic path is explicitly an evidence
+    lookup, never a synthesized answer. It returns only matching selected
+    evidence with citations or explicit `Unknown`; provider synthesis remains
+    unimplemented rather than implied.
 
 - [ ] AM-063 [P1] [Conversation intelligence / Freshness] — Make context revisions and evidence-through markers mean actual content freshness, not refresh count.
   - Code evidence: `current_conversation_context.context_version` increments on **every** refresh, even if the resulting state is identical. The version therefore measures executions, not semantic revision.

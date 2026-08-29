@@ -2,6 +2,11 @@
 
 Task Deep Dive investigates one canonical task without turning the Telegram archive into an unbounded prompt. It begins with the task row and a `task_reconciliation` context request, then uses the linked people, projects, companies, relationships, current temporal facts, events, and summaries to establish scope.
 
+The terminal `lookup` action is deterministic evidence lookup, not synthesized
+Q&A. It shows only selected supporting evidence and citations; when none of the
+selected task evidence supports a query, it reports `Unknown`. AI synthesis is
+not implemented for Task Deep Dive.
+
 Raw-message retrieval is a second, bounded layer. Round one expands explicit task words and a small reviewable domain vocabulary, queries FTS when available (with a SQL fallback), and validates every result locally. Later rounds use only bounded terms found in accepted prior-round evidence and stop as soon as no new evidence or concepts appear. A message must either name a task-linked entity, be from the task source chat with a task concept, or come from a graph-related chat and contain at least two distinct concepts. This prevents a generic personal message about “hedging” from being attributed to a project hedge task.
 
 Each selected item has a stable display citation such as `E-message-200-14`, source chat/message IDs when available, relevance reasons, and a bounded same-chat conversation window. Events, current facts, and task lifecycle entries are separate evidence types. Current canonical state and historical `as_of` state remain distinct because the context builder applies temporal validity before retrieval.

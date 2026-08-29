@@ -188,13 +188,22 @@ class TaskDeepDiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "investigation session"):
             self.service.pin_evidence(self.task_id, "E-message-999-1")
 
-    def test_question_answer_stays_grounded_in_selected_evidence(self) -> None:
-        answer, sources = self.service.ask(
+    def test_evidence_lookup_stays_grounded_in_selected_evidence(self) -> None:
+        result, sources = self.service.lookup_evidence(
             self.task_id, "What did George say about the hedge difference?"
         )
         self.assertTrue(sources)
-        self.assertIn("[E-", answer)
-        self.assertNotIn("personal investment", answer)
+        self.assertIn("[E-", result)
+        self.assertNotIn("personal investment", result)
+
+    def test_evidence_lookup_returns_unknown_without_supporting_evidence(self) -> None:
+        result, sources = self.service.lookup_evidence(
+            self.task_id, "unrelated orbital mechanics"
+        )
+        self.assertEqual(
+            "Unknown: no selected task evidence supports that query.", result
+        )
+        self.assertEqual([], sources)
 
     def test_raw_evidence_uses_like_only_when_fts5_is_unavailable(self) -> None:
         task = self.service._task(self.task_id)

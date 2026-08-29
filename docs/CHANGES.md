@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-060 Deep Dive truthfulness
+
+Task Deep Dive's deterministic action is now labelled evidence lookup rather
+than answer. It returns selected supporting evidence and citations only, or an
+explicit unknown result; no provider synthesis is implied or performed.
+
 ## 2026-08-29 — AM-078 database integrity
 
 Application connections now enable SQLite foreign keys before migrations and

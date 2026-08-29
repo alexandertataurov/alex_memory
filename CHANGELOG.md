@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-060 renames Task Deep Dive's token-overlap path to evidence lookup. It
+  returns only matching selected evidence with citations or explicit `Unknown`,
+  and does not present offline retrieval as a synthesized answer.
 - AM-078 enforces declared SQLite foreign keys on every application connection
   and reports bounded logical-reference violations through the read-only
   database check. No table rebuild, repair, replay, or live action ran.
