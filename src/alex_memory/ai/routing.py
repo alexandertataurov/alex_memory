@@ -20,6 +20,8 @@ class AIWorkload(StrEnum):
     MEMORY_QA = "memory_qa"
     TASK_DEEP_DIVE = "task_deep_dive"
     GRAPH_IMPROVEMENT = "graph_improvement"
+    AMBIGUOUS_REASONING = "ambiguous_reasoning"
+    EXTERNAL_RESEARCH = "external_research"
 
 
 class RequestPriority(StrEnum):
@@ -44,6 +46,7 @@ class ModelProfile:
     rpm: float | None
     tpm: int | None
     rpd: int | None
+    tpd: int | None
     max_input_tokens: int | None
     structured_output: bool = True
 
@@ -65,6 +68,10 @@ def estimate_tokens(text: str) -> int:
 class ModelRegistry:
     def __init__(self, settings: Settings):
         self.settings = settings
+        groq_limits = {
+            "openai/gpt-oss-20b": (30, 8_000, 1_000, 200_000, 131_072),
+        }.get(settings.groq_model, (None, None, None, None, None))
+        groq_rpm, groq_tpm, groq_rpd, groq_tpd, groq_max_input_tokens = groq_limits
         self._profiles = {
             "gemini_35": ModelProfile(
                 "gemini_35",
@@ -73,6 +80,7 @@ class ModelRegistry:
                 min(settings.gemini_primary_rpm, settings.gemini_requests_per_minute),
                 settings.gemini_primary_tpm,
                 settings.gemini_primary_rpd,
+                None,
                 None,
                 True,
             ),
@@ -84,6 +92,7 @@ class ModelRegistry:
                 settings.gemini_secondary_tpm,
                 settings.gemini_secondary_rpd,
                 None,
+                None,
                 True,
             ),
             # Google documents gemma-4-31b-it as a hosted Gemini API model.
@@ -94,6 +103,7 @@ class ModelRegistry:
                 min(settings.gemma_short_rpm, settings.gemini_requests_per_minute),
                 settings.gemma_short_tpm,
                 settings.gemma_short_rpd,
+                None,
                 settings.gemma_short_max_input_tokens,
                 True,
             ),
@@ -101,11 +111,45 @@ class ModelRegistry:
                 "groq",
                 "groq",
                 settings.groq_model,
-                None,
-                None,
-                None,
-                None,
+                groq_rpm,
+                groq_tpm,
+                groq_rpd,
+                groq_tpd,
+                groq_max_input_tokens,
                 True,
+            ),
+            "groq_120b": ModelProfile(
+                "groq_120b",
+                "groq",
+                "openai/gpt-oss-120b",
+                30,
+                8_000,
+                1_000,
+                200_000,
+                131_072,
+                True,
+            ),
+            "groq_qwen": ModelProfile(
+                "groq_qwen",
+                "groq",
+                "qwen/qwen3.6-27b",
+                30,
+                8_000,
+                1_000,
+                200_000,
+                131_072,
+                True,
+            ),
+            "groq_compound_mini": ModelProfile(
+                "groq_compound_mini",
+                "groq",
+                "groq/compound-mini",
+                30,
+                70_000,
+                250,
+                None,
+                131_072,
+                False,
             ),
         }
 
@@ -140,11 +184,19 @@ class ModelRegistry:
     ) -> dict[str, str]:
         """Return deterministic policy reasons for every configured profile."""
         policy_keys = self._policy_keys(workload)
-        scope = "short-workload policy" if "gemma" in policy_keys else "context policy"
+        scope = (
+            "short-workload policy"
+            if "gemma" in policy_keys
+            else "explicit reasoning policy"
+            if workload is AIWorkload.AMBIGUOUS_REASONING
+            else "external-research policy"
+            if workload is AIWorkload.EXTERNAL_RESEARCH
+            else "context policy"
+        )
         explanations: dict[str, str] = {}
         for key, profile in self._profiles.items():
             if key not in policy_keys:
-                explanations[key] = "excluded: short-workload model"
+                explanations[key] = "excluded: outside workload policy"
             elif requires_structured_output and not profile.structured_output:
                 explanations[key] = "excluded: structured output required"
             else:
@@ -152,6 +204,10 @@ class ModelRegistry:
         return explanations
 
     def _policy_keys(self, workload: AIWorkload) -> tuple[str, ...]:
+        if workload is AIWorkload.EXTERNAL_RESEARCH:
+            return ("groq_compound_mini",)
+        if workload is AIWorkload.AMBIGUOUS_REASONING:
+            return ("groq_qwen", "groq_120b")
         short_workloads = {
             AIWorkload.MESSAGE_CLASSIFICATION,
             AIWorkload.SIMPLE_EXTRACTION,
@@ -159,6 +215,19 @@ class ModelRegistry:
         return (
             ("gemini_35", "gemini_31", "gemma", "groq")
             if workload in short_workloads
+            else (
+                "gemini_35",
+                "gemini_31",
+                "groq",
+                "groq_120b",
+            )
+            if workload
+            in {
+                AIWorkload.RECONCILIATION,
+                AIWorkload.MEMORY_QA,
+                AIWorkload.TASK_DEEP_DIVE,
+                AIWorkload.GRAPH_IMPROVEMENT,
+            }
             else ("gemini_35", "gemini_31", "groq")
         )
 
@@ -202,6 +271,14 @@ class QuotaTracker:
                 return QuotaPressure.HIGH
             if ratio >= 0.65:
                 return QuotaPressure.ELEVATED
+        if profile.tpd is not None:
+            ratio = self._daily_tokens(profile) / max(1, profile.tpd)
+            if ratio >= 1:
+                return QuotaPressure.EXHAUSTED
+            if ratio >= 0.85:
+                return QuotaPressure.HIGH
+            if ratio >= 0.65:
+                return QuotaPressure.ELEVATED
         return QuotaPressure.NORMAL
 
     def available(
@@ -216,6 +293,8 @@ class QuotaTracker:
             )
         if pressure in {QuotaPressure.COOLDOWN, QuotaPressure.EXHAUSTED}:
             return False, pressure, pressure.value
+        if profile.tpd and self._daily_tokens(profile) + estimated_tokens > profile.tpd:
+            return False, QuotaPressure.HIGH, "local TPD limit is full"
         self._prune(profile.key)
         recent = self._requests[profile.key]
         if profile.rpm and len(recent) >= profile.rpm:
@@ -313,6 +392,15 @@ class QuotaTracker:
             (datetime.now(UTC).date().isoformat(), profile.key),
         ).fetchone()
         return (int(row[0]), int(row[1])) if row else (0, 0)
+
+    def _daily_tokens(self, profile: ModelProfile) -> int:
+        if self.conn is None:
+            return 0
+        row = self.conn.execute(
+            "SELECT estimated_input_tokens+output_tokens FROM ai_model_usage WHERE usage_date=? AND model_key=?",
+            (datetime.now(UTC).date().isoformat(), profile.key),
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     def _write(
         self,

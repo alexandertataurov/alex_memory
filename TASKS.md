@@ -664,7 +664,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     remain counted as fallbacks with an explicit route kind. No schema,
     migration, provider request, replay, backfill, or live action ran.
 
-- [ ] AM-061 [P1] [AI model registry] — Expand the registry only after provider execution and quota/capability routing are real.
+- [x] AM-061 [P1] [AI model registry] — Expand the registry only after provider execution and quota/capability routing are real.
   - Add `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, and a separate `groq/compound-mini` explicit external-research route.
   - Dependency: AM-104 must guarantee the selected Groq profile actually invokes that exact model; AM-106 must account for physical requests/usage; AM-099 must enforce workload/capability eligibility.
   - Current code evidence: the existing Groq `ModelProfile` has `rpm=None`, `tpm=None`, `rpd=None`, so quota-aware admission does not enforce the account limits already known for Groq.
@@ -677,6 +677,13 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - verify actual provider model IDs/capabilities before hard-coding;
     - the model reported in result/usage/diagnostics must equal the selected registry profile.
   - Verification: model-limit admission, daily-token pressure, exact selected-model execution, workload suitability, prompt-size guards, external-research separation, and fallback behavior.
+  - Completed 2026-08-29: provider-verified Groq profiles now encode the
+    published Developer-plan guards for GPT-OSS 120B and Qwen 3.6, including
+    token-per-day admission. The 120B route is limited to high-value workloads;
+    Qwen is an explicit ambiguous-reasoning route. Compound Mini is available
+    only as unstructured `EXTERNAL_RESEARCH`, has no persistence caller, and is
+    excluded from internal-memory workloads. No provider request, migration,
+    replay, backfill, or live action ran.
 
 - [x] AM-062 [P1] [Documentation truthfulness] — Repair current documentation drift and make docs checks catch claims that are not true in runtime.
   - Progress 2026-08-26: the migration ledger is unique and ordered through

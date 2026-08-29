@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-061 adds provider-verified Groq profiles for GPT-OSS 120B, Qwen 3.6, and
+  Compound Mini. The router applies published local RPM/TPM/RPD/TPD guards to
+  the reasoning profiles, scopes 120B and Qwen to explicit high-value policies,
+  and permits unstructured Compound Mini only for external research. No provider
+  request, migration, replay, backfill, or live action ran.
 - AM-087 adds an explicit bounded contact-materialization rebuild through the
   sole existing writer. It preserves profile summaries and durable promise
   loops, and fixture reruns remain idempotent. No live operation ran.

@@ -49,9 +49,12 @@ rows are selectively reclassified in the normal bounded queue when v1 defects
 matter (unknown scope, high-value/stale/actionable-question, or forwarded rows);
 approved manual classification reviews retain their authority.
 
-In `AI_ROUTING_MODE=quota_aware`, context extraction, reconciliation, memory
-Q&A, and Deep Dive work use Gemini 3.5 Flash Lite, then Gemini 3.1 Flash Lite,
-then Groq. Short classification and simple extraction retain the configured
+In `AI_ROUTING_MODE=quota_aware`, context extraction uses Gemini 3.5 Flash
+Lite, then Gemini 3.1 Flash Lite, then the configured Groq model. High-value
+reconciliation, Q&A, Deep Dive, and graph work may use the separately guarded
+`openai/gpt-oss-120b` profile only after those ordinary routes. Explicit
+ambiguous-reasoning work may use `qwen/qwen3.6-27b` followed by that 120B
+profile. Short classification and simple extraction retain the configured
 hosted Gemma route (`gemma-4-31b-it`) as a bounded fallback when its input guard
 permits it. Structured-output requirements filter ineligible profiles before
 quota/health admission, and route diagnostics retain the deterministic policy
@@ -59,10 +62,17 @@ reason for each selected profile.
 The router estimates the system instruction, provider-required schema
 instruction, and user prompt before each physical dispatch. It reserves the
 final 20% of the primary daily quota for interactive/critical work, keeps
-rolling RPM/TPM state locally, and persists aggregate daily attempts plus
-estimated and actual token counts in `ai_model_usage`. Gemini and Groq response
+rolling RPM/TPM state locally, enforces published token-per-day caps where
+available, and persists aggregate daily attempts plus estimated and actual token
+counts in `ai_model_usage`. Gemini and Groq response
 metadata is normalized for extraction and grounded answers when the SDK returns
 it. No prompt content or credential is stored in routing telemetry.
+
+`groq/compound-mini` is an unstructured, explicit `EXTERNAL_RESEARCH` route
+only. It is excluded from every internal-memory workload and has no persistence
+caller in this increment, so tool-augmented output cannot become canonical
+state. Any future external-research integration must retain its source/tool
+provenance separately before its result can inform a Review workflow.
 
 Providers perform one cancellable transport attempt only. The router owns every
 retry, pacing interval, attempt event, quota write, and success/failure record

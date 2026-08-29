@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-061 provider model registry
+
+The registry now uses Groq's verified IDs and published local Developer-plan
+limits for GPT-OSS 120B and Qwen 3.6, including a durable token-per-day guard.
+120B is unavailable to ordinary extraction; Qwen is explicit ambiguous
+reasoning; Compound Mini is an unstructured external-research route with no
+canonical persistence caller. No provider request, migration, replay, backfill,
+or live operation ran.
+
 ## 2026-08-29 — AM-087 materialization rebuild
 
 Bounded active-person rebuild now reuses the sole contact materializer. It

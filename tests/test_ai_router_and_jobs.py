@@ -59,7 +59,13 @@ from alex_memory.classification import (
 from alex_memory.config import Settings
 from alex_memory.database import connect
 from alex_memory.intelligence import set_chat_policy
-from alex_memory.models import AIAnalysisResult, AIAnswerResult, AIBatch, AIMessage
+from alex_memory.models import (
+    AIAnalysisResult,
+    AIAnswerResult,
+    AIBatch,
+    AIMessage,
+    AIRequest,
+)
 
 
 def settings_for(root: Path, **overrides) -> Settings:
@@ -413,9 +419,126 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 )["gemma"],
             )
             self.assertEqual(
-                "excluded: short-workload model",
+                "excluded: outside workload policy",
                 registry.candidate_explanations(AIWorkload.CONTEXT_EXTRACTION)["gemma"],
             )
+
+    def test_groq_reasoning_profiles_have_current_limits_and_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ModelRegistry(
+                settings_for(Path(directory), ai_routing_mode="quota_aware")
+            )
+
+            for key in ("groq_120b", "groq_qwen"):
+                profile = registry.profile(key)
+                self.assertEqual(
+                    (30, 8_000, 1_000, 200_000),
+                    (
+                        profile.rpm,
+                        profile.tpm,
+                        profile.rpd,
+                        profile.tpd,
+                    ),
+                )
+                self.assertEqual(131_072, profile.max_input_tokens)
+            self.assertEqual(
+                ["groq_qwen", "groq_120b"],
+                [
+                    profile.key
+                    for profile in registry.candidates(AIWorkload.AMBIGUOUS_REASONING)
+                ],
+            )
+            self.assertNotIn(
+                "groq_120b",
+                [
+                    profile.key
+                    for profile in registry.candidates(AIWorkload.CONTEXT_EXTRACTION)
+                ],
+            )
+            available, _pressure, reason = QuotaTracker().available(
+                registry.profile("groq_qwen"), 131_073, RequestPriority.BACKGROUND
+            )
+            self.assertFalse(available)
+            self.assertIn("exceeds input guard", reason)
+
+    async def test_ambiguous_reasoning_invokes_the_selected_qwen_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory), ai_routing_mode="quota_aware")
+            groq = FakeProvider("groq", AIAnalysisResult("groq", "ignored", "Qwen", []))
+            router = AIRouter(settings, {"groq": groq})
+
+            result = await router.analyze_request(
+                AIRequest(batch=batch(), workload=AIWorkload.AMBIGUOUS_REASONING.value)
+            )
+
+            self.assertEqual("qwen/qwen3.6-27b", result.model)
+            self.assertEqual(1, groq.calls)
+
+    def test_compound_mini_is_only_an_unstructured_external_route(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = ModelRegistry(
+                settings_for(Path(directory), ai_routing_mode="quota_aware")
+            )
+
+            compound = registry.profile("groq_compound_mini")
+            self.assertEqual(
+                (30, 70_000, 250, None),
+                (
+                    compound.rpm,
+                    compound.tpm,
+                    compound.rpd,
+                    compound.tpd,
+                ),
+            )
+            self.assertEqual([], registry.candidates(AIWorkload.EXTERNAL_RESEARCH))
+            self.assertEqual(
+                ["groq_compound_mini"],
+                [
+                    profile.key
+                    for profile in registry.candidates(
+                        AIWorkload.EXTERNAL_RESEARCH,
+                        requires_structured_output=False,
+                    )
+                ],
+            )
+            self.assertNotIn(
+                "groq_compound_mini",
+                [
+                    profile.key
+                    for profile in registry.candidates(
+                        AIWorkload.AMBIGUOUS_REASONING,
+                        requires_structured_output=False,
+                    )
+                ],
+            )
+
+    def test_daily_token_limit_rejects_known_groq_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = settings_for(Path(directory), ai_routing_mode="quota_aware")
+            conn = connect(settings)
+            profile = ModelRegistry(settings).profile("groq_120b")
+            conn.execute(
+                """INSERT INTO ai_model_usage(
+                       usage_date,model_key,provider,model,estimated_input_tokens,output_tokens
+                   ) VALUES(?,?,?,?,?,?)""",
+                (
+                    date.today().isoformat(),
+                    profile.key,
+                    profile.provider,
+                    profile.model,
+                    199_999,
+                    0,
+                ),
+            )
+            conn.commit()
+
+            available, pressure, reason = QuotaTracker(conn).available(
+                profile, 2, RequestPriority.BACKGROUND
+            )
+
+            self.assertFalse(available)
+            self.assertEqual("high", pressure.value)
+            self.assertEqual("local TPD limit is full", reason)
 
     def test_forced_or_session_model_never_bypasses_eligibility(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
