@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-078 database integrity
+
+Application connections now enable SQLite foreign keys before migrations and
+runtime writes. The read-only database check also reports bounded logical
+reference violations without a table rebuild, repair, replay, or live action.
+
 ## 2026-08-29 — AM-059 data-model truthfulness
 
 Migration 23 adds structured and rendered global snapshot fields.

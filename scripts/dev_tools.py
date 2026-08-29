@@ -302,11 +302,129 @@ def readonly_connection() -> sqlite3.Connection:
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
 
+def logical_reference_violations(
+    conn: sqlite3.Connection,
+) -> list[tuple[str, str, int]]:
+    """Return bounded counts for logical references without inspecting content."""
+    checks = (
+        (
+            "tasks",
+            "related_person_id",
+            """SELECT COUNT(*) FROM tasks AS child
+               WHERE child.related_person_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM people WHERE person_id=child.related_person_id)""",
+        ),
+        (
+            "tasks",
+            "related_company_id",
+            """SELECT COUNT(*) FROM tasks AS child
+               WHERE child.related_company_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM companies WHERE company_id=child.related_company_id)""",
+        ),
+        (
+            "tasks",
+            "related_project_id",
+            """SELECT COUNT(*) FROM tasks AS child
+               WHERE child.related_project_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM projects WHERE project_id=child.related_project_id)""",
+        ),
+        (
+            "tasks",
+            "source_item_id",
+            """SELECT COUNT(*) FROM tasks AS child
+               WHERE child.source_item_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM ai_items WHERE item_id=child.source_item_id)""",
+        ),
+        (
+            "ai_items",
+            "source_message",
+            """SELECT COUNT(*) FROM ai_items AS child
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM messages
+                   WHERE chat_id=child.source_chat_id AND message_id=child.source_message_id
+               )""",
+        ),
+        (
+            "entity_relationships",
+            "source_item_id",
+            """SELECT COUNT(*) FROM entity_relationships AS child
+               WHERE child.source_item_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM ai_items WHERE item_id=child.source_item_id)""",
+        ),
+        (
+            "relationships",
+            "from_endpoint",
+            """SELECT COUNT(*) FROM relationships AS child WHERE NOT CASE child.from_type
+                 WHEN 'person' THEN EXISTS (SELECT 1 FROM people WHERE person_id=child.from_id)
+                 WHEN 'company' THEN EXISTS (SELECT 1 FROM companies WHERE company_id=child.from_id)
+                 WHEN 'project' THEN EXISTS (SELECT 1 FROM projects WHERE project_id=child.from_id)
+                 WHEN 'task' THEN EXISTS (SELECT 1 FROM tasks WHERE task_id=child.from_id)
+                 WHEN 'event' THEN EXISTS (SELECT 1 FROM context_events WHERE event_id=child.from_id)
+                 WHEN 'fact' THEN EXISTS (SELECT 1 FROM context_facts WHERE fact_id=child.from_id)
+                 ELSE 0 END""",
+        ),
+        (
+            "relationships",
+            "to_endpoint",
+            """SELECT COUNT(*) FROM relationships AS child WHERE NOT CASE child.to_type
+                 WHEN 'person' THEN EXISTS (SELECT 1 FROM people WHERE person_id=child.to_id)
+                 WHEN 'company' THEN EXISTS (SELECT 1 FROM companies WHERE company_id=child.to_id)
+                 WHEN 'project' THEN EXISTS (SELECT 1 FROM projects WHERE project_id=child.to_id)
+                 WHEN 'task' THEN EXISTS (SELECT 1 FROM tasks WHERE task_id=child.to_id)
+                 WHEN 'event' THEN EXISTS (SELECT 1 FROM context_events WHERE event_id=child.to_id)
+                 WHEN 'fact' THEN EXISTS (SELECT 1 FROM context_facts WHERE fact_id=child.to_id)
+                 ELSE 0 END""",
+        ),
+        (
+            "source_evidence_versions",
+            "evidence_id",
+            """SELECT COUNT(*) FROM source_evidence_versions AS child
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM source_evidence WHERE evidence_id=child.evidence_id
+               )""",
+        ),
+        (
+            "conversation_open_loops",
+            "task_id",
+            """SELECT COUNT(*) FROM conversation_open_loops AS child
+               WHERE child.task_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_id=child.task_id)""",
+        ),
+        (
+            "current_conversation_context",
+            "person_id",
+            """SELECT COUNT(*) FROM current_conversation_context AS child
+               WHERE NOT EXISTS (SELECT 1 FROM people WHERE person_id=child.person_id)""",
+        ),
+        (
+            "current_conversation_context",
+            "primary_project_id",
+            """SELECT COUNT(*) FROM current_conversation_context AS child
+               WHERE child.primary_project_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM projects WHERE project_id=child.primary_project_id)""",
+        ),
+        (
+            "current_conversation_context",
+            "primary_company_id",
+            """SELECT COUNT(*) FROM current_conversation_context AS child
+               WHERE child.primary_company_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM companies WHERE company_id=child.primary_company_id)""",
+        ),
+    )
+    violations = []
+    for table, key, query in checks:
+        count = int(conn.execute(query).fetchone()[0])
+        if count:
+            violations.append((table, key, count))
+    return violations
+
+
 def db_check() -> int:
     try:
         with readonly_connection() as conn:
             integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
             foreign_keys = conn.execute("PRAGMA foreign_key_check").fetchall()
+            logical_references = logical_reference_violations(conn)
             version_row = conn.execute(
                 "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
             ).fetchone()
@@ -316,9 +434,19 @@ def db_check() -> int:
         return 1
     print("SQLite integrity:", integrity)
     print("Foreign-key violations:", len(foreign_keys))
+    print("Logical-reference violations:", len(logical_references))
+    for table, key, count in logical_references:
+        print(f" - {table}.{key}: {count}")
     print("Schema version:", int(version_row[0] or 0))
     _print_fts_health(fts_health)
-    return 0 if integrity == "ok" and not foreign_keys and fts_health["healthy"] else 1
+    return (
+        0
+        if integrity == "ok"
+        and not foreign_keys
+        and not logical_references
+        and fts_health["healthy"]
+        else 1
+    )
 
 
 def db_backup() -> int:

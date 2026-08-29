@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-078 enforces declared SQLite foreign keys on every application connection
+  and reports bounded logical-reference violations through the read-only
+  database check. No table rebuild, repair, replay, or live action ran.
 - AM-059 adds migration 23 for structured and rendered global snapshots while
   preserving existing snapshot text.
 - AM-058 makes fallback selection reason-aware: only typed daily quota

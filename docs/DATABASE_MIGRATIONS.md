@@ -58,6 +58,16 @@ The ordering, transaction, and ledger record are owned by `database.py`.
 Declarative compatibility-column, source-evidence, and optional FTS support is
 kept in `schema_support.py`; it is only invoked through named migrations.
 
+## Referential integrity
+
+Every application connection enables SQLite foreign-key enforcement before any
+migration or runtime write. Most domain references remain logical because they
+are polymorphic or composite and adding physical keys would require risky table
+rebuilds. `make db-check` therefore performs bounded, read-only orphan checks
+for task links, extracted-item sources, relationship endpoints, conversation
+state, open loops, and evidence versions. It reports table/key/count only and
+never repairs or changes the database.
+
 ## Adding a migration
 
 1. Create a new, strictly increasing `Migration` in `src/alex_memory/database.py`.

@@ -693,7 +693,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Backlog
 
-- [ ] AM-078 [P1] [Database integrity] — Enforce and audit logical referential integrity instead of merely declaring relationships in schema prose.
+- [x] AM-078 [P1] [Database integrity] — Enforce and audit logical referential integrity instead of merely declaring relationships in schema prose.
   - Evidence from live DB: 91 application tables exist but only two declared SQLite foreign keys; sampled logical-reference checks found no current orphans.
   - Code evidence: `database.connect()` does **not** execute `PRAGMA foreign_keys=ON`, so even the declared foreign keys are not enforced by SQLite on normal application connections.
   - Acceptance:
@@ -701,6 +701,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - add `make db-check` logical-reference checks for references not represented as SQLite FKs (tasks→entities/items, AI items→source messages/entities, relationships→entities/messages, open loops→tasks, conversation context→people/projects, evidence versions→evidence);
     - do not add risky FK table rebuilds merely for architectural purity; use application checks where safer.
   - Verification: injected-orphan fixtures are detected with actionable table/key output, declared FK violations fail at write time, and current DB passes after repair.
+  - Completed 2026-08-29: every application connection enables declared foreign
+    keys; the read-only database check reports bounded logical-reference gaps.
+    No table rebuild, repair, replay, or live action ran.
 
 - [x] AM-059 [P2] [Data model truthfulness] — Document every persisted layer by source-of-truth, consumer, rebuildability, and actual stored representation.
   - Acceptance: every important table is labelled SOURCE / CANONICAL / MATERIALIZED / WORK-DIAGNOSTIC / deterministic rollup, with exact rebuild inputs and stale/invalidated behavior.

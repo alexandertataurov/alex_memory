@@ -189,6 +189,19 @@ class MigrationLedgerTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_connections_enforce_declared_foreign_keys(self) -> None:
+        conn = connect(self.settings)
+        try:
+            self.assertEqual(1, conn.execute("PRAGMA foreign_keys").fetchone()[0])
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """INSERT INTO context_conflict_observations(
+                           conflict_id,value_json,valid_from,confidence,created_at
+                       ) VALUES (999,'{}','now',1.0,'now')"""
+                )
+        finally:
+            conn.close()
+
     def test_bootstrap_does_not_execute_later_migration_tables(self) -> None:
         conn = sqlite3.connect(":memory:")
         try:

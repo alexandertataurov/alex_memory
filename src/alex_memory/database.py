@@ -1515,6 +1515,7 @@ SCHEMA_VERSION = MIGRATIONS[-1].version
 def connect(settings: Settings) -> sqlite3.Connection:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(settings.db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA temp_store=MEMORY")
