@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import Literal
 
 from ..utils import utc_now
 
@@ -68,8 +69,17 @@ def set_temporal_fact(
     source_chat_id: int | None = None,
     source_message_id: int | None = None,
     source_ai_item_id: int | None = None,
+    conflict_policy: Literal["review", "replace"] = "review",
 ) -> int:
-    """Close a changed current fact; never overwrite historical state."""
+    """Store a fact under an explicit replacement or Review policy.
+
+    Automatic projection must use ``review`` unless a documented deterministic
+    state projector owns the predicate. ``replace`` is for that explicit
+    projector or an already-authoritative manual workflow; predicate spelling
+    never decides whether a value can replace current state.
+    """
+    if conflict_policy not in {"review", "replace"}:
+        raise ValueError("Temporal fact conflict policy must be review or replace.")
     encoded = json.dumps(value, sort_keys=True, ensure_ascii=False)
     current = conn.execute(
         "SELECT fact_id,value_json FROM context_facts WHERE subject_type=? AND subject_id=? AND predicate=? AND is_current=1 ORDER BY fact_id DESC LIMIT 1",
@@ -78,18 +88,16 @@ def set_temporal_fact(
     if current and current[1] == encoded:
         return int(current[0])
     now = utc_now()
-    # State predicates are expected to evolve; identity/relationship facts
-    # conflict instead of silently replacing the earlier observation.
-    if current and not predicate.endswith(("_status", "_state", "_progress")):
-        if source_ai_item_id is not None:
-            existing_conflict = conn.execute(
-                """SELECT conflict_id FROM context_conflicts
-                   WHERE existing_fact_id=? AND new_observation_id=?
-                     AND conflict_type='value_conflict'""",
-                (current[0], source_ai_item_id),
-            ).fetchone()
-            if existing_conflict:
-                return int(current[0])
+    if current and conflict_policy == "review":
+        if _duplicate_conflict_observation(
+            conn,
+            existing_fact_id=int(current[0]),
+            value_json=encoded,
+            source_chat_id=source_chat_id,
+            source_message_id=source_message_id,
+            source_ai_item_id=source_ai_item_id,
+        ):
+            return int(current[0])
         cursor = conn.execute(
             "INSERT INTO context_conflicts(subject_type,subject_id,predicate,existing_fact_id,new_observation_id,conflict_type,status,created_at) VALUES (?, ?, ?, ?, ?, 'value_conflict', 'pending', ?)",
             (subject_type, subject_id, predicate, current[0], source_ai_item_id, now),
@@ -142,6 +150,36 @@ def set_temporal_fact(
     return fact_id
 
 
+def _duplicate_conflict_observation(
+    conn: sqlite3.Connection,
+    *,
+    existing_fact_id: int,
+    value_json: str,
+    source_chat_id: int | None,
+    source_message_id: int | None,
+    source_ai_item_id: int | None,
+) -> bool:
+    """Identify an exact replay only when it carries durable source identity."""
+    if source_ai_item_id is not None:
+        source_match = "o.source_ai_item_id=?"
+        source_values: tuple[int, ...] = (source_ai_item_id,)
+    elif source_chat_id is not None and source_message_id is not None:
+        source_match = "o.source_chat_id=? AND o.source_message_id=?"
+        source_values = (source_chat_id, source_message_id)
+    else:
+        return False
+    row = conn.execute(
+        f"""SELECT 1 FROM context_conflict_observations AS o
+               JOIN context_conflicts AS c ON c.conflict_id=o.conflict_id
+               WHERE c.existing_fact_id=? AND c.status='pending'
+                 AND c.conflict_type='value_conflict' AND o.value_json=?
+                 AND {source_match}
+               LIMIT 1""",
+        (existing_fact_id, value_json, *source_values),
+    ).fetchone()
+    return row is not None
+
+
 def list_temporal_conflicts(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     """Return pending conflicts with both values and their source references."""
     rows = conn.execute(
@@ -190,30 +228,40 @@ def resolve_temporal_conflict(
     """Record a manual decision and, if accepted, preserve both fact intervals."""
     if decision not in {"keep_existing", "accept_observation", "ignore"}:
         raise ValueError("Decision must keep_existing, accept_observation, or ignore.")
-    row = conn.execute(
-        """SELECT c.subject_type,c.subject_id,c.predicate,c.existing_fact_id,
-                  f.valid_from,o.value_json,o.valid_from,o.confidence,o.source_chat_id,
-                  o.source_message_id,o.source_ai_item_id
-           FROM context_conflicts c JOIN context_facts f ON f.fact_id=c.existing_fact_id
-           LEFT JOIN context_conflict_observations o ON o.conflict_id=c.conflict_id
-           WHERE c.conflict_id=? AND c.status='pending'""",
-        (conflict_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError("Temporal conflict is not pending or does not exist.")
-    if (
-        decision == "accept_observation"
-        and (row[5] is None or row[6] is None)
-        and manual_value is None
-    ):
-        raise ValueError(
-            "This legacy conflict has no stored proposed observation; provide a manual value."
-        )
     now = utc_now()
     resulting_fact_id: int | None = None
     status = "ignored" if decision == "ignore" else "resolved"
     with conn:
+        row = conn.execute(
+            """SELECT c.subject_type,c.subject_id,c.predicate,c.existing_fact_id,
+                      f.valid_from,o.value_json,o.valid_from,o.confidence,o.source_chat_id,
+                      o.source_message_id,o.source_ai_item_id
+               FROM context_conflicts c JOIN context_facts f ON f.fact_id=c.existing_fact_id
+               LEFT JOIN context_conflict_observations o ON o.conflict_id=c.conflict_id
+               WHERE c.conflict_id=? AND c.status='pending'""",
+            (conflict_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Temporal conflict is not pending or does not exist.")
+        if (
+            decision == "accept_observation"
+            and (row[5] is None or row[6] is None)
+            and manual_value is None
+        ):
+            raise ValueError(
+                "This legacy conflict has no stored proposed observation; provide a manual value."
+            )
         if decision == "accept_observation":
+            current = conn.execute(
+                """SELECT fact_id FROM context_facts
+                   WHERE subject_type=? AND subject_id=? AND predicate=? AND is_current=1
+                   ORDER BY fact_id DESC LIMIT 1""",
+                row[:3],
+            ).fetchone()
+            if current is None or int(current[0]) != int(row[3]):
+                raise ValueError(
+                    "Temporal conflict is stale; current predicate state changed."
+                )
             if manual_value is not None:
                 value_json = json.dumps(
                     manual_value, sort_keys=True, ensure_ascii=False

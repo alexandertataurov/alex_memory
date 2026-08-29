@@ -92,6 +92,7 @@ class ContextQualityTests(unittest.TestCase):
             confidence=1.0,
             source_chat_id=100,
             source_message_id=3,
+            conflict_policy="replace",
         )
         set_temporal_fact(
             self.conn,

@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-079 temporal fact authority
+
+Automatic task/document fact projection and predicate-suffix replacement rules
+are removed. The temporal repository now defaults changed values to Review;
+only an explicit deterministic or manual caller may request state replacement.
+Pending conflict replays are idempotent when they have exact source identity,
+and acceptance rechecks the current predicate state within its transaction.
+No migration, backfill, replay, deletion, or live operation ran.
+
 ## 2026-08-28 — AM-107 Deep Dive evidence integrity
 
 Deep Dive now retains only task-demonstrable evidence. Temporal fact IDs are

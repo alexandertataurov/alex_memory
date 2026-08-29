@@ -148,3 +148,103 @@ class TemporalConflictReviewTests(unittest.TestCase):
                 (resulting_fact_id,),
             ).fetchone()[0],
         )
+
+    def test_status_name_does_not_grant_automatic_replacement(self) -> None:
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="document_status",
+            value={"status": "requested"},
+            valid_from="2026-08-19",
+            confidence=0.8,
+        )
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="document_status",
+            value={"status": "received"},
+            valid_from="2026-08-22",
+            confidence=0.9,
+            source_chat_id=5,
+            source_message_id=11,
+        )
+
+        self.assertEqual(
+            {"status": "requested"},
+            current_facts(self.conn, "person", self.person_id)[0]["value"],
+        )
+        self.assertEqual(1, len(list_temporal_conflicts(self.conn)))
+
+    def test_duplicate_conflict_observation_replay_is_idempotent(self) -> None:
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="employment",
+            value={"company": "North"},
+            valid_from="2026-08-19",
+            confidence=0.8,
+        )
+        observation = dict(
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="employment",
+            value={"company": "South"},
+            valid_from="2026-08-22",
+            confidence=0.9,
+            source_chat_id=5,
+            source_message_id=11,
+        )
+        set_temporal_fact(self.conn, **observation)
+        set_temporal_fact(self.conn, **observation)
+
+        self.assertEqual(1, len(list_temporal_conflicts(self.conn)))
+        self.assertEqual(
+            1,
+            self.conn.execute(
+                "SELECT COUNT(*) FROM context_conflict_observations"
+            ).fetchone()[0],
+        )
+
+    def test_stale_conflict_cannot_replace_newer_current_fact(self) -> None:
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="employment",
+            value={"company": "North"},
+            valid_from="2026-08-19",
+            confidence=0.8,
+        )
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="employment",
+            value={"company": "South"},
+            valid_from="2026-08-22",
+            confidence=0.9,
+            source_chat_id=5,
+            source_message_id=11,
+        )
+        conflict_id = list_temporal_conflicts(self.conn)[0]["conflict_id"]
+        set_temporal_fact(
+            self.conn,
+            subject_type="person",
+            subject_id=self.person_id,
+            predicate="employment",
+            value={"company": "East"},
+            valid_from="2026-08-23",
+            confidence=1.0,
+            conflict_policy="replace",
+        )
+        self.conn.commit()
+
+        with self.assertRaisesRegex(ValueError, "stale"):
+            resolve_temporal_conflict(self.conn, conflict_id, "accept_observation")
+        self.assertEqual(
+            {"company": "East"},
+            current_facts(self.conn, "person", self.person_id)[0]["value"],
+        )

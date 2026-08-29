@@ -544,7 +544,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - build/search/ask side effects are documented as investigation-session persistence, not hidden retrieval mutation.
   - Verification: historical session created today, repeat search with evidence removed, retrieval-version change, invalid pin, session replay/explain output, and previous-session extension tests.
 
-- [ ] AM-079 [P0] [Canonical facts / Anti-slop] — Replace keyword/suffix-driven “temporal facts” with a small explicit state-projection contract, or remove the layer.
+- [x] AM-079 [P0] [Canonical facts / Anti-slop] — Replace keyword/suffix-driven “temporal facts” with a small explicit state-projection contract, or remove the layer.
   - Evidence from live DB: 550 `important_fact` AI items exist (536 at confidence >= 0.90), but `context_facts` has only 30 rows and **all 30 use `corporate_documents_status`**.
   - Code evidence: any person-linked AI item containing the substring `document` can update that person's `corporate_documents_status`; this is a hard-coded heuristic, not a well-defined domain fact.
   - Code evidence: every project-linked task/follow-up/deadline/promise can overwrite one global `project_work_status={"status": task_status, "title": task_title}`. The latest task is not the state of the project; once AM-070 starts linking projects this would generate large amounts of false canonical state.
@@ -558,6 +558,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - duplicate conflict observations from the same source are idempotent.
   - Dependency: fix this before large task→project backfill/reprojection creates `project_work_status` slop.
   - Verification: multiple simultaneous project tasks, document mention unrelated to KYB, legitimate document-status transition, stale conflict resolution, duplicate replay, and predicate-contract tests.
+  - Completed 2026-08-29: removed generic task/document fact projection.
+    Fact changes default to Review regardless of predicate spelling; an explicit
+    deterministic/manual caller alone may request replacement. Conflict replay
+    is source-idempotent and stale acceptance is rejected transactionally. No
+    migration, replay, backfill, deletion, or live operation ran.
 
 - [x] AM-086 [P1] [Events / Anti-slop] — Stop creating generic `observation_recorded` context events that duplicate AI observations.
   - Plan: `docs/exec-plans/completed/AM-086-observation-event-removal.md`.

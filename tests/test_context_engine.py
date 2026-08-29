@@ -67,6 +67,7 @@ class ContextEngineTests(unittest.TestCase):
             value={"status": "received"},
             valid_from="2026-08-22",
             confidence=1,
+            conflict_policy="replace",
         )
         self.assertEqual(
             "received",

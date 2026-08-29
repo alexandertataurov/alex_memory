@@ -16,6 +16,11 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-079 removes generic task/document temporal-fact projection and suffix-based
+  replacement authority. Changed facts default to Review, explicit replacement
+  is limited to documented deterministic/manual callers, exact source replay is
+  idempotent, and stale conflict acceptance fails closed. No migration, replay,
+  backfill, deletion, or live action ran.
 - AM-107 makes Task Deep Dive evidence membership explicit: contextual facts
   stay background, events and messages require task-specific proof, Unicode
   matching is supported, and dedupe keeps strongest provenance.

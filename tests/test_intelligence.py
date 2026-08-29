@@ -297,6 +297,7 @@ class IntelligenceTests(unittest.TestCase):
             value={"status": "received"},
             valid_from="2026-08-22T10:00:00+00:00",
             confidence=0.9,
+            conflict_policy="replace",
         )
         self.conn.commit()
 
