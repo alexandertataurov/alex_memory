@@ -267,7 +267,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   timelines, commitments, recency, interactions, shared counterparties, and
   explicit blockers/dependencies. Defer graph-ranking algorithms.
 
-- [ ] AM-072 [P0] [Projects] — Repair project health/state after task-project linking and stop marking every extracted project `critical`.
+- [x] AM-072 [P0] [Projects] — Repair project health/state after task-project linking and stop marking every extracted project `critical`.
   - Evidence from live DB: all **100/100 projects** currently have status `critical`. With zero task→project links, project-health scoring has no reliable operational activity signal.
   - Acceptance: project state derives from real recent activity, linked open/waiting/overdue tasks, temporal events, conversation segments, and explicit project state—not absence of task links. Support `active`, `waiting`, `stale`, `critical`, `completed`, and `archived` where current domain rules allow.
   - Backfill: recompute all project health only after AM-070/AM-071 repair.
@@ -278,6 +278,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     overdue open/waiting task is `critical`; no activity is `stale`, while
     recent non-task evidence can be `active`. No recomputation/backfill/live
     action ran.
+  - Completed 2026-08-29: terminal `completed` and `archived` project states
+    are explicitly preserved by health refresh. No migration, backfill, or live
+    recomputation ran.
 
 ## Next
 

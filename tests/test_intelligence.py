@@ -628,6 +628,21 @@ class IntelligenceTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_completed_and_archived_projects_are_not_reclassified(self) -> None:
+        for status in ("completed", "archived"):
+            self.conn.execute(
+                "UPDATE projects SET status=? WHERE project_id=?",
+                (status, self.project_id),
+            )
+            evaluate_project_health(self.conn, self.settings, date(2026, 9, 5))
+            self.assertEqual(
+                status,
+                self.conn.execute(
+                    "SELECT status FROM projects WHERE project_id=?",
+                    (self.project_id,),
+                ).fetchone()[0],
+            )
+
     def test_manual_rejection_locks_task(self) -> None:
         self.assertTrue(reject_task(self.conn, self.task_id))
         self.assertTrue(reject_task(self.conn, self.task_id))
