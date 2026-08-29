@@ -127,7 +127,7 @@ TABLE_PURPOSES = {
     "companies": "Canonical companies.",
     "projects": "Canonical projects and health state.",
     "entity_aliases": "Normalized names and aliases for entity resolution.",
-    "entity_relationships": "Observed entity relationships from AI items.",
+    "entity_relationships": "Inert compatibility table retained pending a future safe schema migration; no maintained runtime reader or writer.",
     "entity_merge_candidates": "Ambiguous identity merges awaiting review.",
     "review_queue": "Low-confidence or ambiguous decisions for review.",
     "tasks": "Canonical operational tasks and manual locks.",

@@ -1484,22 +1484,21 @@ def _merge_entities(
                     WHERE {type_column}=? AND {id_column_name}=?""",
                 (keep_entity_id, entity_type, discard_entity_id),
             )
-        for relationship_table in ("relationships", "entity_relationships"):
-            conn.execute(
-                f"""UPDATE OR IGNORE {relationship_table} SET from_id=?
-                    WHERE from_type=? AND from_id=?""",
-                (keep_entity_id, entity_type, discard_entity_id),
-            )
-            conn.execute(
-                f"""UPDATE OR IGNORE {relationship_table} SET to_id=?
-                    WHERE to_type=? AND to_id=?""",
-                (keep_entity_id, entity_type, discard_entity_id),
-            )
-            conn.execute(
-                f"""DELETE FROM {relationship_table}
-                    WHERE (from_type=? AND from_id=?) OR (to_type=? AND to_id=?)""",
-                (entity_type, discard_entity_id, entity_type, discard_entity_id),
-            )
+        conn.execute(
+            """UPDATE OR IGNORE relationships SET from_id=?
+               WHERE from_type=? AND from_id=?""",
+            (keep_entity_id, entity_type, discard_entity_id),
+        )
+        conn.execute(
+            """UPDATE OR IGNORE relationships SET to_id=?
+               WHERE to_type=? AND to_id=?""",
+            (keep_entity_id, entity_type, discard_entity_id),
+        )
+        conn.execute(
+            """DELETE FROM relationships
+               WHERE (from_type=? AND from_id=?) OR (to_type=? AND to_id=?)""",
+            (entity_type, discard_entity_id, entity_type, discard_entity_id),
+        )
         if entity_type == "person":
             from .context.contact_materializer import ContactContextMaterializer
 

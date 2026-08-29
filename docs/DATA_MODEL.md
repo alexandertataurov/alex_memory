@@ -25,7 +25,7 @@ The application maintains SQLite tables through idempotent schema creation and a
 | `companies` | Canonical companies. | `company_id, canonical_name, status, created_at, updated_at` | `—` |
 | `projects` | Canonical projects and health state. | `project_id, canonical_name, status, created_at, updated_at` | `—` |
 | `entity_aliases` | Normalized names and aliases for entity resolution. | `alias_id, entity_type, entity_id, alias, normalized_alias, source` … | `idx_entity_aliases_lookup (entity_type, normalized_alias)` |
-| `entity_relationships` | Observed entity relationships from AI items. | `relationship_id, from_type, from_id, to_type, to_id, relationship_type` … | `—` |
+| `entity_relationships` | Inert compatibility table retained pending a future safe schema migration; no maintained runtime reader or writer. | `relationship_id, from_type, from_id, to_type, to_id, relationship_type` … | `—` |
 | `entity_merge_candidates` | Ambiguous identity merges awaiting review. | `candidate_id, entity_type, normalized_alias, entity_ids_json, reason, status` … | `—` |
 | `review_queue` | Low-confidence or ambiguous decisions for review. | `review_id, review_type, subject_type, subject_id, payload_json, confidence` … | `—` |
 | `tasks` | Canonical operational tasks and manual locks. | `task_id, title, normalized_title, details, status, owner` … | `idx_tasks_status_due (status, due_date), idx_tasks_match (normalized_title, source_chat_id, related_person_id)` |

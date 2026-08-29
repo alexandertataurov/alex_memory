@@ -753,11 +753,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     quota-aware routing with a configuration warning. Screens show the effective
     registry rather than a primary/fallback provider order.
 
-- [ ] AM-090 [P2] [Relationships / Simplification] — Deprecate the legacy `entity_relationships` runtime path if no active consumer remains.
+- [x] AM-090 [P2] [Relationships / Simplification] — Deprecate the legacy `entity_relationships` runtime path if no active consumer remains.
   - Evidence from live DB: `entity_relationships` has 0 rows while the temporal `relationships` table is the active context-graph representation.
   - Code evidence: `_merge_entities()` still updates/deletes both `relationships` and `entity_relationships`, so the obsolete representation continues to expand merge complexity despite carrying no data.
   - Acceptance: audit call sites, remove duplicate runtime/documentation/merge paths, keep the old table only for compatibility until a future safe migration proves it can be dropped.
   - Verification: relationship retrieval, graph improvement, Ask, merge, and Deep Dive continue through the canonical temporal relationship model.
+  - Completed 2026-08-29: removed the obsolete merge mutation while retaining
+    the unused table as inert compatibility state pending a future safe schema
+    migration. Temporal `relationships` is the only maintained runtime path.
 
 - [ ] AM-097 [P2] [Source-neutral evidence / Transactions] — Give `EvidenceRepository` explicit caller-owned transaction semantics before adding a second ingestion source.
   - Code evidence: `EvidenceRepository.save()` calls `self.conn.commit()` internally after every item.

@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-090 relationship-path simplification
+
+The sole runtime mutation of the inert `entity_relationships` compatibility
+table is removed. Entity merge, retrieval, graph improvement, Ask, and Deep
+Dive continue through the canonical temporal relationship model.
+
 ## 2026-08-29 — AM-064 configuration simplification
 
 The legacy routing mode now resolves to quota-aware registry routing with a
