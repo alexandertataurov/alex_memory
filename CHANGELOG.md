@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-103 makes history/graph/provider diagnostics truthful: coverage requires
+  current non-stale rows, unknown failures remain router-attributed, route
+  counts are exclusive, and monitors display actual routing state. No routing
+  policy, schema, migration, replay, backfill, or live action ran.
 - AM-091 prevents prompt-only speaker labels from leaking into stored AI
   summaries, item prose, and profile/discovery evidence displays. Structured
   ownership and raw Telegram evidence remain unchanged; no migration, replay,

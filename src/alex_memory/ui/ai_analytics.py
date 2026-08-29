@@ -12,6 +12,7 @@ from ..ai.analytics import (
     fetch_ai_router_diagnostics,
 )
 from ..ai.repository import get_ai_counts, get_ai_text_counts
+from ..ai.routing import AIWorkload, ModelRegistry
 from ..config import Settings
 from .components import AppPanel as Panel
 from .components import DataTable as Table
@@ -40,10 +41,7 @@ def show_ai_request_monitor(
     }
     gemini_direct, _ = provider_counts.get("gemini", (0, 0))
     groq_completed, _ = provider_counts.get("groq", (0, 0))
-    primary_model = settings.gemini_primary_model
-    fallback_model = settings.gemini_secondary_model
-    gemma_model = settings.gemma_short_model
-    pace_seconds = 60 / max(1, settings.gemini_requests_per_minute - 1)
+    candidates = ModelRegistry(settings).candidates(AIWorkload.CONTEXT_EXTRACTION)
 
     screen_header(
         console,
@@ -77,15 +75,12 @@ def show_ai_request_monitor(
         safe_text(f"{settings.ai_routing_mode} · {settings.ai_routing_override}"),
     )
     route.add_row(
-        "Context route",
+        "Eligible routes",
         safe_text(
-            f"gemini / {primary_model} → {fallback_model} → gemma / {gemma_model} → groq / {settings.groq_model}"
-        ),
-    )
-    route.add_row(
-        "Gemini pace",
-        safe_text(
-            f"{settings.gemini_requests_per_minute:g} RPM · one request every {pace_seconds:.2f}s"
+            " → ".join(
+                f"{profile.provider} / {profile.model}" for profile in candidates
+            )
+            or "none"
         ),
     )
     route.add_row(
@@ -99,7 +94,7 @@ def show_ai_request_monitor(
         ),
     )
     route.add_row("Groq · 1h", safe_text(f"{groq_completed:,} completed"))
-    usage, _decisions = fetch_ai_router_diagnostics(conn)
+    usage, decisions = fetch_ai_router_diagnostics(conn)
     last_error_text = "—"
     if recent_requests:
         (
@@ -124,6 +119,25 @@ def show_ai_request_monitor(
             "Current job",
             safe_text(
                 f"{lane} · {chat} · {messages} msgs · {state} · {provider} / {model or 'selecting'} · try {attempts}",
+                120,
+                single_line=True,
+            ),
+        )
+    if decisions:
+        (
+            workload,
+            priority,
+            decision_provider,
+            decision_model,
+            outcome,
+            reason,
+            _error,
+            _at,
+        ) = decisions[0]
+        route.add_row(
+            "Latest decision",
+            safe_text(
+                f"{workload} / {priority} · {decision_provider or 'router'} / {decision_model or 'selecting'} · {outcome} · {reason or '—'}",
                 120,
                 single_line=True,
             ),

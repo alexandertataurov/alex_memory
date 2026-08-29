@@ -790,17 +790,26 @@ def graph_diagnostics(conn: sqlite3.Connection) -> dict[str, int | float]:
     )
     route_counts = conn.execute(
         """SELECT
-               SUM(CASE WHEN importance='noise' OR content_type='spam' THEN 1 ELSE 0 END),
-               SUM(CASE WHEN information_scope='external_news' THEN 1 ELSE 0 END),
-               SUM(CASE WHEN content_type IN ('request','promise','payment','meeting') THEN 1 ELSE 0 END),
-               SUM(CASE WHEN content_type='decision' THEN 1 ELSE 0 END),
-               COUNT(*)
-           FROM message_classifications"""
+               SUM(CASE WHEN route='archive' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN route='news' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN route='operational' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN route='state_change' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN route='contextual' THEN 1 ELSE 0 END)
+          FROM (
+              SELECT CASE
+                  WHEN importance='noise' OR content_type='spam' THEN 'archive'
+                  WHEN information_scope='external_news' THEN 'news'
+                  WHEN content_type IN ('request','promise','payment','meeting') THEN 'operational'
+                  WHEN content_type='decision' THEN 'state_change'
+                  ELSE 'contextual'
+              END AS route
+              FROM message_classifications
+          )
+        """
     ).fetchone()
-    archived, news, operational, state_change, classified = (
+    archived, news, operational, state_change, contextual = (
         int(value or 0) for value in route_counts
     )
-    contextual = max(0, classified - archived - news - operational - state_change)
     orphan_segments = int(
         conn.execute(
             """SELECT COUNT(*) FROM conversation_segments AS s
@@ -811,7 +820,6 @@ def graph_diagnostics(conn: sqlite3.Connection) -> dict[str, int | float]:
         ).fetchone()[0]
         or 0
     )
-    covered = max(0, entities - orphan_tasks)
     return {
         "entities": entities,
         "relationships": relationships,
@@ -829,5 +837,4 @@ def graph_diagnostics(conn: sqlite3.Connection) -> dict[str, int | float]:
         "route_state_change": state_change,
         "route_contextual_memory": contextual,
         "orphan_conversation_segments": orphan_segments,
-        "heuristic_coverage": round(covered / entities * 100, 1) if entities else 100.0,
     }

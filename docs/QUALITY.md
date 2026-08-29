@@ -77,6 +77,21 @@ should not introduce broad exception swallowing, placeholder behavior, copied
 derived state, undocumented compatibility layers, or unbounded AI/database
 work.
 
+## Diagnostic metric domains
+
+- History coverage counts eligible non-deleted text messages. `classified`
+  requires the current classification version and a non-stale classification;
+  `semantic`, `canonicalized`, and `context_integrated` additionally require
+  the current analysis version and a non-stale analysis record. `current_enough`
+  additionally requires clean, satisfied context dependencies.
+- Graph route counts partition classification rows in priority order: archive,
+  news, operational, state change, then contextual. They are counts, not a
+  percentage or graph-completeness claim.
+- Provider diagnostics preserve a missing provider as `router`; it is not
+  attributed to a fallback provider. Live routing state comes from the router;
+  terminal routing output combines current registry eligibility with durable
+  route-event and quota records.
+
 Ruff enforces correctness plus bugbear and the one Python-3.12 modernization
 rule that fits this codebase today. Broader rule families remain opt-in until
 their findings are reduced deliberately; a large ignored lint backlog is not a

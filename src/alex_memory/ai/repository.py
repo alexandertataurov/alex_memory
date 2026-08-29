@@ -428,11 +428,15 @@ def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, 
     ) = conn.execute(
         f"""
             SELECT COUNT(*),
-                   SUM(CASE WHEN mc.chat_id IS NOT NULL THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN a.canonicalized_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL AND a.analysis_stale=0
+                   SUM(CASE WHEN mc.classification_version=? AND mc.context_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL
+                                 AND a.analysis_version=? AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN a.canonicalized_at IS NOT NULL
+                                 AND a.analysis_version=? AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL
+                                 AND a.analysis_version=? AND a.analysis_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN b.context_integrated_at IS NOT NULL
+                                 AND a.analysis_version=? AND a.analysis_stale=0
                                  AND EXISTS (
                                      SELECT 1 FROM ai_message_context_dependencies AS d
                                      WHERE d.chat_id=m.chat_id AND d.message_id=m.message_id
@@ -447,8 +451,10 @@ def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, 
                                  )
                             THEN 1 ELSE 0 END),
                    SUM(CASE WHEN c.chat_type='user' THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN c.chat_type='user' AND mc.chat_id IS NOT NULL THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN c.chat_type='user' AND a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL AND a.analysis_stale=0 THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN c.chat_type='user' AND mc.classification_version=?
+                                 AND mc.context_stale=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN c.chat_type='user' AND a.chat_id IS NOT NULL AND a.batch_id IS NOT NULL
+                                 AND a.analysis_version=? AND a.analysis_stale=0 THEN 1 ELSE 0 END)
             FROM messages AS m
             LEFT JOIN chats AS c ON c.chat_id=m.chat_id
             LEFT JOIN message_classifications AS mc ON mc.chat_id=m.chat_id AND mc.message_id=m.message_id
@@ -457,7 +463,16 @@ def history_coverage(conn: sqlite3.Connection, settings: Settings) -> dict[str, 
             WHERE TRIM(COALESCE(m.text, '')) <> ''
               AND COALESCE(m.is_deleted, 0)=0 AND {eligible}
               AND {_semantic_policy_sql()}
-            """
+            """,
+        (
+            CLASSIFICATION_VERSION,
+            ANALYSIS_VERSION,
+            ANALYSIS_VERSION,
+            ANALYSIS_VERSION,
+            ANALYSIS_VERSION,
+            CLASSIFICATION_VERSION,
+            ANALYSIS_VERSION,
+        ),
     ).fetchone()
     return {
         "eligible": int(total or 0),

@@ -80,7 +80,7 @@ class IntelligenceWorkflowTests(unittest.TestCase):
                 )
             ],
         )
-        self.assertEqual(1, history_coverage(self.conn, self.settings)["classified"])
+        self.assertEqual(0, history_coverage(self.conn, self.settings)["classified"])
 
     def test_v2_reclassification_is_selective_and_preserves_manual_review(self):
         now = self.now

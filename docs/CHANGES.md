@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-103 diagnostics truthfulness
+
+History coverage now counts only current non-stale lifecycle records. Route
+counts form one defined partition, unknown provider failures remain
+router-attributed, and both monitors use actual routing state. The undefined
+graph percentage is removed. No routing-policy, schema, migration, replay,
+backfill, or live operation ran.
+
 ## 2026-08-29 — AM-091 generated text quality
 
 Prompt speaker labels remain an internal AI protocol but are converted to

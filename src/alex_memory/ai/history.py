@@ -267,9 +267,6 @@ class FullHistoryAnalyzer:
         last_error: str,
         elapsed: float,
     ) -> Panel:
-        primary_model = self.settings.gemini_primary_model
-        fallback_model = self.settings.gemini_secondary_model
-        pace_seconds = 60 / max(1, self.settings.gemini_requests_per_minute - 1)
         chat_title = getattr(batch, "chat_title", "unknown chat")
         message_count = len(getattr(batch, "messages", ()))
         details = Table.grid(expand=True, padding=(0, 2))
@@ -291,15 +288,22 @@ class FullHistoryAnalyzer:
             f"{active_provider or 'router'} / {active_model or 'selecting'} · {active_state}",
         )
         details.add_row("Elapsed", f"{elapsed:.1f}s")
-        details.add_row("Preferred", f"gemini / {primary_model}")
-        details.add_row(
-            "Next route",
-            f"gemini / {fallback_model} · groq / {self.settings.groq_model}",
-        )
-        details.add_row(
-            "Gemini pace",
-            f"{self.settings.gemini_requests_per_minute:g} RPM · every {pace_seconds:.2f}s",
-        )
+        if isinstance(router, AIRouter):
+            snapshot = router.route_snapshot(
+                AIWorkload.CONTEXT_EXTRACTION, RequestPriority.BACKGROUND
+            )
+            candidates = cast(tuple[str, ...], snapshot["candidates"])
+            quota = cast(tuple[str, ...], snapshot["quota"])
+            details.add_row("Eligible routes", " → ".join(candidates) or "none")
+            details.add_row(
+                "Session route", str(snapshot["session_model_key"] or "none")
+            )
+            details.add_row("Quota state", " · ".join(quota) or "none")
+            details.add_row(
+                "Last decision", str(snapshot["last_decision"] or "not selected")
+            )
+        else:
+            details.add_row("Eligible routes", "external router")
         details.add_row(
             "This run",
             f"{committed:,} committed · {router.requests:,} requests · {router.fallbacks:,} fallbacks",

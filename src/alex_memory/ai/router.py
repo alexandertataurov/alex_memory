@@ -459,6 +459,25 @@ class AIRouter:
     def _route_chain(self, workload: AIWorkload) -> str:
         return " → ".join(profile.key for profile in self._candidates(workload))
 
+    def route_snapshot(
+        self,
+        workload: AIWorkload,
+        priority: RequestPriority,
+    ) -> dict[str, object]:
+        """Return the actual eligible routes and local quota state for a monitor."""
+        candidates = self._candidates(workload)
+        return {
+            "candidates": tuple(
+                f"{profile.provider} / {profile.model}" for profile in candidates
+            ),
+            "session_model_key": self.session_model_key,
+            "last_decision": self.last_decision,
+            "quota": tuple(
+                f"{profile.key}: {self.quota.pressure(profile, priority).value}"
+                for profile in candidates
+            ),
+        }
+
     def _remaining_route_chain(self, workload: AIWorkload, index: int) -> str:
         candidates = self._candidates(workload)
         return " → ".join(profile.key for profile in candidates[index + 1 :])

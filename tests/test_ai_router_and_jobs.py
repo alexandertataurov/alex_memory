@@ -475,6 +475,20 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
 
+            snapshot = session.route_snapshot(
+                AIWorkload.CONTEXT_EXTRACTION, RequestPriority.BACKGROUND
+            )
+            self.assertEqual("groq", snapshot["session_model_key"])
+            self.assertEqual(
+                (
+                    "groq / groq-test",
+                    "gemini / gemini-3.5-flash-lite",
+                    "gemini / gemini-3.1-flash-lite",
+                ),
+                snapshot["candidates"],
+            )
+            self.assertTrue(snapshot["quota"])
+
     async def test_quota_aware_skips_gemma_when_prompt_exceeds_guard(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = settings_for(

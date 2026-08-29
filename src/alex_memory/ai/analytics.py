@@ -104,7 +104,7 @@ def fetch_last_batch_diagnostics(
         """
         SELECT
             b.batch_id, b.lane, COALESCE(c.title, CAST(b.chat_id AS TEXT)),
-            b.message_count, COALESCE(b.provider, 'groq'), b.model,
+            b.message_count, COALESCE(b.provider, 'router'), b.model,
             b.fallback_used, b.summary, b.returned_item_count,
             b.saved_item_count, b.rejected_item_count, b.error,
             COALESCE(j.status, CASE WHEN b.error IS NULL THEN 'done' ELSE 'failed' END),

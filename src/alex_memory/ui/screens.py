@@ -45,13 +45,10 @@ def show_context_graph(
         "route_operational": "Operational route",
         "route_state_change": "State-change route",
         "route_contextual_memory": "Contextual-memory route",
-        "heuristic_coverage": "Graph coverage (heuristic)",
     }
     for key, label in labels.items():
         value = diagnostics.get(key, 0)
-        table.add_row(
-            label, f"{value:.1f}%" if key == "heuristic_coverage" else f"{value:,}"
-        )
+        table.add_row(label, f"{value:,}")
     if relationships_added is not None:
         table.add_row("Links added this pass", f"{relationships_added:,}")
     console.print(table)

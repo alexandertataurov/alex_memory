@@ -10,11 +10,12 @@ from alex_memory.ai.batching import (
     format_ai_message,
     redact_sensitive_text,
 )
-from alex_memory.ai.analytics import fetch_findings
+from alex_memory.ai.analytics import fetch_findings, fetch_last_batch_diagnostics
 from alex_memory.ai.extraction_contract import ANALYSIS_VERSION
 from alex_memory.ai.repository import (
     fetch_unanalyzed_messages,
     get_ai_counts,
+    save_ai_failure,
     save_ai_success,
 )
 from alex_memory.config import Settings
@@ -157,6 +158,23 @@ class AIPipelineTests(unittest.TestCase):
 
             self.assertEqual(fetch_findings(conn), [])
             self.assertEqual(get_ai_counts(conn, settings)[1], 0)
+
+    def test_router_failure_is_not_attributed_to_groq(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            self.addCleanup(conn.close)
+            conn.execute(
+                "INSERT INTO chats (chat_id, title, chat_type) VALUES (100, 'Telegram', 'user')"
+            )
+            save_ai_failure(
+                conn,
+                AIBatch(100, "Telegram", [message()], "prompt"),
+                RuntimeError("router unavailable"),
+                settings,
+            )
+
+            self.assertEqual("router", fetch_last_batch_diagnostics(conn)[0][4])
 
     def test_bad_model_item_is_rejected_without_losing_valid_item(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -433,7 +433,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     migration, repair, backfill, or source-data action ran.
 
 
-- [ ] AM-103 [P1] [Analytics / Diagnostics truthfulness] — Stop diagnostics from presenting guessed, stale, or dimensionally invalid metrics as system health.
+- [x] AM-103 [P1] [Analytics / Diagnostics truthfulness] — Stop diagnostics from presenting guessed, stale, or dimensionally invalid metrics as system health.
   - Existing evidence: AI failure rows can be stored with `provider=NULL` / Groq model fallback and analytics `COALESCE(provider,'groq')`, falsely attributing unknown/router failures to Groq.
   - Existing evidence: history coverage counts classification rows without requiring current classification version/non-stale state; raw `ai_items` are presented as open actions instead of canonical tasks.
   - Context diagnostics evidence: `graph_diagnostics().heuristic_coverage` computes `(entity_count - orphan_task_count) / entity_count`, subtracting **tasks from entities**. The percentage has no coherent denominator and can claim graph “coverage” without measuring graph coverage.
@@ -447,6 +447,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     - routing monitor renders actual candidate chain/decision/quota state;
     - remove any metric that cannot be defined coherently rather than inventing a percentage.
   - Verification: stale/versioned rows, provider/router failures, canonical-vs-observation counts, graph coverage fixture, overlapping routing categories, Gemma/session-pinned route, and zero-data state.
+  - Completed 2026-08-29: coverage requires current non-stale lifecycle rows;
+    unknown provider failures remain router-attributed; route counts form one
+    partition; undefined graph coverage was removed; and monitors render
+    actual eligible routes and durable decisions. No routing-policy, schema,
+    migration, replay, backfill, or live action ran.
 
 
 

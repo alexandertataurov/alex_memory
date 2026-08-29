@@ -160,11 +160,11 @@ class ScreenStateTests(unittest.TestCase):
         show_ai_request_monitor(self.conn, self.settings, console)
         rendered = output.getvalue()
         self.assertIn("AI request monitor", rendered)
-        self.assertIn("14.5 RPM", rendered)
+        self.assertIn("Eligible routes", rendered)
         self.assertIn("gemini-test", rendered)
         self.assertIn("RESOURCE_EXHAUSTED", rendered)
         self.assertIn("Gemini · 1h", rendered)
-        self.assertIn("gemma-4-31b-it", rendered)
+        self.assertNotIn("gemma-4-31b-it", rendered)
         self.assertIn("Quota snapshot", rendered)
         self.assertNotIn("Today's model quotas", rendered)
 
