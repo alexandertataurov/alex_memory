@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-29 — AM-120 reader-parity diagnostic
+
+The ContextBuilder cutover diagnostic now scores and caps compatibility
+relationships exactly as the current reader does, instead of comparing an
+unrelated first page of rows. A clipped seed/depth request is explicit and
+cannot be treated as a green cutover result. The diagnostic remains read-only;
+relationship authority and reader behavior are unchanged.
+
 ## 2026-08-29 — AM-074 segment repair unit
 
 Fixture-only segment rebuilding now has the same receipt-gated, fingerprinted

@@ -16,6 +16,10 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-120 makes the ContextBuilder graph-parity diagnostic evaluate the same
+  ranked, bounded relationship set as the reader and mark clipped seed/depth
+  scope inconclusive. It remains read-only; relationship authority and reader
+  behavior are unchanged.
 - AM-074 extends fixture-only derived-state repair with a receipt-gated,
   fingerprinted conversation-segment unit. It rebuilds only task-anchored
   segments from selected canonical task inputs, rolls back partial work, and

@@ -7,6 +7,7 @@ import sqlite3
 from typing import cast
 
 from ..utils import utc_now
+from .ranking import highest, rank_item
 
 
 _CLAIM_NODE_TYPES = {
@@ -391,14 +392,16 @@ def context_builder_relationship_parity_gaps(
     gaps rather than returning relationship content or changing either layer.
     """
     bounded_limit = min(max(limit, 0), 80)
-    bounded_depth = min(max(max_depth, 0), 4)
-    frontier = list(dict.fromkeys(seeds))[:20]
+    requested_depth = max(max_depth, 0)
+    bounded_depth = min(requested_depth, 4)
+    unique_seeds = list(dict.fromkeys(seeds))
+    frontier = unique_seeds[:20]
     seen_entities = set(frontier)
-    legacy_edges: set[tuple[str, int, str, int, str]] = set()
-    truncated = False
+    collected: list[dict[str, object]] = []
+    collected_ids: set[int] = set()
+    truncated = len(unique_seeds) > len(frontier) or requested_depth > bounded_depth
     for depth in range(bounded_depth + 1):
-        if not frontier or len(legacy_edges) >= bounded_limit:
-            truncated = bool(frontier)
+        if not frontier:
             break
         predicates = " OR ".join(
             "(from_type=? AND from_id=?) OR (to_type=? AND to_id=?)" for _ in frontier
@@ -407,33 +410,72 @@ def context_builder_relationship_parity_gaps(
         for entity_type, entity_id in frontier:
             parameters.extend((entity_type, entity_id, entity_type, entity_id))
         rows = conn.execute(
-            f"""SELECT from_type,from_id,to_type,to_id,relationship_type
+            f"""SELECT relationship_id,from_type,from_id,to_type,to_id,relationship_type,
+                       valid_from,is_current,confidence,updated_at
                 FROM relationships WHERE ({predicates}) AND valid_from<=?
                   AND (valid_to IS NULL OR valid_to>?)
-                ORDER BY relationship_id LIMIT ?""",
-            [*parameters, as_of, as_of, bounded_limit - len(legacy_edges)],
+                LIMIT 160""",
+            [*parameters, as_of, as_of],
         ).fetchall()
         next_frontier: list[tuple[str, int]] = []
-        for from_type, from_id, to_type, to_id, relationship_type in rows:
-            edge = (
-                str(from_type),
-                int(from_id),
-                str(to_type),
-                int(to_id),
-                str(relationship_type),
+        for row in rows:
+            relationship_id = int(row[0])
+            from_type, from_id, to_type, to_id, relationship_type = row[1:6]
+            relationship = rank_item(
+                {
+                    "relationship_id": relationship_id,
+                    "from_type": str(from_type),
+                    "from_id": int(from_id),
+                    "to_type": str(to_type),
+                    "to_id": int(to_id),
+                    "relationship_type": str(relationship_type),
+                    "valid_from": str(row[6]),
+                    "is_current": bool(row[7]),
+                    "confidence": float(row[8]),
+                    "updated_at": str(row[9]),
+                },
+                "relationship",
+                graph_distance=depth,
+                now=as_of,
             )
-            legacy_edges.add(edge)
+            if relationship_id not in collected_ids:
+                collected_ids.add(relationship_id)
+                collected.append(relationship)
             if depth >= bounded_depth:
                 continue
-            for entity in ((edge[0], edge[1]), (edge[2], edge[3])):
-                if entity not in seen_entities and len(seen_entities) < 40:
-                    seen_entities.add(entity)
-                    next_frontier.append(entity)
+            for entity in (
+                (str(from_type), int(from_id)),
+                (str(to_type), int(to_id)),
+            ):
+                if entity[0] not in {"person", "company", "project"}:
+                    continue
+                if entity in seen_entities:
+                    continue
+                if len(seen_entities) >= 40:
+                    truncated = True
+                    continue
+                seen_entities.add(entity)
+                next_frontier.append(entity)
         frontier = next_frontier
 
-    graph_edges = current_authoritative_edges(
-        conn, list(seen_entities), as_of, limit=bounded_limit
+    legacy_edges = {
+        (
+            cast(str, edge["from_type"]),
+            cast(int, edge["from_id"]),
+            cast(str, edge["to_type"]),
+            cast(int, edge["to_id"]),
+            cast(str, edge["relationship_type"]),
+        )
+        for edge in highest(collected, bounded_limit)
+    }
+    graph_seeds = sorted(
+        {
+            endpoint
+            for from_type, from_id, to_type, to_id, _relationship_type in legacy_edges
+            for endpoint in ((from_type, from_id), (to_type, to_id))
+        }
     )
+    graph_edges = current_authoritative_edges(conn, graph_seeds, as_of, limit=160)
     accepted = {
         (
             str(edge["from_type"]),

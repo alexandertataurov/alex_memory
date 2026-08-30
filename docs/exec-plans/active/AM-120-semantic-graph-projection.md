@@ -159,3 +159,9 @@ a live reader change.
   prove manual parity, observed-graph exclusion, and temporal expiry without
   changing a runtime reader. A reader moves only after its own accepted/manual
   fixture coverage reports no gaps.
+- 2026-08-29: tightened the diagnostic to rank the same capped relationship
+  set that ContextBuilder returns rather than inspecting an unrelated first
+  page of rows. Seed/depth clipping is now explicit and therefore
+  inconclusive, never a green cutover signal. A temporary-SQLite fixture proves
+  a newest compatibility-only edge is reported even when older manual graph
+  edges fill the reader cap. The reader and authority rules are unchanged.

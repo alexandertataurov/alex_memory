@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from alex_memory.ai.repository import save_ai_success
+from alex_memory.context import ContextBuilder, ContextRequest
 from alex_memory.context.graph import (
     SemanticGraphProjector,
     context_builder_relationship_parity_gaps,
@@ -650,6 +652,91 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             ],
         )
         self.assertEqual((), edges[0]["claim_ids"])
+
+    def test_parity_diagnostic_matches_context_builder_top_relationships(self) -> None:
+        """A parity green result must cover the reader's ranked, not first, rows."""
+        resolver = EntityResolver(self.conn)
+        project_id = resolver.entity("project", "Amber", source="manual")
+        assert project_id is not None
+        projector = SemanticGraphProjector(self.conn)
+        as_of = "2026-08-25T00:00:00+00:00"
+        newest_company_id = None
+        for index in range(81):
+            company_id = resolver.entity("company", f"Company {index}", source="manual")
+            assert company_id is not None
+            ensure_relationship(
+                self.conn,
+                "project",
+                project_id,
+                "company",
+                company_id,
+                "uses_bank",
+                1.0,
+                100,
+                index + 1,
+                "2026-08-24T10:00:00+00:00",
+            )
+            if index < 80:
+                projector.project_manual_relationship(
+                    from_type="project",
+                    from_id=project_id,
+                    to_type="company",
+                    to_id=company_id,
+                    relationship_type="uses_bank",
+                    valid_from="2026-08-24T10:00:00+00:00",
+                )
+            else:
+                newest_company_id = company_id
+        assert newest_company_id is not None
+        self.conn.execute(
+            """UPDATE relationships SET updated_at='2026-08-24T09:00:00+00:00'
+               WHERE from_type='project' AND from_id=? AND to_type='company'
+                 AND relationship_type='uses_bank'""",
+            (project_id,),
+        )
+        self.conn.execute(
+            """UPDATE relationships SET updated_at='2026-08-24T23:59:00+00:00'
+               WHERE from_type='project' AND from_id=? AND to_type='company'
+                 AND to_id=? AND relationship_type='uses_bank'""",
+            (project_id, newest_company_id),
+        )
+
+        context = ContextBuilder(self.conn, self.settings).build(
+            ContextRequest(
+                project_ids=[project_id],
+                as_of=datetime.fromisoformat(as_of),
+            )
+        )
+        self.assertEqual(80, len(context.relationships))
+        self.assertIn(
+            newest_company_id,
+            {relation["to_id"] for relation in context.relationships},
+        )
+        self.assertEqual(
+            [
+                {
+                    "accepted_graph_authority": "missing",
+                    "count": 1,
+                    "from_type": "project",
+                    "legacy_authority": "compatibility",
+                    "relationship_type": "uses_bank",
+                    "to_type": "company",
+                }
+            ],
+            context_builder_relationship_parity_gaps(
+                self.conn, [("project", project_id)], as_of
+            )["gaps"],
+        )
+
+    def test_parity_diagnostic_marks_clipped_depth_inconclusive(self) -> None:
+        report = context_builder_relationship_parity_gaps(
+            self.conn,
+            [("person", 1)],
+            "2026-08-25T00:00:00+00:00",
+            max_depth=5,
+        )
+
+        self.assertTrue(report["truncated"])
 
 
 if __name__ == "__main__":

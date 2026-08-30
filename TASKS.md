@@ -38,7 +38,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     and fixture-tested. Explicit manual relationship authority now has parity
     for person/company/project edges; inferred compatibility rows remain
     intentionally excluded until independently reviewed. The bounded
-    ContextBuilder parity-gap diagnostic is the first-reader readiness gate.
+    ContextBuilder parity-gap diagnostic now mirrors its ranked 80-row reader
+    result and makes clipped diagnostic scope explicit; it remains the
+    first-reader readiness gate.
     No reader cutover, relationship conversion, replay, graph repair,
     migration, or live action is authorized.
 
