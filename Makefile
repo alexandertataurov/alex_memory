@@ -1,8 +1,9 @@
 PYTHON := .venv/bin/python
 UV ?= .venv/bin/uv
 LIMIT ?= 500
+GRAPH_DEPTH ?= 2
 
-.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run docs docs-check changes tasks review codex-hooks-check codex-check
+.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity docs docs-check changes tasks review codex-hooks-check codex-check
 
 help:
 	@printf '%s\n' 'Alex Memory development commands:' \
@@ -24,6 +25,7 @@ help:
 	  '  make db-check        Check SQLite integrity.' \
 	  '  make db-backup       Create a SQLite API backup.' \
 	  '  make repair-dry-run  Report an explicit bounded repair scope.' \
+	  '  make graph-parity    Report bounded ContextBuilder graph readiness.' \
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
@@ -92,6 +94,10 @@ db-backup:
 repair-dry-run:
 	@test -n "$(OPERATION)" || { echo "Set OPERATION to fts, task-project, segments, context, or project-health."; exit 2; }
 	$(PYTHON) scripts/dev_tools.py repair-dry-run --operation "$(OPERATION)" --limit $(LIMIT)
+
+graph-parity:
+	@test -n "$(SEEDS)" || { echo "Set SEEDS to one or more person|company|project:positive-id values."; exit 2; }
+	$(PYTHON) scripts/dev_tools.py graph-parity $(foreach seed,$(SEEDS),--seed "$(seed)") --max-depth $(GRAPH_DEPTH) $(if $(AS_OF),--as-of "$(AS_OF)")
 
 docs:
 	$(PYTHON) scripts/dev_tools.py docs

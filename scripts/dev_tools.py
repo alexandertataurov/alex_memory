@@ -491,6 +491,47 @@ def repair_dry_run(operations: list[str], limit: int) -> int:
     return 0
 
 
+def graph_parity(seeds: list[str], as_of: str | None, max_depth: int) -> int:
+    """Report whether one bounded ContextBuilder relationship scope is graph-ready."""
+    parsed_seeds: list[tuple[str, int]] = []
+    for seed in seeds:
+        match = re.fullmatch(r"(person|company|project):([1-9][0-9]*)", seed)
+        if match is None:
+            print("Graph parity seeds must use person|company|project:positive-id.")
+            return 1
+        parsed_seeds.append((match.group(1), int(match.group(2))))
+    if not parsed_seeds:
+        print("Graph parity requires at least one --seed.")
+        return 1
+    if max_depth < 0:
+        print("Graph parity max depth must be non-negative.")
+        return 1
+    selected_as_of = as_of or datetime.now(UTC).isoformat()
+    try:
+        datetime.fromisoformat(selected_as_of.replace("Z", "+00:00"))
+    except ValueError:
+        print("Graph parity --as-of must be an ISO-8601 timestamp.")
+        return 1
+
+    sys.path.insert(0, str(SRC))
+    from alex_memory.context.graph import context_builder_relationship_parity_gaps
+
+    try:
+        with readonly_connection() as conn:
+            report = context_builder_relationship_parity_gaps(
+                conn,
+                parsed_seeds,
+                selected_as_of,
+                max_depth=max_depth,
+            )
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print(f"Graph parity failed: {error}")
+        return 1
+    report["ready"] = not bool(report["truncated"] or report["gaps"])
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
 def env_names(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -801,6 +842,7 @@ def main() -> int:
             "db-check",
             "db-backup",
             "repair-dry-run",
+            "graph-parity",
             "health",
             "changes",
             "tasks",
@@ -817,6 +859,21 @@ def main() -> int:
         choices=("fts", "task-project", "segments", "context", "project-health"),
         help="One repair operation to include; required for repair-dry-run.",
     )
+    parser.add_argument(
+        "--seed",
+        action="append",
+        help="ContextBuilder seed in person|company|project:positive-id form.",
+    )
+    parser.add_argument(
+        "--as-of",
+        help="ISO-8601 reader timestamp; defaults to the current UTC instant.",
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Relationship traversal depth for graph-parity (default: 2).",
+    )
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
     commands = {
@@ -825,6 +882,9 @@ def main() -> int:
         "db-check": db_check,
         "db-backup": db_backup,
         "repair-dry-run": lambda: repair_dry_run(args.operation or [], args.limit),
+        "graph-parity": lambda: graph_parity(
+            args.seed or [], args.as_of, args.max_depth
+        ),
         "health": health,
         "changes": changes,
         "tasks": task_summary,

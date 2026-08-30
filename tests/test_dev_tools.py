@@ -3,9 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 import importlib.util
+import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from test_ai_pipeline import make_settings
+from alex_memory.context.repository import ensure_relationship
 from alex_memory.database import connect
 
 
@@ -55,3 +60,54 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             ],
             dev_tools.logical_reference_violations(self.conn),
         )
+
+    def test_graph_parity_is_read_only_and_reports_compatibility_gap(self) -> None:
+        person_id = self.conn.execute(
+            "INSERT INTO people(canonical_name,created_at,updated_at) VALUES ('Ari','now','now')"
+        ).lastrowid
+        project_id = self.conn.execute(
+            "INSERT INTO projects(canonical_name,created_at,updated_at) VALUES ('Amber','now','now')"
+        ).lastrowid
+        assert person_id is not None
+        assert project_id is not None
+        ensure_relationship(
+            self.conn,
+            "person",
+            int(person_id),
+            "project",
+            int(project_id),
+            "involved_in",
+            0.9,
+            valid_from="2026-08-24T10:00:00+00:00",
+        )
+        self.conn.commit()
+        changes_before = self.conn.total_changes
+        output = StringIO()
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(
+                0,
+                dev_tools.graph_parity(
+                    [f"person:{person_id}"], "2026-08-25T00:00:00+00:00", 2
+                ),
+            )
+
+        report = json.loads(output.getvalue())
+        self.assertFalse(report["ready"])
+        self.assertFalse(report["truncated"])
+        self.assertEqual(1, report["gaps"][0]["count"])
+        self.assertEqual(changes_before, self.conn.total_changes)
+
+    def test_graph_parity_rejects_malformed_seed_before_opening_database(self) -> None:
+        output = StringIO()
+
+        with redirect_stdout(output):
+            self.assertEqual(
+                1,
+                dev_tools.graph_parity(["task:1"], "2026-08-25T00:00:00+00:00", 2),
+            )
+
+        self.assertIn("person|company|project", output.getvalue())

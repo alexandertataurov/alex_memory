@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-08-30 — AM-120 owner parity command
+
+`make graph-parity SEEDS="person:123"` runs the bounded ContextBuilder
+readiness diagnostic through a read-only SQLite connection. It reports only
+grouped relationship gaps, clipping, and a `ready` flag, allowing the owner to
+establish the remaining real-reader gate without mutating or exposing the
+relationship corpus.
+
 ## 2026-08-29 — AM-120 reader-parity diagnostic
 
 The ContextBuilder cutover diagnostic now scores and caps compatibility

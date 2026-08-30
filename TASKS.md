@@ -40,7 +40,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     intentionally excluded until independently reviewed. The bounded
     ContextBuilder parity-gap diagnostic now mirrors its ranked 80-row reader
     result and makes clipped diagnostic scope explicit; it remains the
-    first-reader readiness gate.
+    first-reader readiness gate. Owner-run `make graph-parity` now reports a
+    bounded, non-disclosing real-reader readiness result without writing state.
     No reader cutover, relationship conversion, replay, graph repair,
     migration, or live action is authorized.
 

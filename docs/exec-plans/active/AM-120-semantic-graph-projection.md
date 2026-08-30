@@ -165,3 +165,9 @@ a live reader change.
   inconclusive, never a green cutover signal. A temporary-SQLite fixture proves
   a newest compatibility-only edge is reported even when older manual graph
   edges fill the reader cap. The reader and authority rules are unchanged.
+- 2026-08-30: exposed the existing diagnostic through `make graph-parity`
+  (`SEEDS="person:123 project:456"`, optional `AS_OF`, and `GRAPH_DEPTH`). It
+  opens SQLite read-only and returns only grouped relationship gaps plus an
+  explicit `ready` flag; it does not print relationship content or mutate
+  state. This enables owner-run real-reader proof without authorizing a
+  reader cutover.

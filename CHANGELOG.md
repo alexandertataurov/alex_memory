@@ -16,6 +16,9 @@ All notable user- and developer-visible changes are recorded here. This project 
 
 ### Changed
 
+- AM-120 adds `make graph-parity` for owner-run, bounded ContextBuilder graph
+  readiness checks. It opens SQLite read-only and emits only grouped gaps,
+  truncation, and readiness; it cannot alter relationship state.
 - AM-120 makes the ContextBuilder graph-parity diagnostic evaluate the same
   ranked, bounded relationship set as the reader and mark clipped seed/depth
   scope inconclusive. It remains read-only; relationship authority and reader
