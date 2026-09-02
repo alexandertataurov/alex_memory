@@ -22,6 +22,9 @@ grounded in reviewed local files, Git history, and verification output.
   metadata-only Notion task export for explicit Done/Completed state, required
   completion evidence/metadata, and repository-ID disagreement—without
   interpreting Outcome prose or reading page bodies.
+- Completed task records are now filed under Completed-only archive sections,
+  and AM-074/AM-106 ExecPlans have moved out of the active plan directory.
+  The task and plan indexes no longer present completed work as runnable.
 - Historical request timestamps now normalize timezone-aware `as_of` values to
   canonical UTC before SQLite lexical comparisons. ContextBuilder and
   conversation reads reject naïve values; the read-only `graph-parity` command

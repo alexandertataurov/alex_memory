@@ -13,15 +13,15 @@ discoveries, and final outcome. Do not create a plan for a small self-contained
 fix.
 
 ## Active
-- [AM-078 database integrity](exec-plans/completed/AM-078-database-integrity.md)
-- [AM-074 repair](exec-plans/active/AM-074.md)
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
 - [AM-120 semantic graph projection](exec-plans/active/AM-120-semantic-graph-projection.md)
 
 ## Completed
 
-- [AM-078 database integrity](exec-plans/active/AM-078-database-integrity.md)
+- [AM-078 database integrity](exec-plans/completed/AM-078-database-integrity.md)
+- [AM-074 repair](exec-plans/completed/AM-074.md)
+- [AM-106 physical provider request ownership](exec-plans/completed/AM-106-provider-request-accounting.md)
 - [AM-059 data-model truthfulness](exec-plans/completed/AM-059-data-model-truthfulness.md)
 - [AM-058 routing fallbacks](exec-plans/completed/AM-058-routing-fallbacks.md)
 - [AM-103 diagnostics truthfulness](exec-plans/completed/AM-103-diagnostics-truthfulness.md)

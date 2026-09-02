@@ -27,7 +27,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 - Core retrieval must be Unicode/multilingual by default. Current deal names and ad-hoc business thesauri do not belong as hard-coded generic engine behavior.
 - Investigation-session wall-clock time and evidence `as_of` time are separate dimensions and must never substitute for each other.
 
-## Now
+## Completed
 
 - [x] Notion maintenance 2026-08-30 [P1] [Documentation / Control plane] —
   Reconciled current repository documentation with Git provenance and terminal
@@ -50,6 +50,32 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     no row and carry alternatives, and proves an older candidate outside the
     former 80-row window is still detected. No schema or source-data action
     ran.
+
+- [x] Timestamp canonicalization [P0] [Historical context / `as_of`] —
+  Canonicalize aware external `as_of` instants to UTC before SQLite temporal
+  comparisons and reject naïve timestamps.
+  - Source: Notion task “Canonicalize all as-of timestamps before SQLite
+    temporal comparisons” (created 2026-08-30).
+  - Completed 2026-09-02: ContextBuilder, conversation timeline/period reads,
+    and the read-only `graph-parity` command now serialize UTC instants only.
+    Equivalent UTC and offset inputs have matching temporary-SQLite results;
+    naïve values fail before a query runs. No schema, source-data, replay,
+    repair, or live operation ran.
+
+- [x] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for bounded cross-chat person-to-project candidates that deterministic repair cannot prove.
+  - Plan: `docs/exec-plans/completed/AM-056-graph-discovery.md`.
+  - Acceptance: source-backed candidates require a resolved person across two
+    chats, a project name in the candidate's exact message, and independent
+    time-local project evidence. Canonical state changes only through manual
+    Review acceptance.
+  - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
+  - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
+  - Completed 2026-08-30: V1 scope is explicitly person-to-project Review
+    candidates. The selector now requires the candidate's exact source message
+    to name a sufficiently distinctive canonical project alias, so unrelated
+    same-person activity plus time proximity cannot create Review work.
+
+## Now
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact
@@ -83,30 +109,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Temporal authority 2026-08-30: those task-derived edges close when a
     manual task-project decision wins, so old person/company project context
     cannot remain current after the underlying canonical decision changes.
-
-- [x] Timestamp canonicalization [P0] [Historical context / `as_of`] —
-  Canonicalize aware external `as_of` instants to UTC before SQLite temporal
-  comparisons and reject naïve timestamps.
-  - Source: Notion task “Canonicalize all as-of timestamps before SQLite
-    temporal comparisons” (created 2026-08-30).
-  - Completed 2026-09-02: ContextBuilder, conversation timeline/period reads,
-    and the read-only `graph-parity` command now serialize UTC instants only.
-    Equivalent UTC and offset inputs have matching temporary-SQLite results;
-    naïve values fail before a query runs. No schema, source-data, replay,
-    repair, or live operation ran.
-
-- [x] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for bounded cross-chat person-to-project candidates that deterministic repair cannot prove.
-  - Plan: `docs/exec-plans/completed/AM-056-graph-discovery.md`.
-  - Acceptance: source-backed candidates require a resolved person across two
-    chats, a project name in the candidate's exact message, and independent
-    time-local project evidence. Canonical state changes only through manual
-    Review acceptance.
-  - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
-  - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
-  - Completed 2026-08-30: V1 scope is explicitly person-to-project Review
-    candidates. The selector now requires the candidate's exact source message
-    to name a sufficiently distinctive canonical project alias, so unrelated
-    same-person activity plus time proximity cannot create Review work.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
@@ -298,6 +300,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
 
+## Completed
+
 - [x] AM-067 [P0] [Context ownership / Anti-slop] — Give each materialized context table exactly one writer and remove competing person-state projections.
   - Historical evidence: the original review found competing `ContextService`
     and `ContactContextMaterializer` writes to `person_context_state`.
@@ -351,6 +355,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     AM-120 real-reader parity gate; existing compatibility readers cannot be
     cut over while accepted/manual graph parity is incomplete.
 
+## Completed
+
 - [x] AM-072 [P0] [Projects] — Repair project health/state after task-project linking and stop marking every extracted project `critical`.
   - Evidence from live DB: all **100/100 projects** currently have status `critical`. With zero task→project links, project-health scoring has no reliable operational activity signal.
   - Acceptance: project state derives from real recent activity, linked open/waiting/overdue tasks, temporal events, conversation segments, and explicit project state—not absence of task links. Support `active`, `waiting`, `stale`, `critical`, `completed`, and `archived` where current domain rules allow.
@@ -366,7 +372,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     are explicitly preserved by health refresh. No migration, backfill, or live
     recomputation ran.
 
-## Now
+## Completed
 
 - [x] AM-074 [P1] [Data repair] — Add a safe, resumable derived-state repair/backfill command for the existing live database after logic fixes.
   - Plan: `docs/exec-plans/active/AM-074.md`.
@@ -808,7 +814,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     and migration/config/runtime contract checks are green. No product, schema,
     replay, backfill, or live action ran.
 
-## Backlog
+## Completed
 
 - [x] AM-078 [P1] [Database integrity] — Enforce and audit logical referential integrity instead of merely declaring relationships in schema prose.
   - Evidence from live DB: 91 application tables exist but only two declared SQLite foreign keys; sampled logical-reference checks found no current orphans.
@@ -898,7 +904,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Completed 2026-08-29: optional systemd user-unit guidance uses placeholder
     checkout paths and a 30-second restart delay. No host service was enabled.
 
-## Tech Debt
+## Completed
 
 - [x] AM-068 [P2] [Architecture] — Re-run `make review` after AM-053–AM-058 and extract only genuinely cohesive responsibilities from remaining >500-line core modules; avoid architecture-only rewrites.
   - Completed 2026-08-29: reviewed the remaining large modules and their callers;

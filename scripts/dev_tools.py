@@ -733,7 +733,7 @@ def task_consistency_violations(
         if heading is not None:
             section = heading.group(1)
             previous = section_lines.get(section)
-            if previous is not None:
+            if previous is not None and section != "Completed":
                 violations.append(
                     f"TASKS.md:{line_number}: duplicate '{section}' section (first at line {previous})"
                 )

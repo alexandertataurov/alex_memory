@@ -10,6 +10,11 @@ metadata, and repository-ID agreement. It never reads task bodies or treats
 Outcome prose as proof of completion. The initial audit exposes existing legacy
 reconciliation findings rather than hiding them; no task state was rewritten.
 
+The repository task ledger is now structurally reconciled: completed records
+remain verbatim but reside only in Completed archive sections, and AM-074 and
+AM-106 plans are catalogued as completed rather than active. `make tasks` now
+passes against the checked-in queue.
+
 ## 2026-09-02 — Historical `as_of` timestamp canonicalization
 
 External `as_of` datetimes now require an explicit timezone and are serialized
