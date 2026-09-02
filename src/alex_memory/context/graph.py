@@ -900,7 +900,7 @@ def context_builder_relationship_parity_gaps(
         groups[key] = groups.get(key, 0) + 1
         reason_key = (
             *key,
-            _task_context_gap_reason(
+            _context_gap_reason(
                 conn,
                 from_type=from_type,
                 from_id=from_id,
@@ -939,6 +939,44 @@ def context_builder_relationship_parity_gaps(
             )
         ],
     }
+
+
+def _context_gap_reason(
+    conn: sqlite3.Connection,
+    *,
+    from_type: str,
+    from_id: int,
+    to_type: str,
+    to_id: int,
+    relationship_type: str,
+    as_of: str,
+) -> str:
+    """Classify a missing task/event reducer without exposing provenance."""
+    task_reason = _task_context_gap_reason(
+        conn,
+        from_type=from_type,
+        from_id=from_id,
+        to_type=to_type,
+        to_id=to_id,
+        relationship_type=relationship_type,
+        as_of=as_of,
+    )
+    if task_reason != "no_matching_current_task":
+        return task_reason
+    event_reason = _event_context_gap_reason(
+        conn,
+        from_type=from_type,
+        from_id=from_id,
+        to_type=to_type,
+        to_id=to_id,
+        relationship_type=relationship_type,
+        as_of=as_of,
+    )
+    return (
+        "no_matching_current_task_or_event"
+        if event_reason == "no_matching_current_event"
+        else event_reason
+    )
 
 
 def _task_context_gap_reason(
@@ -992,7 +1030,7 @@ def _task_context_gap_reason(
         (from_id, to_id),
     ).fetchall()
     if not rows:
-        return "no_matching_current_task_or_event"
+        return "no_matching_current_task"
     for row in rows:
         (
             _task_id,
@@ -1025,3 +1063,90 @@ def _task_context_gap_reason(
             continue
         return "eligible_task_context_not_returned"
     return "missing_exact_task_claim_lineage"
+
+
+def _event_context_gap_reason(
+    conn: sqlite3.Connection,
+    *,
+    from_type: str,
+    from_id: int,
+    to_type: str,
+    to_id: int,
+    relationship_type: str,
+    as_of: str,
+) -> str:
+    """Classify the exact canonical-event reducer boundary for one gap."""
+    allowed_relationships = {
+        ("person", "involved_in"),
+        ("company", "involved_in"),
+        ("company", "associated_with"),
+    }
+    if (
+        to_type != "project"
+        or (from_type, relationship_type) not in allowed_relationships
+    ):
+        return "not_allowlisted_event_context"
+    event_column = "person_id" if from_type == "person" else "company_id"
+    rows = conn.execute(
+        f"""SELECT event.event_id,event.source_type,event.source_ai_item_id,
+                   event.source_claim_id,event.person_id,event.company_id,event.project_id,
+                   event.occurred_at,item.item_id,item.source_claim_id,item.person_id,
+                   item.company_id,item.project_id,
+                   EXISTS (
+                       SELECT 1 FROM semantic_claim_evidence AS evidence
+                        WHERE evidence.claim_id=event.source_claim_id
+                   ),
+                   EXISTS (
+                       SELECT 1 FROM tasks AS task
+                        WHERE task.source_item_id=event.source_ai_item_id
+                          AND task.source_claim_id=event.source_claim_id
+                   )
+              FROM context_events AS event
+              LEFT JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
+             WHERE event.{event_column}=? AND event.project_id=?""",
+        (from_id, to_id),
+    ).fetchall()
+    if not rows:
+        return "no_matching_current_event"
+    for row in rows:
+        (
+            _event_id,
+            source_type,
+            source_item_id,
+            source_claim_id,
+            event_person_id,
+            event_company_id,
+            event_project_id,
+            occurred_at,
+            item_id,
+            item_claim_id,
+            item_person_id,
+            item_company_id,
+            item_project_id,
+            has_claim_evidence,
+            belongs_to_task,
+        ) = row
+        if (
+            source_type != "ai_item"
+            or source_item_id is None
+            or source_claim_id is None
+        ):
+            continue
+        if item_id is None or item_claim_id != source_claim_id:
+            continue
+        if event_project_id != to_id or item_project_id != to_id:
+            continue
+        if from_type == "person" and (
+            event_person_id != from_id or item_person_id != from_id
+        ):
+            continue
+        if from_type == "company" and (
+            event_company_id != from_id or item_company_id != from_id
+        ):
+            continue
+        if occurred_at is None or str(occurred_at) > as_of:
+            continue
+        if belongs_to_task or not has_claim_evidence:
+            continue
+        return "eligible_event_context_not_returned"
+    return "missing_exact_event_claim_lineage"

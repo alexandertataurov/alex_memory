@@ -6,6 +6,13 @@ Claim-backed profile records are now omitted when their cited source is no
 longer available. Manually created operational rows remain visible. This is a
 read-only presentation change with temporary-SQLite regression coverage.
 
+## 2026-09-02 — AM-120 event-authority diagnostic correction
+
+The parity classifier previously named a missing task-or-event condition after
+checking only tasks. It now checks the exact canonical-event reducer boundary
+and reports absent events separately from incomplete event lineage. The tool
+remains read-only and aggregate-only.
+
 ## 2026-09-02 — AM-122 aggregate-only owner acceptance harness
 
 `make profile-acceptance PROFILE_CONTACTS="recent:… dormant:… ..."` now turns

@@ -385,6 +385,54 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             )["gaps"],
         )
 
+    def test_parity_diagnostic_reports_event_lineage_not_task_absence(self) -> None:
+        person_id = self.conn.execute(
+            "INSERT INTO people(canonical_name,created_at,updated_at) VALUES ('Ari','now','now')"
+        ).lastrowid
+        project_id = self.conn.execute(
+            "INSERT INTO projects(canonical_name,created_at,updated_at) VALUES ('Amber','now','now')"
+        ).lastrowid
+        assert person_id is not None
+        assert project_id is not None
+        self.conn.execute(
+            """INSERT INTO context_events(
+                   event_type,title,description,occurred_at,observed_at,person_id,project_id,
+                   source_type,confidence,created_at
+               ) VALUES ('project_updated','Amber update','',
+                         '2026-08-24T10:00:00+00:00','2026-08-24T10:00:00+00:00',?,
+                         ?,'ai_item',0.9,'now')""",
+            (person_id, project_id),
+        )
+        ensure_relationship(
+            self.conn,
+            "person",
+            int(person_id),
+            "project",
+            int(project_id),
+            "involved_in",
+            0.9,
+            valid_from="2026-08-24T10:00:00+00:00",
+        )
+
+        diagnostics = context_builder_relationship_parity_gaps(
+            self.conn,
+            [("person", int(person_id))],
+            "2026-08-25T00:00:00+00:00",
+        )["gap_authority_diagnostics"]
+
+        self.assertEqual(
+            [
+                {
+                    "from_type": "person",
+                    "relationship_type": "involved_in",
+                    "to_type": "project",
+                    "reason": "missing_exact_event_claim_lineage",
+                    "count": 1,
+                }
+            ],
+            diagnostics,
+        )
+
     def test_replaying_the_same_claim_does_not_duplicate_graph_rows(self) -> None:
         batch = AIBatch(100, "Work", [message()], "prompt")
         saved = save_ai_success(

@@ -214,3 +214,8 @@ a live reader change.
   duplicate authority, and can be derived read-only for historical missing
   materialization. A temporary-SQLite payment-event regression proves parity;
   confidence-only rows remain excluded. Fresh owner parity is required.
+- 2026-09-02: corrected the parity authority diagnostic to inspect canonical
+  event lineage before reporting that no task or event matches a compatibility
+  edge. It now distinguishes an absent event from an event missing exact item,
+  claim, evidence, endpoint, or temporal eligibility. The diagnostic remains
+  read-only and never promotes either result into graph authority.

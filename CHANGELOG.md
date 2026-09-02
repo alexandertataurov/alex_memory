@@ -19,6 +19,8 @@ grounded in reviewed local files, Git history, and verification output.
 
 - AM-122 omits unsupported claim-backed profile display rows while retaining
   manual operational rows; this is a read-only presentation correction.
+- AM-120's read-only parity diagnostic now verifies canonical-event lineage
+  before classifying a gap as lacking both task and event authority.
 - AM-122 now has `make profile-acceptance`, an aggregate-only, read-only owner
   acceptance harness for 10–20 explicitly shape-labelled contacts. It verifies
   required shape coverage, profile existence, exact-evidence closure for
