@@ -229,3 +229,8 @@ a live reader change.
   aggregate-safe reason (missing source item or claim, lineage mismatch,
   endpoint/source-message mismatch, temporal exclusion, task ownership, or
   missing claim evidence) instead of a generic lineage label.
+- 2026-09-02: the owner reran the bounded, non-truncated parity gate after the
+  historical-event representation change. It returned zero gaps and
+  `ready: true`. This satisfies the first-reader readiness evidence only;
+  ContextBuilder remains on its compatibility reader until a separately
+  authorized cutover increment.

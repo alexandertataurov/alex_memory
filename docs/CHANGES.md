@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-02 — AM-120 graph-parity readiness accepted
+
+The owner reran `make graph-parity` after the bounded historical-event authority
+change. The result was non-truncated with zero grouped gaps and `ready: true`.
+This accepts the first-reader readiness gate only; ContextBuilder still uses the
+compatibility reader, and no live operation or reader cutover occurred.
+
 ## 2026-09-02 — AM-122 claim-grounding display correction
 
 Claim-backed profile records are now omitted when their cited source is no

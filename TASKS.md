@@ -138,6 +138,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     It returns source-message provenance without fabricating a claim, reads no
     compatibility rows, and requires no replay, backfill, or live action. A
     fresh non-truncated owner parity run remains required before reader cutover.
+  - Acceptance 2026-09-02: the owner reran the bounded, non-truncated
+    `graph-parity` gate after the historical-event representation change. It
+    returned zero gaps and `ready: true`. ContextBuilder remains on its
+    compatibility reader; a reader cutover is separate work and remains
+    unauthorized by this acceptance result.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

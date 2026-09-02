@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-120's owner-run, non-truncated graph-parity gate now passes with zero
+  gaps. This is readiness evidence only: ContextBuilder remains on the
+  compatibility reader and no cutover, replay, backfill, migration, or live
+  operation ran.
 - AM-122 omits unsupported claim-backed profile display rows while retaining
   manual operational rows; this is a read-only presentation correction.
 - AM-120's read-only parity diagnostic now verifies canonical-event lineage
