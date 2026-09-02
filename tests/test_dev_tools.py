@@ -159,6 +159,116 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
 
         self.assertIn("timezone offset", output.getvalue())
 
+    def test_profile_acceptance_is_aggregate_only_and_read_only(self) -> None:
+        person_ids = [
+            self.conn.execute(
+                "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
+                (f"Person {index}", "now", "now"),
+            ).lastrowid
+            for index in range(10)
+        ]
+        self.conn.commit()
+        assert all(person_id is not None for person_id in person_ids)
+        contacts = [
+            f"{shape}:{person_id}"
+            for shape, person_id in zip(
+                (
+                    "recent",
+                    "dormant",
+                    "group-only",
+                    "multi-project",
+                    "ambiguous",
+                    "sparse-evidence",
+                    "recent",
+                    "dormant",
+                    "group-only",
+                    "multi-project",
+                ),
+                person_ids,
+                strict=True,
+            )
+        ]
+        output = StringIO()
+        changes_before = self.conn.total_changes
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(0, dev_tools.person_profile_acceptance(contacts))
+
+        report = json.loads(output.getvalue())
+        self.assertTrue(report["ready"])
+        self.assertTrue(report["read_only"])
+        self.assertEqual(10, report["contacts"])
+        self.assertEqual(0, sum(report["violations"].values()))
+        self.assertNotIn("Person 0", output.getvalue())
+        self.assertEqual(changes_before, self.conn.total_changes)
+
+    def test_profile_acceptance_reports_ungrounded_rows_without_content(self) -> None:
+        person_ids = [
+            self.conn.execute(
+                "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
+                (f"Person {index}", "now", "now"),
+            ).lastrowid
+            for index in range(10)
+        ]
+        assert person_ids[0] is not None
+        self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,observed_at,
+                   confidence,created_at,updated_at
+               ) VALUES ('person',?,'role','{}','now','now',0.9,'now','now')""",
+            (person_ids[0],),
+        )
+        self.conn.commit()
+        contacts = [
+            f"{shape}:{person_id}"
+            for shape, person_id in zip(
+                (
+                    "recent",
+                    "dormant",
+                    "group-only",
+                    "multi-project",
+                    "ambiguous",
+                    "sparse-evidence",
+                    "recent",
+                    "dormant",
+                    "group-only",
+                    "multi-project",
+                ),
+                person_ids,
+                strict=True,
+            )
+        ]
+        output = StringIO()
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(1, dev_tools.person_profile_acceptance(contacts))
+
+        report = json.loads(output.getvalue())
+        self.assertFalse(report["ready"])
+        self.assertEqual(1, report["violations"]["records_without_evidence"])
+        self.assertNotIn("role", output.getvalue())
+
+    def test_profile_acceptance_rejects_incomplete_shape_sample_before_opening_database(
+        self,
+    ) -> None:
+        output = StringIO()
+
+        with redirect_stdout(output):
+            self.assertEqual(
+                1,
+                dev_tools.person_profile_acceptance(
+                    [f"recent:{index}" for index in range(1, 11)]
+                ),
+            )
+
+        self.assertIn("missing_shapes", output.getvalue())
+
     def test_task_consistency_reports_exact_queue_and_plan_conflicts(self) -> None:
         text = """# Tasks
 

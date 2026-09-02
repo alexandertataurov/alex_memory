@@ -180,6 +180,16 @@ canonical, graph, or refresh write. Record only aggregate pass/fail findings
 and any reproducible profile IDs for follow-up; do not place conversation
 content in the validation record.
 
+`make profile-acceptance` automates the safe, structural portion of that gate.
+The owner supplies 10–20 distinct `shape:person-id` values using every required
+shape. It opens SQLite read-only, builds the existing bounded profiles, and
+emits aggregate-only coverage and violation counts. It rejects missing profiles,
+displayed canonical rows without exact evidence, uncertain profile claims
+appearing in canonical sections, a briefing last-interaction without evidence,
+or any observed profile write. It deliberately does not decide identity truth,
+historical coherence, connection usefulness, or briefing usefulness; those are
+the owner's private review. The report contains no names, IDs, or source text.
+
 ## Attribution correctness increment — 2026-08-30
 
 Relationship display now selects the other endpoint by canonical entity type

@@ -1,5 +1,19 @@
 # Implementation Journal
 
+## 2026-09-02 — AM-122 aggregate-only owner acceptance harness
+
+`make profile-acceptance PROFILE_CONTACTS="recent:… dormant:… ..."` now turns
+the structural portion of AM-122's private 10–20-contact validation into a
+read-only, aggregate-only check. The sample must contain every required contact
+shape and distinct person IDs. The command builds the existing bounded profile
+reader and reports only coverage and counts for missing profiles, ungrounded
+display rows, uncertain claims leaked into canonical sections, a briefing
+without last-interaction evidence, or a detected write. It does not emit names,
+IDs, evidence text, or message content. It cannot replace the owner decision on
+identity, historical coherence, useful connections, or conversation readiness.
+Temporary-SQLite tests cover passing, ungrounded, and incomplete-shape samples;
+no live archive inspection or profile maintenance ran.
+
 ## 2026-09-02 — Completed AM-074 plan-reference reconciliation
 
 The completed AM-074 task record now links to its completed ExecPlan. This is a

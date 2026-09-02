@@ -537,6 +537,150 @@ def graph_parity(seeds: list[str], as_of: str | None, max_depth: int) -> int:
     return 0
 
 
+_PROFILE_ACCEPTANCE_SHAPES = frozenset(
+    {
+        "recent",
+        "dormant",
+        "group-only",
+        "multi-project",
+        "ambiguous",
+        "sparse-evidence",
+    }
+)
+
+
+def person_profile_acceptance(contacts: list[str]) -> int:
+    """Check the owner-selected AM-122 profile sample without exposing its content."""
+    parsed_contacts: list[tuple[str, int]] = []
+    seen_person_ids: set[int] = set()
+    for contact in contacts:
+        match = re.fullmatch(r"([a-z-]+):([1-9][0-9]*)", contact)
+        if match is None or match.group(1) not in _PROFILE_ACCEPTANCE_SHAPES:
+            print(
+                "Profile acceptance contacts must use "
+                "recent|dormant|group-only|multi-project|ambiguous|sparse-evidence:positive-id."
+            )
+            return 1
+        person_id = int(match.group(2))
+        if person_id in seen_person_ids:
+            print("Profile acceptance contacts must name each person only once.")
+            return 1
+        seen_person_ids.add(person_id)
+        parsed_contacts.append((match.group(1), person_id))
+    if not 10 <= len(parsed_contacts) <= 20:
+        print("Profile acceptance requires 10 to 20 distinct --contact values.")
+        return 1
+
+    shapes = {
+        shape: {"requested": 0, "found": 0, "passed": 0}
+        for shape in sorted(_PROFILE_ACCEPTANCE_SHAPES)
+    }
+    for shape, _person_id in parsed_contacts:
+        shapes[shape]["requested"] += 1
+    missing_shapes = sorted(
+        shape for shape, counts in shapes.items() if counts["requested"] == 0
+    )
+    if missing_shapes:
+        print(
+            json.dumps(
+                {"missing_shapes": missing_shapes, "ready": False}, sort_keys=True
+            )
+        )
+        return 1
+
+    sys.path.insert(0, str(SRC))
+    from alex_memory.person_profile import build_person_profile
+
+    violations = {
+        "missing_profile": 0,
+        "records_without_evidence": 0,
+        "uncertain_canonical_records": 0,
+        "profile_writes": 0,
+        "briefing_without_evidence": 0,
+    }
+    pending_identity_reviews = 0
+    try:
+        with readonly_connection() as conn:
+            for shape, person_id in parsed_contacts:
+                changes_before = conn.total_changes
+                profile = build_person_profile(conn, person_id)
+                if conn.total_changes != changes_before:
+                    violations["profile_writes"] += 1
+                if not profile:
+                    violations["missing_profile"] += 1
+                    continue
+                shapes[shape]["found"] += 1
+                pending_identity_reviews += int(
+                    profile.get("identity", {}).get("pending_reviews", 0)
+                )
+                missing_evidence, uncertain_canonical, briefing_missing = (
+                    _profile_acceptance_violations(profile)
+                )
+                violations["records_without_evidence"] += missing_evidence
+                violations["uncertain_canonical_records"] += uncertain_canonical
+                violations["briefing_without_evidence"] += briefing_missing
+                if not (missing_evidence or uncertain_canonical or briefing_missing):
+                    shapes[shape]["passed"] += 1
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print(f"Profile acceptance failed: {error}")
+        return 1
+
+    ready = not any(violations.values()) and all(
+        counts["passed"] == counts["requested"] for counts in shapes.values()
+    )
+    print(
+        json.dumps(
+            {
+                "contacts": len(parsed_contacts),
+                "identity_review_signals": pending_identity_reviews,
+                "read_only": True,
+                "ready": ready,
+                "shapes": shapes,
+                "violations": violations,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if ready else 1
+
+
+def _profile_acceptance_violations(profile: dict) -> tuple[int, int, int]:
+    """Return aggregate-only grounding and authority defects for one profile."""
+    display_sections = (
+        "facts",
+        "relationships",
+        "tasks",
+        "follow_ups",
+        "open_loops",
+        "projects",
+        "events",
+        "profile_claims",
+    )
+    missing_evidence = sum(
+        1
+        for section in display_sections
+        for record in profile.get(section, [])
+        if not record.get("evidence")
+    )
+    uncertain_claim_ids = {
+        record.get("claim_id")
+        for record in profile.get("profile_claims", [])
+        if record.get("assertion_kind") in {"third_party", "inference"}
+    }
+    uncertain_canonical = sum(
+        1
+        for section in display_sections[:-1]
+        for record in profile.get(section, [])
+        if record.get("source_claim_id") in uncertain_claim_ids
+    )
+    briefing = profile.get("contact_briefing", {})
+    last_interaction = briefing.get("last_interaction")
+    briefing_missing = int(
+        last_interaction is not None and not last_interaction.get("evidence")
+    )
+    return missing_evidence, uncertain_canonical, briefing_missing
+
+
 def env_names(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -978,6 +1122,7 @@ def main() -> int:
             "db-backup",
             "repair-dry-run",
             "graph-parity",
+            "profile-acceptance",
             "health",
             "changes",
             "tasks",
@@ -1007,6 +1152,11 @@ def main() -> int:
         help="ContextBuilder seed in person|company|project:positive-id form.",
     )
     parser.add_argument(
+        "--contact",
+        action="append",
+        help="AM-122 sample contact in shape:positive-person-id form.",
+    )
+    parser.add_argument(
         "--as-of",
         help="ISO-8601 reader timestamp; defaults to the current UTC instant.",
     )
@@ -1032,6 +1182,7 @@ def main() -> int:
         "graph-parity": lambda: graph_parity(
             args.seed or [], args.as_of, args.max_depth
         ),
+        "profile-acceptance": lambda: person_profile_acceptance(args.contact or []),
         "health": health,
         "changes": changes,
         "tasks": lambda: task_summary(args.notion_tasks_json),

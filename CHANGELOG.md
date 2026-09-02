@@ -17,6 +17,12 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-122 now has `make profile-acceptance`, an aggregate-only, read-only owner
+  acceptance harness for 10–20 explicitly shape-labelled contacts. It verifies
+  required shape coverage, profile existence, exact-evidence closure for
+  displayed records, separation of uncertain profile claims from canonical
+  sections, briefing evidence, and no observed profile write; it never prints
+  contact names, IDs, or conversation content.
 - Corrected AM-074's completed task record to link to its completed ExecPlan,
   rather than the former active-plan path.
 - AM-120's bounded accepted-graph query now exposes an exact-claim-backed

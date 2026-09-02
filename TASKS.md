@@ -233,6 +233,15 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     history and communication counts include only the selected person's sender
     rows and explicit outgoing owner rows; unrelated participants cannot be
     rendered or counted as the contact. Direct-chat totals are unchanged.
+  - Progress 2026-09-02: `make profile-acceptance` provides the owner-run
+    read-only gate for 10--20 explicitly labelled representative contacts. It
+    reports aggregate shape coverage and counts only: missing profiles,
+    displayed records without exact evidence, uncertain profile claims leaked
+    into canonical sections, briefing evidence failures, and attempted writes.
+    It prints neither names, IDs, nor conversation content. Owner review still
+    decides identity correctness and whether the briefing prepares a real
+    conversation. Temporary-SQLite coverage proves the passing, ungrounded,
+    and incomplete-sample paths; no live validation ran.
   - Owner validation gate: final acceptance requires 10–20 real contacts across
     recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
     shapes. Every displayed claim must retain exact evidence or be unknown/

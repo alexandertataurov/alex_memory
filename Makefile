@@ -3,8 +3,9 @@ UV ?= .venv/bin/uv
 LIMIT ?= 500
 GRAPH_DEPTH ?= 2
 NOTION_TASKS_JSON ?=
+PROFILE_CONTACTS ?=
 
-.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity docs docs-check changes tasks review codex-hooks-check codex-check
+.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity profile-acceptance docs docs-check changes tasks review codex-hooks-check codex-check
 
 help:
 	@printf '%s\n' 'Alex Memory development commands:' \
@@ -27,6 +28,7 @@ help:
 	  '  make db-backup       Create a SQLite API backup.' \
 	  '  make repair-dry-run  Report an explicit bounded repair scope.' \
 	  '  make graph-parity    Report bounded ContextBuilder graph readiness.' \
+	  '  make profile-acceptance Check aggregate-only AM-122 owner validation.' \
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
@@ -99,6 +101,10 @@ repair-dry-run:
 graph-parity:
 	@test -n "$(SEEDS)" || { echo "Set SEEDS to one or more person|company|project:positive-id values."; exit 2; }
 	$(PYTHON) scripts/dev_tools.py graph-parity $(foreach seed,$(SEEDS),--seed "$(seed)") --max-depth $(GRAPH_DEPTH) $(if $(AS_OF),--as-of "$(AS_OF)")
+
+profile-acceptance:
+	@test -n "$(PROFILE_CONTACTS)" || { echo "Set PROFILE_CONTACTS to 10-20 distinct shape:positive-person-id values."; exit 2; }
+	$(PYTHON) scripts/dev_tools.py profile-acceptance $(foreach contact,$(PROFILE_CONTACTS),--contact "$(contact)")
 
 docs:
 	$(PYTHON) scripts/dev_tools.py docs
