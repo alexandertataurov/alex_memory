@@ -185,8 +185,52 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             [
                 "TASKS.md:5: completed task remains in 'Now' section",
                 "TASKS.md:7: duplicate 'Now' section (first at line 3)",
-                "TASKS.md:11: open task is listed in Completed",
+                "TASKS.md:13: open task is listed in Completed",
                 "TASKS.md:5: completed AM-120 still has an active ExecPlan",
+            ],
+            violations,
+        )
+
+    def test_task_consistency_checks_explicit_notion_completion_metadata(self) -> None:
+        text = """## Completed
+
+- [x] AM-120 Completed work.
+"""
+
+        with patch.object(dev_tools, "ROOT", Path(self.directory.name)):
+            violations = dev_tools.task_consistency_violations(
+                text,
+                [
+                    {
+                        "properties": {
+                            "Task": "Graph readiness",
+                            "Repo ID": "AM-120",
+                            "Status": "Done",
+                            "Repo Section": None,
+                            "Evidence Summary": "",
+                            "Kind": None,
+                            "Gate Type": "",
+                            "Gate State": None,
+                        }
+                    },
+                    {
+                        "properties": {
+                            "Task": "Incorrect queue",
+                            "Status": "Next",
+                            "Repo Section": "Completed",
+                        }
+                    },
+                ],
+            )
+
+        self.assertEqual(
+            [
+                "Notion AM-120: Status=Done requires Repo Section=Completed",
+                "Notion AM-120: completed task is missing Evidence Summary",
+                "Notion AM-120: completed task is missing Kind",
+                "Notion AM-120: completed task is missing Gate Type",
+                "Notion AM-120: completed task is missing Gate State",
+                "Notion Incorrect queue: Status=Next conflicts with Repo Section=Completed",
             ],
             violations,
         )

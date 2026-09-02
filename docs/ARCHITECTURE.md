@@ -22,7 +22,11 @@ Raw evidence → immutable semantic claims → temporal knowledge graph
   refresh worker owns materialization.
 - `context/`: purpose-aware entity resolution, bounded relationship traversal, deterministic ranking, temporal facts and manual conflict decisions, contextual builders, diagnostics, and global snapshots.
 - `tasks/deep_dive/`: task-specific, deterministic investigation over canonical context and bounded, ranked raw evidence; it persists only session metadata, notes, and pins.
-- `ui/`: the Rich terminal application and shared safe rendering primitives for navigation, operational data, progress, and detail views. The normal product flow is People and read-only Person Profiles, including a deterministic "Before I contact them" briefing assembled only from exact-evidence canonical rows. Engineering operations remain explicit maintenance commands.
+- `ui/`: the People-first Textual application is the normal product path for
+  navigation and read-only Person Profiles, including a deterministic "Before
+  I contact them" briefing assembled only from exact-evidence canonical rows.
+  Rich rendering remains the compatibility/recovery path for protected
+  maintenance operations; engineering actions stay explicit.
 - `ui/ai_analytics.py`: dedicated read-only AI analytics screen composed from `ai/analytics.py` queries.
 - `database.py`: ordered, idempotent SQLite migration ledger and connection lifecycle recorded in `schema_migrations`; see [Database Migrations](DATABASE_MIGRATIONS.md).
 - `schema_support.py`: declarative compatibility-column, source-evidence, and optional FTS migration support called only by the ledger.

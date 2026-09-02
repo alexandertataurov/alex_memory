@@ -29,6 +29,28 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Now
 
+- [x] Notion maintenance 2026-08-30 [P1] [Documentation / Control plane] —
+  Reconciled current repository documentation with Git provenance and terminal
+  product truth. README, development, quality, changelog, and architecture
+  docs now describe the existing Git baseline/remote and People-first Textual
+  path, while retaining Rich only as compatibility/recovery maintenance UI.
+  AM-099 has one task entry; AM-071's completed NULL-anchor safeguard remains
+  dated historical implementation evidence. No runtime or live-state behavior
+  changed.
+
+- [x] AM-077 [P1] [Project quality] — Add project qualification,
+  deduplication, and merge/review so casual plans and near-duplicate deal names
+  do not pollute canonical projects.
+  - Acceptance repair 2026-08-30: project duplicate detection now evaluates
+    every non-merged canonical project instead of silently treating a
+    multi-candidate or older candidate as permission to create a third row.
+    Each candidate Review records the complete ordered alternative set;
+    creation remains unavailable until no plausible candidate exists.
+  - Verification: temporary SQLite coverage proves ambiguous candidates create
+    no row and carry alternatives, and proves an older candidate outside the
+    former 80-row window is still detected. No schema or source-data action
+    ran.
+
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact
   edge evidence; derive canonical operational state only through allowlisted
@@ -45,12 +67,46 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     No reader cutover, relationship conversion, replay, graph repair,
     migration, or live action is authorized.
 
-- [x] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for candidate cross-chat relationships that deterministic repair cannot prove.
-  - Plan: `docs/exec-plans/active/AM-056-graph-discovery.md`.
-  - Acceptance: AI may propose person/project/company/task/event/topic links only as source-backed candidates; canonical graph state changes only through existing high-confidence deterministic rules or manual Review acceptance.
+  - External gate 2026-08-30: an owner-run, non-truncated parity check found
+    three compatibility-only relationship kinds with no independently
+    authoritative graph counterpart. Private source evidence is required to
+    establish manual/deterministic authority or explicitly exclude them; this
+    does not authorize a reader cutover.
+  - Progress 2026-08-30: the deterministic accepted-task projection now covers
+    the three compatibility kinds found by that parity run only when the task's
+    current canonical endpoints are backed by its exact immutable claim. The
+    bounded query rejects arbitrary accepted-shaped or confidence-only rows;
+    a fixture proves matching legacy relationships have no parity gap. No
+    historical replay or live operation ran. Fresh owner `make graph-parity`
+    evidence is required before deciding whether any compatibility-only gap
+    remains or a reader can move.
+  - Temporal authority 2026-08-30: those task-derived edges close when a
+    manual task-project decision wins, so old person/company project context
+    cannot remain current after the underlying canonical decision changes.
+
+- [x] Timestamp canonicalization [P0] [Historical context / `as_of`] —
+  Canonicalize aware external `as_of` instants to UTC before SQLite temporal
+  comparisons and reject naïve timestamps.
+  - Source: Notion task “Canonicalize all as-of timestamps before SQLite
+    temporal comparisons” (created 2026-08-30).
+  - Completed 2026-09-02: ContextBuilder, conversation timeline/period reads,
+    and the read-only `graph-parity` command now serialize UTC instants only.
+    Equivalent UTC and offset inputs have matching temporary-SQLite results;
+    naïve values fail before a query runs. No schema, source-data, replay,
+    repair, or live operation ran.
+
+- [x] AM-056 [P1] [Context graph] — Add a non-mutating semantic graph-discovery pass for bounded cross-chat person-to-project candidates that deterministic repair cannot prove.
+  - Plan: `docs/exec-plans/completed/AM-056-graph-discovery.md`.
+  - Acceptance: source-backed candidates require a resolved person across two
+    chats, a project name in the candidate's exact message, and independent
+    time-local project evidence. Canonical state changes only through manual
+    Review acceptance.
   - Diagnostics: show candidate confidence, evidence, relationship path, and why the candidate was proposed.
   - Verification: true cross-chat discovery, false lexical match rejection, idempotent candidate creation, and review-acceptance tests.
-  - Completed 2026-08-29: bounded discovery queues only `graph_link` Review candidates when two non-deleted exact messages identify the same resolved person in distinct chats and time-local project evidence. Candidate payloads retain confidence, evidence path, and reasons; only existing manual Review acceptance can create canonical/project graph state. No provider call, migration, replay, backfill, repair, or live operation ran.
+  - Completed 2026-08-30: V1 scope is explicitly person-to-project Review
+    candidates. The selector now requires the candidate's exact source message
+    to name a sufficiently distinctive canonical project alias, so unrelated
+    same-person activity plus time proximity cannot create Review work.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
@@ -149,11 +205,20 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Prefer an explicit unknown/empty result to unsupported inference; no new
     persisted profile state, source, model work, graph projection, or live
     refresh is authorized.
+  - Progress 2026-08-30: relationship endpoint selection now compares entity
+    type and ID, avoiding cross-table numeric-ID collisions. Linked group
+    history and communication counts include only the selected person's sender
+    rows and explicit outgoing owner rows; unrelated participants cannot be
+    rendered or counted as the contact. Direct-chat totals are unchanged.
   - Owner validation gate: final acceptance requires 10–20 real contacts across
     recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
     shapes. Every displayed claim must retain exact evidence or be unknown/
     omitted; third-party/inference labels must not appear as canonical state;
     profile reads must not write. Synthetic fixtures do not satisfy this gate.
+  - External acceptance gate 2026-08-30: the two source-confirmed presentation
+    defects are fixed and temporary-SQLite coverage is green. Final completion
+    still requires the owner's 10–20-contact validation; no production access
+    or maintenance action is authorized here.
   - Progress 2026-08-26: contact briefing coverage now proves that long,
     unlinked recent history cannot displace a direct group-context record;
     changed-context rows remain capped and retain their exact message evidence.
@@ -281,6 +346,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   read-only graph queries and source-backed People/Project intelligence for
   timelines, commitments, recency, interactions, shared counterparties, and
   explicit blockers/dependencies. Defer graph-ranking algorithms.
+  - Parked 2026-08-30: `current_authoritative_edges` already supplies the
+    safe bounded graph read. Its remaining reader/product use must wait for the
+    AM-120 real-reader parity gate; existing compatibility readers cannot be
+    cut over while accepted/manual graph parity is incomplete.
 
 - [x] AM-072 [P0] [Projects] — Repair project health/state after task-project linking and stop marking every extracted project `critical`.
   - Evidence from live DB: all **100/100 projects** currently have status `critical`. With zero task→project links, project-health scoring has no reliable operational activity signal.
@@ -297,9 +366,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     are explicitly preserved by health refresh. No migration, backfill, or live
     recomputation ran.
 
-## Next
+## Now
 
-- [ ] AM-074 [P1] [Data repair] — Add a safe, resumable derived-state repair/backfill command for the existing live database after logic fixes.
+- [x] AM-074 [P1] [Data repair] — Add a safe, resumable derived-state repair/backfill command for the existing live database after logic fixes.
   - Plan: `docs/exec-plans/active/AM-074.md`.
   - Progress 2026-08-28: bounded read-only inventory now reports capped
     task-project, segment-chat, and pending-context candidate counts without
@@ -337,10 +406,22 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     it can select exact accepted source items and replay the canonical
     reconciler with resolved entity/project context. Task rows alone cannot
     safely recover terminal state, manual locks, or Review-only ambiguity.
+  - Progress 2026-08-30: fixture-only task-lifecycle repair now selects only
+    undecided validated task items with immutable claim evidence for their
+    exact non-deleted source message. Its private checkpoint retains the exact
+    item/claim/context membership; stale source scope is rejected, retries are
+    transactional, manual task locks queue Review, and unresolved project
+    context is never re-resolved. No production apply command or live
+    execution exists.
   - Scope: FTS rebuild, task-project backfill, task lifecycle reconciliation, project-health recompute, selective classification refresh, conversation-segment rebuild, and targeted context refresh.
   - Safety: raw `messages`, message versions, AI evidence, manual feedback, pinned memory, and manually locked task state must never be deleted or rewritten. Require SQLite API backup for any migration/table rebuild.
   - UX: dry-run/report mode first, then bounded/resumable apply mode with exact before/after counts.
   - Verification: run on copied fixture DB twice with no duplicate side effects.
+  - Completed 2026-08-30: all authorized fixture-only units now have exact
+    dry-run scope, stale-scope rejection, checkpoint membership, transactional
+    retry, and idempotent completed retries. Task lifecycle uses exact immutable
+    claim evidence and the canonical reconciler. Production execution remains
+    separately operator-gated and was not run.
 
 - [x] AM-057 [P1] [Context freshness] — Add explicit freshness/current-enough metrics and selective stale-work scheduling based on dependency footprint.
   - Plan: `docs/exec-plans/completed/AM-057-context-freshness.md`.
@@ -672,12 +753,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     their stored response payloads are persisted; structured ownership and raw
     Telegram evidence remain unchanged.
 
-- [x] AM-077 [P1] [Project quality] — Add project qualification, deduplication, and merge/review so casual plans and near-duplicate deal names do not pollute canonical projects.
-  - Evidence from live DB: 100 projects include clear near-duplicates and items that look more like events/plans than durable projects (for example repeated cash-to-crypto variants, duplicate IT-product descriptions, meetings/road trips/BBQ-style items).
-  - Acceptance: project creation requires durable-project evidence; likely duplicates become merge candidates with provenance; casual/social/event items remain events/tasks/topics instead of canonical projects.
-  - Verification: duplicate project fixture, false-project fixture, manual merge authority, and no loss of historical source references.
-  - Completed 2026-08-29: new projects require a high-confidence project observation plus an explicit same-batch project reference. Casual standalone labels remain observations; project names otherwise resolve existing aliases only. Likely normalized-name duplicates enter a provenance-carrying Review and can attach to the selected project only by manual acceptance. Existing project rows were not changed.
-
 - [x] AM-058 [P1] [AI routing] — Make fallback/session pinning reason-aware and make fallback telemetry truthful.
   - Current behavior: after any successful non-first route, `session_model_key` is promoted to the front for later requests regardless of why fallback happened.
   - Code evidence: once a fallback model is session-pinned to index 0, later requests report `fallback_used=False` even though routing is still intentionally displaced from the normal preferred chain; analytics therefore undercount prolonged fallback usage.
@@ -831,6 +906,19 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     wrapper. Existing packages retain their live ownership boundaries.
 
 ## Completed
+
+- [x] Completion-evidence consistency check [P1] [Control plane] — Audit
+  repository task sections/active ExecPlans and an optional metadata-only
+  Notion task export for explicit completion-state contradictions.
+  - Source: Notion task “Add a completion-evidence consistency check for Done
+    tasks” (created 2026-08-30).
+  - Completed 2026-09-02: `make tasks` now emits exact line-level repository
+    queue/ExecPlan violations. `NOTION_TASKS_JSON=export.json make tasks`
+    additionally checks Done/Completed queue state, evidence summary, required
+    Kind/Gate metadata, and repository-ID checkbox agreement without reading
+    page bodies or inferring truth from Outcome prose. The initial repository
+    audit intentionally reports legacy reconciliation findings; it is not
+    suppressed. No task state was auto-rewritten.
 
 - [x] AM-053 [P0] [Context runtime] — Completed 2026-08-28. Accepted
   projection coalesces scoped revisions; bounded workers preserve failures,

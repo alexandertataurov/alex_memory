@@ -2,6 +2,7 @@ PYTHON := .venv/bin/python
 UV ?= .venv/bin/uv
 LIMIT ?= 500
 GRAPH_DEPTH ?= 2
+NOTION_TASKS_JSON ?=
 
 .PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity docs docs-check changes tasks review codex-hooks-check codex-check
 
@@ -29,7 +30,7 @@ help:
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
-	  '  make tasks           Show the current task queue.' \
+	  '  make tasks           Audit the repository task queue (optionally set NOTION_TASKS_JSON).' \
 	  '  make review          List code-size review signals.' \
 	  '  make codex-hooks-check Validate the local Codex hook configuration.' \
 	  '  make codex-check     Run the Codex workflow check.'
@@ -109,7 +110,7 @@ changes:
 	$(PYTHON) scripts/dev_tools.py changes
 
 tasks:
-	$(PYTHON) scripts/dev_tools.py tasks
+	$(PYTHON) scripts/dev_tools.py tasks $(if $(NOTION_TASKS_JSON),--notion-tasks-json "$(NOTION_TASKS_JSON)")
 
 review:
 	$(PYTHON) scripts/dev_tools.py review

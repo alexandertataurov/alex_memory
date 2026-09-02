@@ -10,12 +10,45 @@
   This is task/documentation identity repair only; no runtime or live-state
   behavior changed.
 
-All notable user- and developer-visible changes are recorded here. This project currently has no Git history in this directory; entries are grounded in reviewed local files and verification output.
+All notable user- and developer-visible changes are recorded here. Entries are
+grounded in reviewed local files, Git history, and verification output.
 
 ## Unreleased
 
 ### Changed
 
+- `make tasks` now reports line-level repository queue and active-ExecPlan
+  contradictions. With `NOTION_TASKS_JSON=export.json`, it also validates a
+  metadata-only Notion task export for explicit Done/Completed state, required
+  completion evidence/metadata, and repository-ID disagreement—without
+  interpreting Outcome prose or reading page bodies.
+- Historical request timestamps now normalize timezone-aware `as_of` values to
+  canonical UTC before SQLite lexical comparisons. ContextBuilder and
+  conversation reads reject naïve values; the read-only `graph-parity` command
+  rejects them before opening the database. Equivalent offset and UTC inputs
+  are regression-proven to return the same result. No schema or live-state
+  operation ran.
+- AM-120's accepted graph contract now includes the exact-claim-backed,
+  canonical task context for person/company-to-project relationships. The
+  reader admits those reducer-marked edges only with immutable claim evidence;
+  arbitrary compatibility inference remains excluded.
+- AM-120 closes task-derived person/company project edges when a manual task
+  project decision takes precedence, retaining temporal history without stale
+  current context.
+- AM-077 no longer treats an ambiguous or older near-duplicate project as
+  permission to create another canonical project. Duplicate comparison checks
+  every non-merged project, and each Review carries the complete candidate set.
+- AM-122 profile relationships now identify the selected endpoint by entity
+  type plus ID. Linked group history/statistics exclude unrelated participants
+  and label retained selected-person and owner messages explicitly.
+- AM-074 adds the fixture-only `task-lifecycle` repair unit. It replays only
+  exact claim-backed, undecided source items through `TaskReconciler`, with a
+  stale-scope fingerprint and private item/claim/context checkpoint; it never
+  reconstructs lifecycle work from canonical task rows.
+- AM-056 cross-chat discovery is explicitly bounded to person-to-project Review
+  candidates and now requires the candidate's exact source message to name a
+  known project alias; same-person activity plus time proximity alone cannot
+  create a candidate.
 - AM-120 adds `make graph-parity` for owner-run, bounded ContextBuilder graph
   readiness checks. It opens SQLite read-only and emits only grouped gaps,
   truncation, and readiness; it cannot alter relationship state.

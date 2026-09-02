@@ -685,21 +685,151 @@ def changes() -> int:
     return 0
 
 
-def task_summary() -> int:
+def task_summary(notion_tasks_json: Path | None = None) -> int:
     path = ROOT / "TASKS.md"
     if not path.exists():
         print("TASKS.md is missing")
         return 1
     text = path.read_text(encoding="utf-8")
+    notion_rows: list[object] | None = None
+    if notion_tasks_json is not None:
+        try:
+            exported = json.loads(notion_tasks_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"Notion task export is unreadable: {error}")
+            return 1
+        notion_rows = (
+            exported.get("results") if isinstance(exported, dict) else exported
+        )
+        if not isinstance(notion_rows, list):
+            print(
+                "Notion task export must be a JSON list or object with a results list."
+            )
+            return 1
+    violations = task_consistency_violations(text, notion_rows)
     ids = re.findall(r"^- \[[ x]\] (AM-\d{3})\b", text, re.MULTILINE)
-    now = re.search(r"## Now\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
-    completed_in_now = bool(now and re.search(r"- \[x\]", now.group(1)))
     print(
         f"Tasks: {len(ids)} IDs; {text.count('- [ ]')} open; {text.count('- [x]')} completed"
     )
-    if completed_in_now:
-        print("Completed tasks must not remain in Now.")
-    return 1 if completed_in_now else 0
+    if violations:
+        print("Task consistency violations:")
+        for violation in violations:
+            print(f"  {violation}")
+        return 1
+    return 0
+
+
+def task_consistency_violations(
+    text: str, notion_rows: list[object] | None = None
+) -> list[str]:
+    """Return exact repository-task state contradictions without changing tasks."""
+    section: str | None = None
+    section_lines: dict[str, int] = {}
+    completed_task_ids: list[tuple[str, int]] = []
+    repository_states: dict[str, bool] = {}
+    violations: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        heading = re.fullmatch(r"## (.+)", line)
+        if heading is not None:
+            section = heading.group(1)
+            previous = section_lines.get(section)
+            if previous is not None:
+                violations.append(
+                    f"TASKS.md:{line_number}: duplicate '{section}' section (first at line {previous})"
+                )
+            else:
+                section_lines[section] = line_number
+            continue
+        task = re.match(r"- \[([ x])\] (?:(AM-\d{3})\b)?", line)
+        if task is None:
+            continue
+        complete = task.group(1) == "x"
+        task_id = task.group(2)
+        if complete and section != "Completed":
+            violations.append(
+                f"TASKS.md:{line_number}: completed task remains in '{section or 'no'}' section"
+            )
+        if not complete and section == "Completed":
+            violations.append(
+                f"TASKS.md:{line_number}: open task is listed in Completed"
+            )
+        if complete and task_id is not None:
+            completed_task_ids.append((task_id, line_number))
+            repository_states[task_id] = True
+        elif task_id is not None:
+            repository_states[task_id] = False
+
+    active_plan_ids = {
+        match.group(1)
+        for plan in (ROOT / "docs" / "exec-plans" / "active").glob("*.md")
+        if (match := re.match(r"(AM-\d{3})(?:-|$)", plan.name)) is not None
+    }
+    for task_id, line_number in completed_task_ids:
+        if task_id in active_plan_ids:
+            violations.append(
+                f"TASKS.md:{line_number}: completed {task_id} still has an active ExecPlan"
+            )
+    if notion_rows is not None:
+        violations.extend(
+            notion_task_consistency_violations(notion_rows, repository_states)
+        )
+    return violations
+
+
+def notion_task_consistency_violations(
+    rows: list[object], repository_states: dict[str, bool]
+) -> list[str]:
+    """Validate a caller-provided, metadata-only Notion task export.
+
+    The export contains task properties, not page bodies or source evidence. This
+    check never infers completion from Outcome prose; it only checks explicit
+    status, queue, metadata, and repository-ID state.
+    """
+    violations: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            violations.append(f"Notion export row {index}: expected an object")
+            continue
+        properties = row.get("properties", row)
+        if not isinstance(properties, dict):
+            violations.append(
+                f"Notion export row {index}: properties must be an object"
+            )
+            continue
+        label = str(
+            properties.get("Repo ID")
+            or properties.get("Task")
+            or row.get("id")
+            or index
+        )
+        status = properties.get("Status")
+        repo_section = properties.get("Repo Section")
+        done = status in {"Done", "Completed"}
+        if status in {"Next", "In Progress"} and repo_section == "Completed":
+            violations.append(
+                f"Notion {label}: Status={status} conflicts with Repo Section=Completed"
+            )
+        if done and repo_section != "Completed":
+            violations.append(
+                f"Notion {label}: Status={status} requires Repo Section=Completed"
+            )
+        if done and not str(properties.get("Evidence Summary") or "").strip():
+            violations.append(
+                f"Notion {label}: completed task is missing Evidence Summary"
+            )
+        if done:
+            for field in ("Kind", "Gate Type", "Gate State"):
+                if not str(properties.get(field) or "").strip():
+                    violations.append(
+                        f"Notion {label}: completed task is missing {field}"
+                    )
+        repo_id = properties.get("Repo ID")
+        if isinstance(repo_id, str) and repo_id in repository_states:
+            if done != repository_states[repo_id]:
+                violations.append(
+                    f"Notion {label}: Status={status} disagrees with TASKS.md completion state"
+                )
+    return violations
 
 
 def code_health() -> int:
@@ -881,6 +1011,11 @@ def main() -> int:
         help="ISO-8601 reader timestamp; defaults to the current UTC instant.",
     )
     parser.add_argument(
+        "--notion-tasks-json",
+        type=Path,
+        help="Metadata-only Notion task export to audit with the repository queue.",
+    )
+    parser.add_argument(
         "--max-depth",
         type=int,
         default=2,
@@ -899,7 +1034,7 @@ def main() -> int:
         ),
         "health": health,
         "changes": changes,
-        "tasks": task_summary,
+        "tasks": lambda: task_summary(args.notion_tasks_json),
         "review": review,
         "codex-hooks-check": codex_hooks_check,
         "codex-check": codex_check,

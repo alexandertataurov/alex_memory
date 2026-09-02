@@ -43,8 +43,7 @@ boundary.
   sessions, logs/media/backups, and broad destructive Git/filesystem commands.
 - Post-patch checks run Ruff and MyPy only for changed maintained Python files.
 - Stop asks for proportionate verification when a change is claimed and reports
-  a small legacy/placeholder diff review. It cannot produce a true diff review
-  until this intentionally uncommitted repository has an initial Git baseline.
+  a small legacy/placeholder diff review against the repository baseline.
 
 Run `make codex-hooks-check` after editing hook scripts or their JSON. The six
 project skills under `.agents/skills/` are invoked by scope, not by loading all

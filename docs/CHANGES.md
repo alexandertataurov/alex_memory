@@ -1,5 +1,82 @@
 # Implementation Journal
 
+## 2026-09-02 — Completion-evidence consistency audit
+
+`make tasks` now reports exact repository queue and active-ExecPlan
+contradictions instead of only a single aggregate warning. Supplying
+`NOTION_TASKS_JSON=export.json` checks an explicit metadata-only task export
+for Done/Completed queue state, required Evidence Summary and Kind/Gate
+metadata, and repository-ID agreement. It never reads task bodies or treats
+Outcome prose as proof of completion. The initial audit exposes existing legacy
+reconciliation findings rather than hiding them; no task state was rewritten.
+
+## 2026-09-02 — Historical `as_of` timestamp canonicalization
+
+External `as_of` datetimes now require an explicit timezone and are serialized
+as canonical UTC before any ContextBuilder, conversation timeline/period, or
+graph-parity SQLite comparison. Equivalent `+00:00` and `-04:00` instants have
+identical temporary-SQLite results; naïve values fail before querying. The
+graph diagnostic remains read-only. No schema, source-data, replay, repair, or
+live operation ran.
+
+## 2026-08-30 — Notion documentation control-plane reconciliation
+
+Current documentation now reflects the existing Git baseline and configured
+remote rather than the obsolete pre-initial-commit state. Architecture wording
+names the People-first Textual UI as the normal product path and the retained
+Rich renderer as compatibility/recovery maintenance UI. Historical task and
+changelog records remain dated. No runtime or live-state behavior changed.
+
+## 2026-08-30 — AM-120 deterministic task-context graph parity
+
+The graph projector now derives person `involved_in` and company
+`involved_in` / `associated_with` edges only from a task's current canonical
+endpoints and that task's exact immutable claim. The bounded graph reader
+requires both that reducer marker and claim evidence. A temporary SQLite
+fixture proves parity with the equivalent legacy ContextService and
+ContextGraphImprover relationships; confidence-only compatibility rows remain
+outside the contract. No reader cutover, replay, repair, migration, or live
+operation ran.
+
+The same task-derived edges now receive a closing validity boundary when a
+manual task-project decision supersedes the automatic task projection. The
+regression covers all three person/company relationship kinds.
+
+## 2026-08-30 — AM-077 project duplicate completion repair
+
+Project creation now remains blocked whenever the normalized-name comparison
+finds any candidate across non-merged canonical projects. The prior 80-row
+cutoff and multi-candidate fall-through could create another project; Reviews
+now retain the complete ordered candidate set for manual resolution. No schema,
+source-data, or live operation ran.
+
+## 2026-08-30 — AM-122 relationship and group-attribution correctness
+
+Person Profile now uses entity type plus ID when selecting a relationship’s
+other endpoint. For linked groups, Messages and communication statistics retain
+only selected-person sender rows and explicit outgoing owner rows; unrelated
+participants are excluded. Direct-chat totals are unchanged. The profile read
+remains bounded and side-effect free.
+
+## 2026-08-30 — AM-074 task-lifecycle repair unit
+
+The fixture-only `task-lifecycle` unit selects only validated task items whose
+immutable claim evidence closes over the item’s exact non-deleted source
+message and whose lifecycle has no prior event or Review outcome. It stores
+exact private item/claim/context membership, rejects stale dry-run scope, and
+replays the existing `TaskReconciler` without re-resolving entities or projects.
+Manual locks remain Review-only. No production apply command, migration,
+backfill, or live operation was added.
+
+## 2026-08-30 — AM-056 bounded cross-chat discovery
+
+AM-056 now documents its supported V1 scope as Review-only cross-chat
+person-to-project discovery. A candidate must include a project alias in its
+exact source message as well as independent project evidence in another chat
+for the same resolved person within 90 days. Unrelated same-person activity is
+rejected; no canonical or graph state changes without existing manual Review
+acceptance.
+
 ## 2026-08-30 — AM-120 owner parity command
 
 `make graph-parity SEEDS="person:123"` runs the bounded ContextBuilder

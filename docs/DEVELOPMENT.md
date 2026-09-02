@@ -102,6 +102,6 @@ Run `make docs` after changing `Settings` or the database schema, and `make docs
 lockfile, dependency declarations, known package vulnerabilities, SQLite
 integrity, generated documentation, and task-queue structure.
 
-Use `make help` to list the local commands. This workspace has a local Git
-repository but no initial commit. Review `git status`, stage only intended
-files, and choose its remote, identity, and initial history deliberately.
+Use `make help` to list the local commands. This workspace has existing Git
+history and a configured remote. Review `git status`, stage only intended
+files, and do not change remote or history settings without owner approval.

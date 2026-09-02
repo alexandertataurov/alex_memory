@@ -52,9 +52,10 @@ make review
 make codex-check
 ```
 
-Run `make help` for the complete command summary. This directory has a local
-Git repository but no initial commit yet. Review `git status` and stage only
-intended files; do not add a remote or rewrite history without owner approval.
+Run `make help` for the complete command summary. This directory has existing
+Git history and a configured remote. Review `git status` and stage only
+intended files; do not change the remote or rewrite history without owner
+approval.
 
 `data/telegram.sqlite` is a live WAL database and `alex_memory.session` is
 private session material. Never commit, print, reset, or copy them casually.
