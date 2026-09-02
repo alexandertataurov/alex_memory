@@ -205,7 +205,9 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("Person 0", output.getvalue())
         self.assertEqual(changes_before, self.conn.total_changes)
 
-    def test_profile_acceptance_reports_ungrounded_rows_without_content(self) -> None:
+    def test_profile_acceptance_accepts_profiles_that_omit_ungrounded_rows(
+        self,
+    ) -> None:
         person_ids = [
             self.conn.execute(
                 "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
@@ -214,12 +216,20 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             for index in range(10)
         ]
         assert person_ids[0] is not None
+        claim_id = self.conn.execute(
+            """INSERT INTO semantic_claims(
+                   batch_id,claim_type,statement,payload_json,extractor_version,provider,
+                   model,confidence,authority_status,dedupe_key,created_at
+               ) VALUES (1,'temporal_fact','Unsupported','{}',2,'test','test',0.9,
+                         'accepted','unsupported-acceptance-claim','now')"""
+        ).lastrowid
+        assert claim_id is not None
         self.conn.execute(
             """INSERT INTO context_facts(
                    subject_type,subject_id,predicate,value_json,valid_from,observed_at,
-                   confidence,created_at,updated_at
-               ) VALUES ('person',?,'role','{}','now','now',0.9,'now','now')""",
-            (person_ids[0],),
+                   confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'role','{}','now','now',0.9,?,'now','now')""",
+            (person_ids[0], claim_id),
         )
         self.conn.commit()
         contacts = [
@@ -247,11 +257,11 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             patch.object(dev_tools, "readonly_connection", return_value=self.conn),
             redirect_stdout(output),
         ):
-            self.assertEqual(1, dev_tools.person_profile_acceptance(contacts))
+            self.assertEqual(0, dev_tools.person_profile_acceptance(contacts))
 
         report = json.loads(output.getvalue())
-        self.assertFalse(report["ready"])
-        self.assertEqual(1, report["violations"]["records_without_evidence"])
+        self.assertTrue(report["ready"])
+        self.assertEqual(0, report["violations"]["records_without_evidence"])
         self.assertNotIn("role", output.getvalue())
 
     def test_profile_acceptance_rejects_incomplete_shape_sample_before_opening_database(

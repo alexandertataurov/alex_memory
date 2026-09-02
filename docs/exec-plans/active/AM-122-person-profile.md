@@ -192,6 +192,10 @@ the owner's private review. The report contains no names, IDs, or source text.
 
 ## Attribution correctness increment — 2026-08-30
 
+Claim-backed profile records with no remaining cited source are omitted from the
+read-only presentation. Manual operational records have no claim and stay
+visible. Regression coverage protects both boundaries.
+
 Relationship display now selects the other endpoint by canonical entity type
 and ID, so independently numbered person/company/project rows cannot be
 confused. Linked group-message history and communication aggregates include

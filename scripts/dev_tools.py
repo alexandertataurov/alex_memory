@@ -660,7 +660,7 @@ def _profile_acceptance_violations(profile: dict) -> tuple[int, int, int]:
         1
         for section in display_sections
         for record in profile.get(section, [])
-        if not record.get("evidence")
+        if record.get("source_claim_id") is not None and not record.get("evidence")
     )
     uncertain_claim_ids = {
         record.get("claim_id")

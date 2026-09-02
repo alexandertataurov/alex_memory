@@ -107,6 +107,30 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(2, profile["stats"]["total"])
         self.assertEqual(2, profile["stats"]["conversations"][0]["incoming"])
 
+    def test_profile_omits_canonical_records_without_exact_evidence(self) -> None:
+        claim_id = self.conn.execute(
+            """INSERT INTO semantic_claims(
+                   batch_id,claim_type,statement,payload_json,extractor_version,provider,
+                   model,confidence,authority_status,dedupe_key,created_at
+               ) VALUES (1,'temporal_fact','Unsupported','{}',2,'test','test',0.9,
+                         'accepted','unsupported-profile-claim','now')"""
+        ).lastrowid
+        assert claim_id is not None
+        self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,observed_at,
+                   confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'unsupported','{}','now','now',0.9,?,'now','now')""",
+            (self.person_id, claim_id),
+        )
+        self.conn.commit()
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+
+        self.assertEqual(
+            ["capability"], [fact["predicate"] for fact in profile["facts"]]
+        )
+
     def test_profile_exposes_pending_raw_conversation_evidence(self) -> None:
         self.conn.execute(
             """INSERT INTO current_conversation_context(

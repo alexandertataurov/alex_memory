@@ -52,6 +52,24 @@ def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
     _attach_evidence(conn, profile["profile_claims"])
     for project in profile["projects"]:
         project["evidence"] = _project_evidence(conn, person_id, project["project_id"])
+    # Claim-backed canonical rows are presentation-only: keep them only when
+    # their exact current evidence is still available. Manual operational rows
+    # have no claim and remain visible under their existing authority contract.
+    for section in (
+        "facts",
+        "relationships",
+        "tasks",
+        "follow_ups",
+        "open_loops",
+        "projects",
+        "events",
+        "profile_claims",
+    ):
+        profile[section] = [
+            record
+            for record in profile[section]
+            if record.get("source_claim_id") is None or record.get("evidence")
+        ]
     profile["summary_evidence"] = _collect_evidence(profile)[:6]
     profile["private_details"] = [
         item

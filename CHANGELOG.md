@@ -17,6 +17,8 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-122 omits unsupported claim-backed profile display rows while retaining
+  manual operational rows; this is a read-only presentation correction.
 - AM-122 now has `make profile-acceptance`, an aggregate-only, read-only owner
   acceptance harness for 10–20 explicitly shape-labelled contacts. It verifies
   required shape coverage, profile existence, exact-evidence closure for
