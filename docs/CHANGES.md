@@ -26,6 +26,16 @@ relationship IDs, task/item IDs, or evidence text. This distinguishes a real
 allowlisted-query omission from a compatibility row that lacks deterministic
 task/claim authority or is stale after a manual override. It remains read-only.
 
+That diagnostic then showed no matching current task for the remaining rows.
+The non-task `ContextService` path has a separately canonical, exact-lineage
+authority: it creates `context_events` from its source item before writing the
+compatibility relationship. The graph now accepts that limited canonical-event
+reducer only when the event, source item, immutable claim evidence, and
+person/company/project endpoints agree exactly. Task-owned events are excluded
+to avoid duplicate authority. A temporary-SQLite payment-event regression
+proves both stored and read-only historical parity; no replay, backfill, or
+live operation ran.
+
 ## 2026-09-02 — Completion-evidence consistency audit
 
 `make tasks` now reports exact repository queue and active-ExecPlan

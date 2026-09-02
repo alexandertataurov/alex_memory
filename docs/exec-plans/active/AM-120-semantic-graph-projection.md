@@ -204,3 +204,13 @@ a live reader change.
   task/item IDs, evidence text, or relationship content. The next owner result
   determines whether a query correction is justified or the rows must remain
   compatibility-only pending manual authority.
+- 2026-09-02: fresh diagnostic evidence classified all three gaps as having no
+  matching current task. Tracing the non-task path found that `ContextService`
+  also creates canonical source-backed events before its compatibility rows.
+  The graph projector and bounded reader now admit only an exact event reducer:
+  canonical event, source item, immutable claim evidence, and person/company/
+  project endpoints must agree. It supplies person `involved_in` and company
+  `involved_in` / `associated_with`, excludes task-owned events to avoid
+  duplicate authority, and can be derived read-only for historical missing
+  materialization. A temporary-SQLite payment-event regression proves parity;
+  confidence-only rows remain excluded. Fresh owner parity is required.

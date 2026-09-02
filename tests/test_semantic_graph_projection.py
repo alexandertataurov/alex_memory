@@ -299,6 +299,92 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             )["gaps"],
         )
 
+    def test_exact_event_context_has_graph_parity_without_a_task(self) -> None:
+        batch = AIBatch(100, "Work", [message()], "prompt")
+        saved = save_ai_success(
+            self.conn,
+            batch,
+            {
+                "summary": "Payment for Project Amber.",
+                "items": [
+                    valid_item()
+                    | {
+                        "kind": "project",
+                        "title": "Project Amber",
+                        "details": "Payment work.",
+                        "status": "informational",
+                        "owner": "unknown",
+                    },
+                    valid_item()
+                    | {
+                        "kind": "payment",
+                        "title": "Invoice payment",
+                        "details": "Payment for Project Amber.",
+                        "status": "informational",
+                        "owner": "unknown",
+                        "project_name": "Project Amber",
+                        "person": "Ari",
+                        "company": "Acme",
+                        "confidence": 0.96,
+                    },
+                ],
+            },
+            self.settings,
+        )
+        self.assertTrue(process_ai_batch(self.conn, saved.batch_id, self.settings))
+        self.assertEqual(
+            0, self.conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        )
+        person_id, company_id, project_id = self.conn.execute(
+            """SELECT person_id,company_id,project_id FROM ai_items
+               WHERE batch_id=? AND kind='payment'""",
+            (saved.batch_id,),
+        ).fetchone()
+        self.assertEqual(
+            1,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM context_events
+                   WHERE source_claim_id IS NOT NULL AND person_id=?
+                     AND company_id=? AND project_id=?""",
+                (person_id, company_id, project_id),
+            ).fetchone()[0],
+        )
+        self.conn.execute(
+            """DELETE FROM graph_edges
+               WHERE json_extract(properties_json, '$.reducer')='accepted_event_context'"""
+        )
+
+        edges = current_authoritative_edges(
+            self.conn,
+            [("person", int(person_id)), ("company", int(company_id))],
+            "2026-08-25T00:00:00+00:00",
+        )
+        event_context = [
+            edge
+            for edge in edges
+            if edge.get("materialization") == "derived_event_context"
+        ]
+        self.assertEqual(
+            {
+                ("person", int(person_id), "involved_in"),
+                ("company", int(company_id), "involved_in"),
+                ("company", int(company_id), "associated_with"),
+            },
+            {
+                (edge["from_type"], edge["from_id"], edge["relationship_type"])
+                for edge in event_context
+            },
+        )
+        self.assertTrue(all(edge["claim_ids"] for edge in event_context))
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", int(person_id)), ("company", int(company_id))],
+                "2026-08-25T00:00:00+00:00",
+            )["gaps"],
+        )
+
     def test_replaying_the_same_claim_does_not_duplicate_graph_rows(self) -> None:
         batch = AIBatch(100, "Work", [message()], "prompt")
         saved = save_ai_success(
@@ -958,7 +1044,7 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                     "from_type": "person",
                     "relationship_type": "involved_in",
                     "to_type": "project",
-                    "reason": "no_matching_current_task",
+                    "reason": "no_matching_current_task_or_event",
                     "count": 1,
                 }
             ],

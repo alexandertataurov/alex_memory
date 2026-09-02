@@ -138,6 +138,39 @@ class SemanticGraphProjector:
                             },
                         )
 
+        # A current canonical event can also be the deterministic reducer for
+        # narrow person/company project context. Unlike a compatibility row,
+        # this path requires the event, its source item, and its immutable
+        # claim to agree on both endpoints exactly.
+        if task_id is None and project_id is not None:
+            project_node = entity_nodes["project"]
+            for (
+                entity_type,
+                _entity_id,
+                relationship_types,
+            ) in self._accepted_event_entity_project_context(
+                item_id=item_id,
+                claim_id=claim_id,
+                person_id=person_id,
+                company_id=company_id,
+                project_id=project_id,
+            ):
+                entity_node = entity_nodes[entity_type]
+                for relationship_type in relationship_types:
+                    self._edge(
+                        from_node_id=entity_node,
+                        to_node_id=project_node,
+                        relationship_type=relationship_type,
+                        valid_from=observed_at,
+                        confidence=float(confidence),
+                        authority_status="accepted",
+                        claim_id=claim_id,
+                        properties={
+                            "source_item_id": item_id,
+                            "reducer": "accepted_event_context",
+                        },
+                    )
+
         self.conn.execute(
             """UPDATE semantic_claims
                SET projection_status=?,projected_at=?
@@ -319,6 +352,31 @@ class SemanticGraphProjector:
             contexts.append(("company", company_id, ("involved_in", "associated_with")))
         return tuple(contexts)
 
+    def _accepted_event_entity_project_context(
+        self,
+        *,
+        item_id: int,
+        claim_id: int,
+        person_id: int | None,
+        company_id: int | None,
+        project_id: int,
+    ) -> tuple[tuple[str, int, tuple[str, ...]], ...]:
+        """Return only a canonical event whose exact claim names these endpoints."""
+        event = self.conn.execute(
+            """SELECT person_id,company_id,project_id FROM context_events
+               WHERE source_type='ai_item' AND source_ai_item_id=?
+                 AND source_claim_id=?""",
+            (item_id, claim_id),
+        ).fetchone()
+        if event is None or event[2] != project_id:
+            return ()
+        contexts: list[tuple[str, int, tuple[str, ...]]] = []
+        if person_id is not None and event[0] == person_id:
+            contexts.append(("person", person_id, ("involved_in",)))
+        if company_id is not None and event[1] == company_id:
+            contexts.append(("company", company_id, ("involved_in", "associated_with")))
+        return tuple(contexts)
+
     def _edge(
         self,
         *,
@@ -390,13 +448,13 @@ def current_authoritative_edges(
     """Read bounded current graph edges safe for a future runtime consumer.
 
     Observed claim material is intentionally excluded. Accepted automatic edges
-    are limited to the projector's task-to-project allowlist and must retain
+    are limited to the projector's task/event-to-project allowlist and must retain
     claim evidence; manual edges remain usable without a fabricated AI source.
 
-    An exact-claim-backed task context is also represented at read time when a
-    historical graph materialization is absent. This is the same allowlisted
-    reducer as ``accepted_task_context``--not a compatibility-row promotion--
-    and lets a bounded reader see the canonical task decision without a replay.
+    Exact-claim-backed task and event context are also represented at read time
+    when a historical graph materialization is absent. These are the same
+    allowlisted reducers--not compatibility-row promotion--and let a bounded
+    reader see the canonical decision without a replay.
     """
     if not seeds or limit <= 0:
         return []
@@ -446,8 +504,8 @@ def current_authoritative_edges(
                               AND to_node.canonical_entity_type='project'
                           )
                           OR (
-                              json_extract(edge.properties_json, '$.reducer')
-                                ='accepted_task_context'
+                              json_extract(edge.properties_json, '$.reducer') IN
+                                ('accepted_task_context','accepted_event_context')
                               AND to_node.canonical_entity_type='project'
                               AND (
                                   (
@@ -490,7 +548,9 @@ def current_authoritative_edges(
         }
         for row in rows
     ]
-    derived_edges = _current_task_context_edges(conn, seeds, as_of, bounded_limit)
+    derived_edges = _current_task_context_edges(
+        conn, seeds, as_of, bounded_limit
+    ) + _current_event_context_edges(conn, seeds, as_of, bounded_limit)
     edges = {
         (
             str(edge["from_type"]),
@@ -519,7 +579,7 @@ def current_authoritative_edges(
         edges.values(),
         key=lambda edge: (
             str(edge["valid_from"]),
-            1 if edge.get("materialization") != "derived_task_context" else 0,
+            1 if not str(edge.get("materialization", "")).startswith("derived_") else 0,
             int(cast(int, edge["edge_id"])) if edge["edge_id"] is not None else 0,
         ),
         reverse=True,
@@ -624,6 +684,101 @@ def _current_task_context_edges(
                         "materialization": "derived_task_context",
                         "claim_ids": (int(cast(int, claim_id)),),
                         "task_id": int(task_id),
+                    }
+                )
+    return edges
+
+
+def _current_event_context_edges(
+    conn: sqlite3.Connection,
+    seeds: list[tuple[str, int]],
+    as_of: str,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Return the exact-claim canonical-event reducer without materializing it.
+
+    This is limited to existing canonical events whose source item and claim
+    agree on the same person/company and project. It does not consult legacy
+    compatibility relationships or turn their confidence into authority.
+    """
+    event_columns = {
+        "person": "person_id",
+        "company": "company_id",
+        "project": "project_id",
+    }
+    predicates: list[str] = []
+    parameters: list[object] = []
+    for entity_type, entity_id in seeds:
+        column = event_columns.get(entity_type)
+        if column is None:
+            continue
+        predicates.append(f"event.{column}=?")
+        parameters.append(entity_id)
+    if not predicates:
+        return []
+    rows = conn.execute(
+        f"""SELECT event.event_id,event.person_id,event.company_id,event.project_id,
+                   item.person_id,item.company_id,item.project_id,
+                   event.source_claim_id,event.occurred_at,event.confidence
+              FROM context_events AS event
+              JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
+                                  AND item.source_claim_id=event.source_claim_id
+             WHERE ({" OR ".join(predicates)})
+               AND event.source_type='ai_item'
+               AND event.source_claim_id IS NOT NULL
+               AND event.project_id IS NOT NULL
+               AND item.project_id=event.project_id
+               AND event.occurred_at<=?
+               AND NOT EXISTS (
+                   SELECT 1 FROM tasks AS task
+                    WHERE task.source_item_id=event.source_ai_item_id
+                      AND task.source_claim_id=event.source_claim_id
+               )
+               AND EXISTS (
+                   SELECT 1 FROM semantic_claim_evidence AS evidence
+                    WHERE evidence.claim_id=event.source_claim_id
+               )
+             ORDER BY event.occurred_at DESC,event.event_id DESC
+             LIMIT ?""",
+        [*parameters, as_of, limit],
+    ).fetchall()
+    edges: list[dict[str, object]] = []
+    for (
+        event_id,
+        event_person_id,
+        event_company_id,
+        project_id,
+        item_person_id,
+        item_company_id,
+        _item_project_id,
+        claim_id,
+        valid_from,
+        confidence,
+    ) in rows:
+        contexts: tuple[tuple[str, int, tuple[str, ...]], ...] = ()
+        if event_person_id is not None and event_person_id == item_person_id:
+            contexts += (("person", int(event_person_id), ("involved_in",)),)
+        if event_company_id is not None and event_company_id == item_company_id:
+            contexts += (
+                ("company", int(event_company_id), ("involved_in", "associated_with")),
+            )
+        for from_type, from_id, relationship_types in contexts:
+            for relationship_type in relationship_types:
+                edges.append(
+                    {
+                        "edge_id": None,
+                        "from_type": from_type,
+                        "from_id": from_id,
+                        "to_type": "project",
+                        "to_id": int(project_id),
+                        "relationship_type": relationship_type,
+                        "valid_from": str(valid_from),
+                        "valid_to": None,
+                        "confidence": float(confidence),
+                        "authority_status": "accepted",
+                        "materialization": "derived_event_context",
+                        "claim_ids": (int(cast(int, claim_id)),),
+                        "event_id": int(event_id),
                     }
                 )
     return edges
@@ -837,7 +992,7 @@ def _task_context_gap_reason(
         (from_id, to_id),
     ).fetchall()
     if not rows:
-        return "no_matching_current_task"
+        return "no_matching_current_task_or_event"
     for row in rows:
         (
             _task_id,

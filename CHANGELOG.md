@@ -28,6 +28,10 @@ grounded in reviewed local files, Git history, and verification output.
   for each remaining gap. It distinguishes task/claim-lineage absence, manual
   task override, and a possible accepted-query omission without exposing IDs,
   source text, or relationship content.
+- AM-120 also represents exact-claim-backed non-task canonical event context
+  for person/company-to-project parity. The graph requires matching canonical
+  event, source item, claim evidence, and endpoints; task-owned events and
+  compatibility-only inference remain excluded.
 - `make tasks` now reports line-level repository queue and active-ExecPlan
   contradictions. With `NOTION_TASKS_JSON=export.json`, it also validates a
   metadata-only Notion task export for explicit Done/Completed state, required

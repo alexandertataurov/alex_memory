@@ -123,6 +123,13 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     task/claim lineage from manual overrides and any eligible query omission.
     The next read-only owner run decides whether a narrower query fix is
     justified; confidence-only rows remain excluded.
+  - Progress 2026-09-02: aggregate diagnostics showed no matching canonical
+    task for the three gaps. The bounded graph contract now also admits only
+    exact-claim-backed non-task canonical event context: the event, source
+    item, claim evidence, and endpoints must agree; task-owned events are
+    excluded. This covers the same three directions without reading/promoting
+    `relationships`, replaying data, or weakening confidence authority. Fresh
+    owner parity evidence remains required.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

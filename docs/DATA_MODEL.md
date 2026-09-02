@@ -131,14 +131,15 @@ The old `relationships` table is still compatibility-only until its active
 callers move to graph queries; no historical conversion occurs at startup.
 `current_authoritative_edges` is a bounded, read-only contract for a future
 consumer: it returns only current canonical-node edges, admitting automatic
-edges solely for the existing task reducer allowlist with immutable claim
-evidence. Its task-context subset may be derived at read time from the current
-canonical task and its exact immutable claim when an older materialized graph
-edge is absent; the derived result is explicitly labelled and has no stored
-edge ID. It never reads or promotes `relationships`, so it requires neither a
-replay nor a backfill. Manual edges remain manual without fabricated claim
-lineage and block the automatic task path. It does not yet replace any
-compatibility reader.
+edges solely for the existing task/event reducer allowlist with immutable claim
+evidence. Its task-context and non-task canonical-event-context subsets may be
+derived at read time when an older materialized graph edge is absent; derived
+results are explicitly labelled and have no stored edge ID. Event context
+requires the canonical event, source item, claim, and endpoints to match
+exactly, and excludes an item already owned by a task reducer. It never reads
+or promotes `relationships`, so it requires neither a replay nor a backfill.
+Manual edges remain manual without fabricated claim lineage and block the
+automatic task path. It does not yet replace any compatibility reader.
 
 ## Intelligence coverage
 
