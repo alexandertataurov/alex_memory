@@ -508,9 +508,14 @@ def graph_parity(seeds: list[str], as_of: str | None, max_depth: int) -> int:
         return 1
     selected_as_of = as_of or datetime.now(UTC).isoformat()
     try:
-        datetime.fromisoformat(selected_as_of.replace("Z", "+00:00"))
+        parsed_as_of = datetime.fromisoformat(selected_as_of.replace("Z", "+00:00"))
+        if parsed_as_of.tzinfo is None or parsed_as_of.utcoffset() is None:
+            raise ValueError("timezone offset required")
+        selected_as_of = parsed_as_of.astimezone(UTC).isoformat()
     except ValueError:
-        print("Graph parity --as-of must be an ISO-8601 timestamp.")
+        print(
+            "Graph parity --as-of must be an ISO-8601 timestamp with a timezone offset."
+        )
         return 1
 
     sys.path.insert(0, str(SRC))

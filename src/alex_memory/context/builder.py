@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..config import Settings
+from ..utils import canonical_utc_timestamp
 from .models import BuiltContext, ContextRequest
 from .ranking import highest, rank_item
 from .repository import current_facts
@@ -27,9 +28,9 @@ class ContextBuilder:
     def build(self, request: ContextRequest) -> BuiltContext:
         historical = request.as_of is not None
         as_of = (
-            request.as_of.isoformat()
+            canonical_utc_timestamp(request.as_of)
             if request.as_of
-            else datetime.now().astimezone().isoformat()
+            else datetime.now(timezone.utc).isoformat()
         )
         seed_distances = self._resolve_entities(request, as_of)
         relationships, distances = self._expand_relationships(seed_distances, as_of)

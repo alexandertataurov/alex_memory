@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from ..config import Settings
+from ..utils import canonical_utc_timestamp
 from .builder import ContextBuilder
 from .contact_materializer import ContactContextMaterializer
 from .models import ContextRequest
@@ -109,7 +110,9 @@ class ConversationContextService:
         self, person_id: int, as_of: datetime | None = None
     ) -> list[dict[str, Any]]:
         """Return a deduplicated, source-grounded contact timeline."""
-        cutoff = as_of.isoformat() if as_of else "9999-12-31T23:59:59+00:00"
+        cutoff = (
+            canonical_utc_timestamp(as_of) if as_of else "9999-12-31T23:59:59+00:00"
+        )
         rows = self.conn.execute(
             """SELECT occurred_at,title,description,source_chat_id,source_message_id,'event',event_id
                FROM context_events WHERE person_id=? AND event_type != 'observation_recorded'
@@ -191,7 +194,12 @@ class ConversationContextService:
                  AND conversation_id=? AND started_at<=?
                  AND (ended_at IS NULL OR ended_at>?)
                  ORDER BY started_at DESC LIMIT 1""",
-            (person_id, conversation_id, as_of.isoformat(), as_of.isoformat()),
+            (
+                person_id,
+                conversation_id,
+                canonical_utc_timestamp(as_of),
+                canonical_utc_timestamp(as_of),
+            ),
         ).fetchone()
         if row is None:
             return _conversation_row(None)

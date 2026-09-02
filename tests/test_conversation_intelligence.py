@@ -238,6 +238,19 @@ class ConversationIntelligenceTests(unittest.TestCase):
         self.assertTrue(package["context"].segments)
         self.assertEqual([], package["project_contexts"])
 
+    def test_timeline_as_of_is_timezone_invariant(self) -> None:
+        service = ConversationContextService(self.conn, self.settings)
+        timelines = [
+            service.timeline(self.person_id, datetime.fromisoformat(as_of))
+            for as_of in (
+                "2026-06-01T09:30:00+00:00",
+                "2026-06-01T05:30:00-04:00",
+            )
+        ]
+
+        self.assertEqual(timelines[0], timelines[1])
+        self.assertTrue(timelines[0])
+
     def test_historical_package_fails_closed_outside_active_segment(self) -> None:
         service = ConversationContextService(self.conn, self.settings)
         service.refresh_person(self.person_id)

@@ -111,3 +111,82 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             )
 
         self.assertIn("person|company|project", output.getvalue())
+
+    def test_graph_parity_normalizes_equivalent_offset_as_of_values(self) -> None:
+        person_id = self.conn.execute(
+            "INSERT INTO people(canonical_name,created_at,updated_at) VALUES ('Ari','now','now')"
+        ).lastrowid
+        project_id = self.conn.execute(
+            "INSERT INTO projects(canonical_name,created_at,updated_at) VALUES ('Amber','now','now')"
+        ).lastrowid
+        assert person_id is not None
+        assert project_id is not None
+        ensure_relationship(
+            self.conn,
+            "person",
+            int(person_id),
+            "project",
+            int(project_id),
+            "involved_in",
+            0.9,
+            valid_from="2026-08-25T00:00:00+00:00",
+        )
+        self.conn.commit()
+
+        reports = []
+        for as_of in ("2026-08-25T00:30:00+00:00", "2026-08-24T20:30:00-04:00"):
+            output = StringIO()
+            with (
+                patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(
+                    0, dev_tools.graph_parity([f"person:{person_id}"], as_of, 2)
+                )
+            reports.append(json.loads(output.getvalue()))
+
+        self.assertEqual(reports[0], reports[1])
+        self.assertEqual("2026-08-25T00:30:00+00:00", reports[0]["as_of"])
+
+    def test_graph_parity_rejects_naive_as_of_before_opening_database(self) -> None:
+        output = StringIO()
+
+        with redirect_stdout(output):
+            self.assertEqual(
+                1,
+                dev_tools.graph_parity(["person:1"], "2026-08-25T00:00:00", 2),
+            )
+
+        self.assertIn("timezone offset", output.getvalue())
+
+    def test_task_consistency_reports_exact_queue_and_plan_conflicts(self) -> None:
+        text = """# Tasks
+
+## Now
+
+- [x] AM-120 Completed work in the wrong section.
+
+## Now
+
+- [ ] AM-121 Duplicate section.
+
+## Completed
+
+- [ ] AM-122 Open work in the wrong section.
+"""
+
+        with patch.object(dev_tools, "ROOT", Path(self.directory.name)):
+            active = Path(self.directory.name) / "docs" / "exec-plans" / "active"
+            active.mkdir(parents=True)
+            (active / "AM-120-example.md").touch()
+            violations = dev_tools.task_consistency_violations(text)
+
+        self.assertEqual(
+            [
+                "TASKS.md:5: completed task remains in 'Now' section",
+                "TASKS.md:7: duplicate 'Now' section (first at line 3)",
+                "TASKS.md:11: open task is listed in Completed",
+                "TASKS.md:5: completed AM-120 still has an active ExecPlan",
+            ],
+            violations,
+        )

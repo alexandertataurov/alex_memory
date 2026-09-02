@@ -34,9 +34,7 @@ class TaskDeepDiveService:
                 "Historical Task Deep Dive is unavailable until task lifecycle state can be reconstructed."
             )
         task = self._task(task_id)
-        as_of_text = (
-            as_of.isoformat() if as_of else datetime.now().astimezone().isoformat()
-        )
+        as_of_text = utc_now()
         context = self._context(
             task_id, f"{task['title']} {task.get('details') or ''}", as_of
         )

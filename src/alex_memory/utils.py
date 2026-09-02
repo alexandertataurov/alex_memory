@@ -9,6 +9,13 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def canonical_utc_timestamp(value: datetime) -> str:
+    """Serialize one aware instant for SQLite's lexical temporal comparisons."""
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("as_of must be timezone-aware")
+    return value.astimezone(timezone.utc).isoformat()
+
+
 def human_size(value: int) -> str:
     n = float(value)
     for unit in ("B", "KB", "MB", "GB", "TB"):

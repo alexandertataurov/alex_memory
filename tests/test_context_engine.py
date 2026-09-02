@@ -10,7 +10,12 @@ from pathlib import Path
 from rich.console import Console
 
 from alex_memory.context import ContextBuilder, ContextRequest, ContextService
-from alex_memory.context.repository import add_event, current_facts, set_temporal_fact
+from alex_memory.context.repository import (
+    add_event,
+    current_facts,
+    ensure_relationship,
+    set_temporal_fact,
+)
 from alex_memory.context.temporal import resolve_temporal_expressions
 from alex_memory.database import connect
 from alex_memory.ui.screens import show_context_view
@@ -170,6 +175,53 @@ class ContextEngineTests(unittest.TestCase):
         self.assertEqual([], context.segments)
         self.assertNotIn("Current only", str(context.summaries))
         self.assertNotIn("status", context.projects[0])
+
+    def test_as_of_is_canonical_utc_and_timezone_invariant(self) -> None:
+        ensure_relationship(
+            self.conn,
+            "person",
+            int(self.person_id),
+            "project",
+            int(self.project_id),
+            "involved_in",
+            1.0,
+            valid_from="2026-08-25T00:00:00+00:00",
+        )
+        self.conn.commit()
+
+        contexts = [
+            ContextBuilder(self.conn, self.settings).build(
+                ContextRequest(
+                    person_ids=[int(self.person_id)],
+                    as_of=datetime.fromisoformat(as_of),
+                )
+            )
+            for as_of in (
+                "2026-08-25T00:30:00+00:00",
+                "2026-08-24T20:30:00-04:00",
+            )
+        ]
+
+        self.assertEqual(contexts[0].as_of, contexts[1].as_of)
+        self.assertEqual(
+            [
+                relationship["relationship_id"]
+                for relationship in contexts[0].relationships
+            ],
+            [
+                relationship["relationship_id"]
+                for relationship in contexts[1].relationships
+            ],
+        )
+        self.assertEqual("2026-08-25T00:30:00+00:00", contexts[0].as_of)
+
+    def test_context_builder_rejects_naive_as_of(self) -> None:
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            ContextBuilder(self.conn, self.settings).build(
+                ContextRequest(
+                    person_ids=[int(self.person_id)], as_of=datetime(2026, 8, 25)
+                )
+            )
 
     def test_ordinary_observation_does_not_create_a_context_event(self) -> None:
         ContextService(self.conn, self.settings).process_ai_item(
