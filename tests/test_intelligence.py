@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from alex_memory.database import connect
+from alex_memory.context.graph import SemanticGraphProjector
 from alex_memory.context.repository import set_temporal_fact
 from alex_memory.intelligence import (
     answer_question,
@@ -236,6 +237,54 @@ class IntelligenceTests(unittest.TestCase):
         observations = [row for row in rows if row.result_type == "observation"]
         self.assertEqual(["Michael prefers email"], [row.title for row in observations])
         self.assertNotIn("event", [row.result_type for row in rows])
+
+    def test_related_retrieval_includes_only_authoritative_graph_connections(
+        self,
+    ) -> None:
+        now = "2026-08-21T12:00:00+00:00"
+        company_id = self.conn.execute(
+            "INSERT INTO companies(canonical_name,created_at,updated_at) VALUES ('Legal Co',?,?)",
+            (now, now),
+        ).lastrowid
+        assert company_id is not None
+        SemanticGraphProjector(self.conn).project_manual_relationship(
+            from_type="person",
+            from_id=int(self.person_id),
+            to_type="company",
+            to_id=int(company_id),
+            relationship_type="works_for",
+            valid_from=now,
+        )
+        self.conn.commit()
+
+        connections = [
+            row
+            for row in retrieve_related(
+                self.conn, "person", self.person_id, self.settings
+            )
+            if row.result_type == "connection"
+        ]
+        self.assertEqual(
+            [("Company: Legal Co", "MANUAL — works_for", None, None)],
+            [
+                (row.title, row.snippet, row.chat_id, row.message_id)
+                for row in connections
+            ],
+        )
+        self.conn.execute(
+            "UPDATE graph_edges SET authority_status='observed' WHERE relationship_type='works_for'"
+        )
+        self.conn.commit()
+        self.assertEqual(
+            [],
+            [
+                row
+                for row in retrieve_related(
+                    self.conn, "person", self.person_id, self.settings
+                )
+                if row.result_type == "connection"
+            ],
+        )
 
     def test_related_retrieval_supports_each_canonical_scope(self) -> None:
         now = "2026-08-21T12:00:00+00:00"

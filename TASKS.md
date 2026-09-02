@@ -81,10 +81,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   read-only graph queries and source-backed People/Project intelligence for
   timelines, commitments, recency, interactions, shared counterparties, and
   explicit blockers/dependencies. Defer graph-ranking algorithms.
+  - Plan: `docs/exec-plans/active/AM-121-graph-intelligence.md`.
   - Promoted 2026-09-02 after the AM-120 owner-run non-truncated parity gate
     returned zero gaps and `ready: true`. Implement only the bounded reader/
     product increment; do not cut over a compatibility reader, introduce graph
     ranking, or weaken source, temporal, or authority constraints.
+  - Progress 2026-09-02: entity-scoped related retrieval now includes bounded
+    one-hop accepted/manual graph context. Automatic entries require an exact
+    claim-evidence or historical-event source-message citation; manual entries
+    remain labelled manual. Observed graph rows stay excluded. ContextBuilder
+    and compatibility relationship readers are unchanged.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

@@ -6,10 +6,13 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
 from .config import Settings
+from .context.graph import current_authoritative_edges
 from .operational import normalize_alias
 from .schema_support import fts5_available
+from .utils import utc_now
 
 
 @dataclass(slots=True)
@@ -225,6 +228,16 @@ def retrieve_related(
                 )
             )
 
+    if entity_type != "task":
+        _append_graph_context_results(
+            conn,
+            entity_type,
+            entity_id,
+            as_of or utc_now(),
+            settings.context_max_events,
+            results,
+        )
+
     return _rank_results(results, settings.qa_max_tasks + settings.context_max_events)
 
 
@@ -240,6 +253,90 @@ def _require_entity(conn: sqlite3.Connection, entity_type: str, entity_id: int) 
         is None
     ):
         raise ValueError(f"unknown {entity_type} {entity_id}")
+
+
+def _append_graph_context_results(
+    conn: sqlite3.Connection,
+    entity_type: str,
+    entity_id: int,
+    as_of: str,
+    limit: int,
+    results: list[SearchResult],
+) -> None:
+    """Append one-hop authoritative graph context with exact provenance.
+
+    This is deliberately an entity-scoped presentation of the existing graph
+    contract, not a compatibility-reader cutover or a graph ranking pass.
+    """
+    for edge in current_authoritative_edges(
+        conn, [(entity_type, entity_id)], as_of, limit=min(limit, 40)
+    ):
+        from_type, from_id = str(edge["from_type"]), cast(int, edge["from_id"])
+        to_type, to_id = str(edge["to_type"]), cast(int, edge["to_id"])
+        if (from_type, from_id) == (entity_type, entity_id):
+            other_type, other_id = to_type, to_id
+        elif (to_type, to_id) == (entity_type, entity_id):
+            other_type, other_id = from_type, from_id
+        else:
+            continue
+        other_name = _canonical_entity_name(conn, other_type, other_id)
+        if other_name is None:
+            continue
+        chat_id, message_id = _edge_evidence_locator(conn, edge)
+        authority = str(edge["authority_status"])
+        if authority != "manual" and (chat_id is None or message_id is None):
+            continue
+        results.append(
+            SearchResult(
+                "connection",
+                f"{other_type.title()}: {other_name}",
+                f"{authority.upper()} — {edge['relationship_type']}",
+                str(edge["valid_from"]),
+                87 if authority == "accepted" else 85,
+                chat_id=chat_id,
+                message_id=message_id,
+                **{f"{other_type}_id": other_id},
+                source_id=(
+                    cast(int, edge["edge_id"]) if edge["edge_id"] is not None else None
+                ),
+            )
+        )
+
+
+def _canonical_entity_name(
+    conn: sqlite3.Connection, entity_type: str, entity_id: int
+) -> str | None:
+    table, column, name_column = {
+        "person": ("people", "person_id", "canonical_name"),
+        "company": ("companies", "company_id", "canonical_name"),
+        "project": ("projects", "project_id", "canonical_name"),
+        "task": ("tasks", "task_id", "title"),
+    }.get(entity_type, ("", "", ""))
+    if not table:
+        return None
+    row = conn.execute(
+        f"SELECT {name_column} FROM {table} WHERE {column}=?", (entity_id,)
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+def _edge_evidence_locator(
+    conn: sqlite3.Connection, edge: dict[str, object]
+) -> tuple[int | None, int | None]:
+    source_evidence = edge.get("source_evidence")
+    if isinstance(source_evidence, tuple) and len(source_evidence) == 2:
+        return cast(int, source_evidence[0]), cast(int, source_evidence[1])
+    claim_ids = edge.get("claim_ids")
+    if not isinstance(claim_ids, tuple) or not claim_ids:
+        return None, None
+    marks = ",".join("?" for _ in claim_ids)
+    row = conn.execute(
+        f"""SELECT chat_id,message_id FROM semantic_claim_evidence
+               WHERE claim_id IN ({marks})
+               ORDER BY claim_id,ordinal LIMIT 1""",
+        list(claim_ids),
+    ).fetchone()
+    return (int(row[0]), int(row[1])) if row is not None else (None, None)
 
 
 def _append_person_contact_results(

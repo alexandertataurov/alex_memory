@@ -142,6 +142,10 @@ claim lineage: it requires the same endpoints, exact surviving source message,
 and no task ownership, and returns that message locator without inventing a
 claim ID. It never reads or promotes `relationships`, so it requires neither a
 replay nor a backfill.
+Entity-scoped intelligence may consume this same bounded contract as a one-hop
+connection result: automatic entries retain an exact claim-evidence or
+source-message citation, while manual entries remain visibly manual. This is
+not a ContextBuilder relationship-reader cutover.
 Manual edges remain manual without fabricated claim lineage and block the
 automatic task path. It does not yet replace any compatibility reader.
 

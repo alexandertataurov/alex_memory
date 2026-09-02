@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-02 — AM-121 bounded graph intelligence
+
+`retrieve_related()` now presents the existing bounded authoritative graph
+contract for person, company, and project scopes as one-hop connection results.
+Automatic rows retain an exact claim-evidence or source-message citation;
+manual rows remain explicitly manual, and observed rows are excluded. This does
+not change ContextBuilder, compatibility relationship readers, graph writers,
+or database state.
+
 ## 2026-09-02 — AM-120 graph-parity readiness accepted
 
 The owner reran `make graph-parity` after the bounded historical-event authority
