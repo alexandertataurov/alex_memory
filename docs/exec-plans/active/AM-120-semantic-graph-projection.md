@@ -225,3 +225,7 @@ a live reader change.
   event/item endpoints and source message, and rejects a non-null mismatched
   claim. It is read-only, does not consult compatibility rows, and needs no
   replay or backfill.
+- 2026-09-02: parity diagnostics now identify the rejected event boundary as an
+  aggregate-safe reason (missing source item or claim, lineage mismatch,
+  endpoint/source-message mismatch, temporal exclusion, task ownership, or
+  missing claim evidence) instead of a generic lineage label.

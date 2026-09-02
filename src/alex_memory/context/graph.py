@@ -1114,6 +1114,7 @@ def _event_context_gap_reason(
     ).fetchall()
     if not rows:
         return "no_matching_current_event"
+    rejected_reasons: set[str] = set()
     for row in rows:
         (
             _event_id,
@@ -1137,26 +1138,42 @@ def _event_context_gap_reason(
             belongs_to_task,
         ) = row
         if source_type != "ai_item" or source_item_id is None:
+            rejected_reasons.add("event_missing_source_item")
             continue
         if item_id is None or item_claim_id is None:
+            rejected_reasons.add("event_source_item_missing_claim")
             continue
         if source_claim_id is not None and item_claim_id != source_claim_id:
+            rejected_reasons.add("event_claim_item_mismatch")
             continue
         if event_chat_id != item_chat_id or event_message_id != item_message_id:
+            rejected_reasons.add("event_source_message_mismatch")
             continue
         if event_project_id != to_id or item_project_id != to_id:
+            rejected_reasons.add("event_project_endpoint_mismatch")
             continue
         if from_type == "person" and (
             event_person_id != from_id or item_person_id != from_id
         ):
+            rejected_reasons.add("event_person_endpoint_mismatch")
             continue
         if from_type == "company" and (
             event_company_id != from_id or item_company_id != from_id
         ):
+            rejected_reasons.add("event_company_endpoint_mismatch")
             continue
         if occurred_at is None or str(occurred_at) > as_of:
+            rejected_reasons.add("event_outside_as_of")
             continue
-        if belongs_to_task or not has_claim_evidence:
+        if belongs_to_task:
+            rejected_reasons.add("event_owned_by_task")
+            continue
+        if not has_claim_evidence:
+            rejected_reasons.add("event_claim_missing_evidence")
             continue
         return "eligible_event_context_not_returned"
-    return "missing_exact_event_claim_lineage"
+    return (
+        min(rejected_reasons)
+        if rejected_reasons
+        else "missing_exact_event_claim_lineage"
+    )

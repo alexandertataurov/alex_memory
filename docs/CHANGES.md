@@ -18,6 +18,10 @@ was recorded only through the event's exact source item, matching source message
 and endpoints, and immutable claim evidence. It remains a bounded read-time
 representation rather than a compatibility-row promotion or maintenance action.
 
+Event rejection reasons are now aggregate-safe and specific enough to separate
+absent source items, missing claims, mismatches, timing, task ownership, and
+missing evidence without returning record identifiers or content.
+
 ## 2026-09-02 — AM-122 aggregate-only owner acceptance harness
 
 `make profile-acceptance PROFILE_CONTACTS="recent:… dormant:… ..."` now turns

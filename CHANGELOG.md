@@ -24,6 +24,9 @@ grounded in reviewed local files, Git history, and verification output.
 - AM-120 can now derive an accepted historical event-context edge when a
   canonical event predates its persisted claim ID but its exact source item and
   immutable evidence still agree. Compatibility rows remain outside the query.
+- AM-120 parity diagnostics now distinguish the specific event-lineage boundary
+  that prevents an authority result, without exposing record identifiers or
+  content.
 - AM-122 now has `make profile-acceptance`, an aggregate-only, read-only owner
   acceptance harness for 10–20 explicitly shape-labelled contacts. It verifies
   required shape coverage, profile existence, exact-evidence closure for

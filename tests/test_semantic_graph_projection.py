@@ -456,7 +456,7 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                     "from_type": "person",
                     "relationship_type": "involved_in",
                     "to_type": "project",
-                    "reason": "missing_exact_event_claim_lineage",
+                    "reason": "event_missing_source_item",
                     "count": 1,
                 }
             ],
