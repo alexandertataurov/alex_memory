@@ -542,6 +542,15 @@ def profile(conn: sqlite3.Connection, entity_type: str, entity_id: int) -> dict:
             WHERE {column}=? ORDER BY source_date DESC,item_id DESC LIMIT 12""",
         (entity_id,),
     ).fetchall()
+    timeline = conn.execute(
+        f"""SELECT title,COALESCE(description,''),COALESCE(occurred_at,observed_at),
+                   source_chat_id,source_message_id
+              FROM context_events
+             WHERE {column}=? AND source_chat_id IS NOT NULL
+               AND source_message_id IS NOT NULL
+             ORDER BY COALESCE(occurred_at,observed_at) DESC,event_id DESC LIMIT 12""",
+        (entity_id,),
+    ).fetchall()
     connections: list[SearchResult] = []
     append_authoritative_graph_context(
         conn, entity_type, entity_id, utc_now(), limit=8, results=connections
@@ -550,6 +559,7 @@ def profile(conn: sqlite3.Connection, entity_type: str, entity_id: int) -> dict:
         "entity": entity,
         "tasks": tasks,
         "memories": memories,
+        "timeline": timeline,
         "connections": connections,
     }
     if entity_type == "person":

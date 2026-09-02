@@ -98,6 +98,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Verification 2026-09-02: retrieval coverage now proves an accepted
     claim-backed graph connection resolves its exact source-message citation,
     in addition to manual and observed-edge boundaries.
+  - Progress 2026-09-02: Company and Project profiles now include a bounded
+    source-backed canonical event timeline. Events without an exact source
+    message are omitted rather than shown as unsupported history.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

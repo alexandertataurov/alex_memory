@@ -17,6 +17,9 @@ Automatic graph connections now use the canonical semantic-claim evidence
 column names when resolving their exact message citation; regression coverage
 exercises this path directly.
 
+Company and Project profiles also expose a bounded canonical event timeline.
+Events without an exact source-message locator remain omitted.
+
 ## 2026-09-02 — Patch safety-hook path parsing
 
 The pre-tool private-path guard now scans `apply_patch` file headers rather

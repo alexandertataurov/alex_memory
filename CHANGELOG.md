@@ -24,6 +24,8 @@ grounded in reviewed local files, Git history, and verification output.
   graph connections with authority and provenance labels.
 - Fixed AM-121 automatic graph-connection citations to read the canonical
   semantic-claim evidence columns.
+- Company and Project profiles now include a bounded exact-source canonical
+  event timeline.
 - AM-120's owner-run, non-truncated graph-parity gate now passes with zero
   gaps. This is readiness evidence only: ContextBuilder remains on the
   compatibility reader and no cutover, replay, backfill, migration, or live

@@ -322,6 +322,14 @@ class IntelligenceTests(unittest.TestCase):
             claim_id=int(claim_id),
             properties={"reducer": "accepted_event_context"},
         )
+        self.conn.execute(
+            """INSERT INTO context_events(
+                   event_type,title,description,occurred_at,observed_at,project_id,
+                   source_chat_id,source_message_id,confidence,created_at
+               ) VALUES ('project_updated','Terms agreed','Final terms agreed',?,?,?,
+                         100,82411,0.9,?)""",
+            (now, now, self.project_id, now),
+        )
         self.conn.commit()
 
         connections = [
@@ -334,6 +342,11 @@ class IntelligenceTests(unittest.TestCase):
         self.assertEqual(
             [("Project: Georgia LP", 100, 82411)],
             [(row.title, row.chat_id, row.message_id) for row in connections],
+        )
+        project_profile = profile(self.conn, "project", int(self.project_id))
+        self.assertEqual(
+            [("Terms agreed", "Final terms agreed", now, 100, 82411)],
+            [tuple(row) for row in project_profile["timeline"]],
         )
 
     def test_related_retrieval_supports_each_canonical_scope(self) -> None:

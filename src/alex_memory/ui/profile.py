@@ -38,6 +38,7 @@ def show_profile(
         _show_person_conversation(data, console)
     _show_tasks(tasks, console)
     _show_connections(data.get("connections", []), console)
+    _show_timeline(data.get("timeline", []), console)
     _show_memories(memories, console)
     console.print()
 
@@ -54,6 +55,28 @@ def _show_connections(connections: list, console: Console) -> None:
             safe_text(connection.title, 100, single_line=True),
             safe_text(connection.snippet, 80, single_line=True),
             safe_text(connection.citation, 80, single_line=True),
+        )
+    console.print(table)
+
+
+def _show_timeline(timeline: list[tuple], console: Console) -> None:
+    if not timeline:
+        return
+    table = Table(title="Recent source-backed events", expand=True)
+    table.add_column("When", width=24)
+    table.add_column("Event", ratio=3)
+    table.add_column("Evidence", ratio=2)
+    for title, description, occurred_at, chat_id, message_id in timeline:
+        table.add_row(
+            safe_text(occurred_at, 24, single_line=True),
+            safe_text(
+                f"{title}: {description}" if description else title,
+                180,
+                single_line=True,
+            ),
+            safe_text(
+                f"Telegram chat {chat_id} / msg {message_id}", 80, single_line=True
+            ),
         )
     console.print(table)
 

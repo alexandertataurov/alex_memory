@@ -82,3 +82,5 @@ plan.
 - 2026-09-02: automatic-connection coverage now verifies the exact claim
   evidence locator that the retrieval result exposes, alongside manual and
   observed-edge exclusion coverage.
+- 2026-09-02: Company and Project profiles now include a bounded canonical
+  event timeline only where the event retains an exact source-message locator.
