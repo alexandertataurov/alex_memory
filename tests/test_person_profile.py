@@ -119,6 +119,72 @@ class PersonProfileTests(unittest.TestCase):
             "new raw evidence pending", profile["context_freshness"]["state"]
         )
 
+    def test_relationship_other_endpoint_uses_type_and_id(self) -> None:
+        now = "2026-08-24T12:00:00+00:00"
+        company_id = self.conn.execute(
+            "INSERT INTO companies(canonical_name,created_at,updated_at) VALUES ('Atlas',?,?)",
+            (now, now),
+        ).lastrowid
+        assert company_id == self.person_id
+        self.conn.execute(
+            """INSERT INTO relationships(
+                   from_type,from_id,to_type,to_id,relationship_type,valid_from,
+                   confidence,source_chat_id,source_message_id,created_at,updated_at
+               ) VALUES ('company',?,'person',?,'advises',?,0.9,100,1,?,?)""",
+            (company_id, self.person_id, now, now, now),
+        )
+        self.conn.commit()
+
+        relationship = build_person_profile(self.conn, int(self.person_id))[
+            "relationships"
+        ][0]
+
+        self.assertEqual(
+            ("company", company_id, "Atlas"),
+            (
+                relationship["other_type"],
+                relationship["other_id"],
+                relationship["other_name"],
+            ),
+        )
+
+    def test_group_messages_and_stats_exclude_unrelated_participants(self) -> None:
+        self.conn.execute(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (200,'Atlas group','group')"
+        )
+        self.conn.executemany(
+            """INSERT INTO messages(chat_id,message_id,sender_id,date,text,is_outgoing,has_media)
+               VALUES (200,?,?,?,?,?,0)""",
+            [
+                (1, 100, "2026-08-25T12:00:00+00:00", "Michael update", 0),
+                (2, 777, "2026-08-25T12:01:00+00:00", "Unrelated participant", 0),
+                (3, 999, "2026-08-25T12:02:00+00:00", "My group reply", 1),
+            ],
+        )
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+               VALUES (1,'event','Michael update','','informational','unknown',0.9,200,1,
+                       '2026-08-25T12:00:00+00:00',?,'now','group-profile-link')""",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+        group_messages = [
+            item for item in profile["messages"] if item["chat_id"] == 200
+        ]
+        group_stats = next(
+            item for item in profile["stats"]["conversations"] if item["chat_id"] == 200
+        )
+
+        self.assertEqual({1, 3}, {item["message_id"] for item in group_messages})
+        self.assertEqual(
+            {"Contact", "You"}, {item["speaker"] for item in group_messages}
+        )
+        self.assertEqual(2, group_stats["total"])
+        self.assertEqual(4, profile["stats"]["total"])
+
     def test_profile_summary_is_cited_and_presentation_only(self) -> None:
         before = self.conn.execute("SELECT COUNT(*) FROM context_facts").fetchone()[0]
         self.assertTrue(

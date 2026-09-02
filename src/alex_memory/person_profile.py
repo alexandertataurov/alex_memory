@@ -380,7 +380,7 @@ def _relationships(conn: sqlite3.Connection, person_id: int) -> list[dict]:
         )
         other_type, other_id = (
             (item["to_type"], item["to_id"])
-            if item["from_id"] == person_id
+            if item["from_type"] == "person" and item["from_id"] == person_id
             else (item["from_type"], item["from_id"])
         )
         item["other_type"], item["other_id"] = other_type, other_id
@@ -546,13 +546,15 @@ def _communication_stats(conn: sqlite3.Connection, person_id: int) -> dict:
     chat_ids = _linked_chat_ids(conn, person_id)
     if not chat_ids:
         return {"conversations": []}
+    scope, scope_params = _profile_message_scope(conn, person_id)
     marks = ",".join("?" for _ in chat_ids)
     totals = conn.execute(
         f"""SELECT COUNT(*),SUM(CASE WHEN m.is_outgoing=1 THEN 1 ELSE 0 END),
                    MIN(m.date),MAX(m.date),COUNT(DISTINCT substr(m.date,1,10))
             FROM messages AS m
-            WHERE m.chat_id IN ({marks}) AND COALESCE(m.is_deleted,0)=0""",
-        sorted(chat_ids),
+            WHERE m.chat_id IN ({marks}) AND COALESCE(m.is_deleted,0)=0
+              AND ({scope})""",
+        [*sorted(chat_ids), *scope_params],
     ).fetchone()
     rows = conn.execute(
         f"""SELECT m.chat_id,COALESCE(c.title,CAST(m.chat_id AS TEXT)),COUNT(*),
@@ -560,8 +562,9 @@ def _communication_stats(conn: sqlite3.Connection, person_id: int) -> dict:
                    MIN(m.date),MAX(m.date),COUNT(DISTINCT substr(m.date,1,10))
             FROM messages AS m LEFT JOIN chats AS c ON c.chat_id=m.chat_id
             WHERE m.chat_id IN ({marks}) AND COALESCE(m.is_deleted,0)=0
+              AND ({scope})
             GROUP BY m.chat_id ORDER BY MAX(m.date) DESC LIMIT 8""",
-        sorted(chat_ids),
+        [*sorted(chat_ids), *scope_params],
     ).fetchall()
     conversations = [
         {
@@ -913,15 +916,17 @@ def _messages(conn: sqlite3.Connection, person_id: int) -> list[dict]:
     chat_ids = sorted(_linked_chat_ids(conn, person_id))
     if not chat_ids:
         return []
+    scope, scope_params = _profile_message_scope(conn, person_id)
     marks = ",".join("?" for _ in chat_ids)
     rows = conn.execute(
-        f"""SELECT m.chat_id,m.message_id,m.date,m.text,m.is_outgoing,
+        f"""SELECT m.chat_id,m.message_id,m.date,m.text,m.is_outgoing,m.sender_id,
                    COALESCE(c.title,CAST(m.chat_id AS TEXT))
               FROM messages AS m LEFT JOIN chats AS c ON c.chat_id=m.chat_id
              WHERE m.chat_id IN ({marks}) AND COALESCE(m.is_deleted,0)=0
                AND TRIM(COALESCE(m.text,''))<>''
+               AND ({scope})
              ORDER BY m.date DESC,m.message_id DESC LIMIT 80""",
-        chat_ids,
+        [*chat_ids, *scope_params],
     ).fetchall()
     return [
         {
@@ -929,11 +934,34 @@ def _messages(conn: sqlite3.Connection, person_id: int) -> list[dict]:
             "message_id": int(row[1]),
             "date": row[2],
             "text": str(row[3])[:1_000],
-            "speaker": "You" if row[4] else "Other",
-            "conversation": str(row[5]),
+            "speaker": "You" if row[4] else "Contact",
+            "conversation": str(row[6]),
         }
         for row in rows
     ]
+
+
+def _profile_message_scope(
+    conn: sqlite3.Connection, person_id: int
+) -> tuple[str, list[int]]:
+    """Keep group history attributable to the selected person or to the owner.
+
+    A linked group establishes context, not ownership of every participant's
+    messages. Direct-chat history remains complete; group rows include only the
+    selected person's sender ID and explicitly retained outgoing owner messages.
+    """
+    row = conn.execute(
+        "SELECT telegram_user_id FROM people WHERE person_id=?", (person_id,)
+    ).fetchone()
+    telegram_user_id = int(row[0]) if row is not None and row[0] is not None else None
+    if telegram_user_id is None:
+        return "m.is_outgoing=1", []
+    direct = conn.execute(
+        "SELECT 1 FROM chats WHERE chat_id=? AND chat_type='user'", (telegram_user_id,)
+    ).fetchone()
+    if direct is not None:
+        return "m.chat_id=? OR m.sender_id=? OR m.is_outgoing=1", [telegram_user_id] * 2
+    return "m.sender_id=? OR m.is_outgoing=1", [telegram_user_id]
 
 
 def _linked_chat_ids(conn: sqlite3.Connection, person_id: int) -> set[int]:

@@ -179,3 +179,14 @@ from current canonical state, and that opening the profile performs no source,
 canonical, graph, or refresh write. Record only aggregate pass/fail findings
 and any reproducible profile IDs for follow-up; do not place conversation
 content in the validation record.
+
+## Attribution correctness increment — 2026-08-30
+
+Relationship display now selects the other endpoint by canonical entity type
+and ID, so independently numbered person/company/project rows cannot be
+confused. Linked group-message history and communication aggregates include
+only the selected person's sender rows plus explicit outgoing owner messages;
+unrelated participants are excluded rather than presented as the contact.
+Direct-chat communication remains unchanged. Temporary-SQLite regressions cover
+both boundaries. No source, canonical, graph, refresh, migration, or live
+operation changed.
