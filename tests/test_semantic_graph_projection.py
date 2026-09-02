@@ -384,6 +384,36 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 "2026-08-25T00:00:00+00:00",
             )["gaps"],
         )
+        self.conn.execute(
+            """UPDATE context_events SET source_claim_id=NULL
+               WHERE person_id=? AND company_id=? AND project_id=?""",
+            (person_id, company_id, project_id),
+        )
+        self.conn.execute(
+            """DELETE FROM graph_edges
+               WHERE json_extract(properties_json, '$.reducer')='accepted_event_context'"""
+        )
+
+        historical_event_context = [
+            edge
+            for edge in current_authoritative_edges(
+                self.conn,
+                [("person", int(person_id)), ("company", int(company_id))],
+                "2026-08-25T00:00:00+00:00",
+            )
+            if edge.get("materialization") == "derived_event_context"
+        ]
+
+        self.assertEqual(3, len(historical_event_context))
+        self.assertTrue(all(edge["claim_ids"] for edge in historical_event_context))
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", int(person_id)), ("company", int(company_id))],
+                "2026-08-25T00:00:00+00:00",
+            )["gaps"],
+        )
 
     def test_parity_diagnostic_reports_event_lineage_not_task_absence(self) -> None:
         person_id = self.conn.execute(

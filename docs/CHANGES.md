@@ -13,6 +13,11 @@ checking only tasks. It now checks the exact canonical-event reducer boundary
 and reports absent events separately from incomplete event lineage. The tool
 remains read-only and aggregate-only.
 
+The historical event reducer now recovers an event created before its claim ID
+was recorded only through the event's exact source item, matching source message
+and endpoints, and immutable claim evidence. It remains a bounded read-time
+representation rather than a compatibility-row promotion or maintenance action.
+
 ## 2026-09-02 — AM-122 aggregate-only owner acceptance harness
 
 `make profile-acceptance PROFILE_CONTACTS="recent:… dormant:… ..."` now turns

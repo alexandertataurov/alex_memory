@@ -21,6 +21,9 @@ grounded in reviewed local files, Git history, and verification output.
   manual operational rows; this is a read-only presentation correction.
 - AM-120's read-only parity diagnostic now verifies canonical-event lineage
   before classifying a gap as lacking both task and event authority.
+- AM-120 can now derive an accepted historical event-context edge when a
+  canonical event predates its persisted claim ID but its exact source item and
+  immutable evidence still agree. Compatibility rows remain outside the query.
 - AM-122 now has `make profile-acceptance`, an aggregate-only, read-only owner
   acceptance harness for 10–20 explicitly shape-labelled contacts. It verifies
   required shape coverage, profile existence, exact-evidence closure for

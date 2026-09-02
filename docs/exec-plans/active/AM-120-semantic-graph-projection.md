@@ -219,3 +219,9 @@ a live reader change.
   edge. It now distinguishes an absent event from an event missing exact item,
   claim, evidence, endpoint, or temporal eligibility. The diagnostic remains
   read-only and never promotes either result into graph authority.
+- 2026-09-02: added the historical canonical-event reducer for records created
+  before `context_events.source_claim_id` was populated. It resolves only the
+  event's exact source item and its immutable evidenced claim, requires matching
+  event/item endpoints and source message, and rejects a non-null mismatched
+  claim. It is read-only, does not consult compatibility rows, and needs no
+  replay or backfill.

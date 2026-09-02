@@ -718,25 +718,30 @@ def _current_event_context_edges(
         return []
     rows = conn.execute(
         f"""SELECT event.event_id,event.person_id,event.company_id,event.project_id,
-                   item.person_id,item.company_id,item.project_id,
-                   event.source_claim_id,event.occurred_at,event.confidence
+                   item.person_id,item.company_id,item.project_id,item.source_claim_id,
+                   event.occurred_at,event.confidence
               FROM context_events AS event
               JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
-                                  AND item.source_claim_id=event.source_claim_id
+                                  AND (
+                                      event.source_claim_id IS NULL
+                                      OR item.source_claim_id=event.source_claim_id
+                                  )
              WHERE ({" OR ".join(predicates)})
                AND event.source_type='ai_item'
-               AND event.source_claim_id IS NOT NULL
+               AND item.source_claim_id IS NOT NULL
                AND event.project_id IS NOT NULL
                AND item.project_id=event.project_id
+               AND event.source_chat_id IS item.source_chat_id
+               AND event.source_message_id IS item.source_message_id
                AND event.occurred_at<=?
                AND NOT EXISTS (
                    SELECT 1 FROM tasks AS task
                     WHERE task.source_item_id=event.source_ai_item_id
-                      AND task.source_claim_id=event.source_claim_id
+                      AND task.source_claim_id=item.source_claim_id
                )
                AND EXISTS (
                    SELECT 1 FROM semantic_claim_evidence AS evidence
-                    WHERE evidence.claim_id=event.source_claim_id
+                    WHERE evidence.claim_id=item.source_claim_id
                )
              ORDER BY event.occurred_at DESC,event.event_id DESC
              LIMIT ?""",
@@ -1089,17 +1094,18 @@ def _event_context_gap_reason(
     event_column = "person_id" if from_type == "person" else "company_id"
     rows = conn.execute(
         f"""SELECT event.event_id,event.source_type,event.source_ai_item_id,
-                   event.source_claim_id,event.person_id,event.company_id,event.project_id,
-                   event.occurred_at,item.item_id,item.source_claim_id,item.person_id,
-                   item.company_id,item.project_id,
+                   event.source_claim_id,event.source_chat_id,event.source_message_id,
+                   event.person_id,event.company_id,event.project_id,event.occurred_at,
+                   item.item_id,item.source_claim_id,item.source_chat_id,
+                   item.source_message_id,item.person_id,item.company_id,item.project_id,
                    EXISTS (
                        SELECT 1 FROM semantic_claim_evidence AS evidence
-                        WHERE evidence.claim_id=event.source_claim_id
+                        WHERE evidence.claim_id=item.source_claim_id
                    ),
                    EXISTS (
                        SELECT 1 FROM tasks AS task
                         WHERE task.source_item_id=event.source_ai_item_id
-                          AND task.source_claim_id=event.source_claim_id
+                          AND task.source_claim_id=item.source_claim_id
                    )
               FROM context_events AS event
               LEFT JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
@@ -1114,25 +1120,29 @@ def _event_context_gap_reason(
             source_type,
             source_item_id,
             source_claim_id,
+            event_chat_id,
+            event_message_id,
             event_person_id,
             event_company_id,
             event_project_id,
             occurred_at,
             item_id,
             item_claim_id,
+            item_chat_id,
+            item_message_id,
             item_person_id,
             item_company_id,
             item_project_id,
             has_claim_evidence,
             belongs_to_task,
         ) = row
-        if (
-            source_type != "ai_item"
-            or source_item_id is None
-            or source_claim_id is None
-        ):
+        if source_type != "ai_item" or source_item_id is None:
             continue
-        if item_id is None or item_claim_id != source_claim_id:
+        if item_id is None or item_claim_id is None:
+            continue
+        if source_claim_id is not None and item_claim_id != source_claim_id:
+            continue
+        if event_chat_id != item_chat_id or event_message_id != item_message_id:
             continue
         if event_project_id != to_id or item_project_id != to_id:
             continue
