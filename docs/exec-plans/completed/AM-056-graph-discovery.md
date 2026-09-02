@@ -60,3 +60,14 @@ references, and reasons. The terminal Context Graph operation exposes this as
 an explicit `discover` action. Existing `graph_link` Review acceptance remains
 the sole canonical/manual graph mutation path. No model call, migration,
 backfill, replay, repair, or live operation ran.
+
+## Revalidation — 2026-08-30
+
+The completion audit correctly found that the original task ledger described a
+broader discovery surface than this implementation supports. The V1 contract
+is now explicitly limited to person-to-project candidates. Candidate evidence
+must itself name a sufficiently distinctive canonical project alias; a shared
+person and time-local project activity alone cannot create Review work.
+Temporary-SQLite coverage proves this negative case in addition to the existing
+true, stale, source-less, and idempotency cases. No migration, replay,
+backfill, repair, live operation, or automatic graph mutation ran.

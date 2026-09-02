@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from ..operational import normalize_alias
 from ..utils import utc_now
 from .repository import ensure_relationship
 
@@ -300,14 +302,16 @@ class ContextGraphImprover:
         This selector deliberately does not call ``improve()``: it creates
         Review candidates only and never mutates canonical rows or graph edges.
         A candidate requires the same resolved person in two different chats,
-        exact source messages, and project evidence no more than 90 days away.
+        an exact candidate message that names a known project alias, and
+        independent exact project evidence no more than 90 days away.
         """
         if not 1 <= limit <= 80:
             raise ValueError("Cross-chat discovery limit must be between 1 and 80")
         rows = self.conn.execute(
             """SELECT candidate.item_id,candidate.person_id,candidate.source_chat_id,
                       candidate.source_message_id,candidate.source_date,
-                      candidate.confidence,anchor.item_id,anchor.project_id,
+                      candidate.confidence,candidate_message.text,
+                      anchor.item_id,anchor.project_id,
                       anchor.source_chat_id,anchor.source_message_id,
                       anchor.source_date,anchor.confidence
                  FROM ai_items AS candidate
@@ -377,6 +381,7 @@ class ContextGraphImprover:
                 candidate_message_id,
                 candidate_at,
                 candidate_confidence,
+                candidate_text,
                 anchor_id,
                 project_id,
                 anchor_chat_id,
@@ -390,6 +395,9 @@ class ContextGraphImprover:
                 candidate_time is None
                 or anchor_time is None
                 or abs(candidate_time - anchor_time) > timedelta(days=90)
+                or not self._message_names_project(
+                    str(candidate_text or ""), int(project_id)
+                )
             ):
                 continue
             exists = self.conn.execute(
@@ -427,6 +435,7 @@ class ContextGraphImprover:
                             ],
                             "reasons": [
                                 "same resolved person across distinct chats",
+                                "candidate source names a known project alias",
                                 "project evidence is within 90 days",
                             ],
                         },
@@ -440,6 +449,27 @@ class ContextGraphImprover:
             if created >= limit:
                 break
         return created
+
+    def _message_names_project(self, message_text: str, project_id: int) -> bool:
+        """Require candidate evidence to name the anchored project explicitly.
+
+        This is intentionally a narrow V1 semantic guard, not a general name
+        search: the project must already be canonical and the original candidate
+        message must contain one of its sufficiently distinctive aliases.
+        """
+        text = normalize_alias(message_text)
+        if not text:
+            return False
+        aliases = self.conn.execute(
+            """SELECT normalized_alias FROM entity_aliases
+               WHERE entity_type='project' AND entity_id=?
+                 AND length(normalized_alias)>=4""",
+            (project_id,),
+        ).fetchall()
+        return any(
+            re.search(rf"(?<!\\w){re.escape(str(alias))}(?!\\w)", text) is not None
+            for (alias,) in aliases
+        )
 
     def _accepted_item_links(
         self,

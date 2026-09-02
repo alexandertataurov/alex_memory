@@ -759,7 +759,7 @@ class ClassificationAndGraphTests(unittest.TestCase):
         self.conn.executemany(
             "INSERT INTO messages(chat_id,message_id,date,text) VALUES (?,?,?,?)",
             [
-                (10, 1, now, "Please send the documents."),
+                (10, 1, now, "Please send the Georgia LP documents."),
                 (20, 1, "2026-01-15T00:00:00+00:00", "Georgia documents."),
             ],
         )
@@ -796,6 +796,9 @@ class ClassificationAndGraphTests(unittest.TestCase):
         self.assertEqual(
             [{"chat_id": 20, "message_id": 1, "source_item_id": 2}],
             payload["candidate_evidence"],
+        )
+        self.assertIn(
+            "candidate source names a known project alias", payload["reasons"]
         )
         self.assertEqual(0.95, confidence)
 
@@ -866,6 +869,44 @@ class ClassificationAndGraphTests(unittest.TestCase):
                     "untraceable",
                 ),
             ],
+        )
+        self.conn.commit()
+
+        self.assertEqual(
+            0, ContextGraphImprover(self.conn).discover_cross_chat_candidates()
+        )
+        self.assertEqual(
+            0, self.conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+        )
+
+    def test_cross_chat_discovery_rejects_unrelated_same_person_activity(self):
+        now = "2026-01-01T00:00:00+00:00"
+        resolver = EntityResolver(self.conn)
+        person = resolver.person("Michael", source="manual")
+        project = resolver.entity("project", "Georgia LP", source="manual")
+        assert person is not None and project is not None
+        self.conn.executemany(
+            "INSERT INTO chats(chat_id,title,chat_type) VALUES (?,?,'user')",
+            [(10, "Michael"), (20, "Michael work")],
+        )
+        self.conn.executemany(
+            "INSERT INTO messages(chat_id,message_id,date,text) VALUES (?,?,?,?)",
+            [
+                (10, 1, now, "Please send the unrelated documents."),
+                (20, 1, "2026-01-15T00:00:00+00:00", "Georgia LP documents."),
+            ],
+        )
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,created_at,dedupe_key)
+               VALUES (1,'task','Send documents','','open','me',0.95,10,1,?,?,?,'unrelated-candidate')""",
+            (now, person, now),
+        )
+        self.conn.execute(
+            """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                   source_chat_id,source_message_id,source_date,person_id,project_id,created_at,dedupe_key)
+               VALUES (1,'project','Georgia LP','','informational','unknown',0.95,20,1,?,?,?,?,'unrelated-anchor')""",
+            ("2026-01-15T00:00:00+00:00", person, project, now),
         )
         self.conn.commit()
 
