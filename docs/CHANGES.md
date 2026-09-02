@@ -9,6 +9,17 @@ manual rows remain explicitly manual, and observed rows are excluded. This does
 not change ContextBuilder, compatibility relationship readers, graph writers,
 or database state.
 
+Company and Project profiles now render the identical one-hop connection
+results. The query helper is shared rather than reimplemented, so the same
+authority and evidence rules apply in both product surfaces.
+
+## 2026-09-02 — Patch safety-hook path parsing
+
+The pre-tool private-path guard now scans `apply_patch` file headers rather
+than ordinary patch content. Protected paths remain rejected, while maintained
+code that happens to use a field named `data` no longer produces a false
+private-archive denial.
+
 ## 2026-09-02 — AM-120 graph-parity readiness accepted
 
 The owner reran `make graph-parity` after the bounded historical-event authority

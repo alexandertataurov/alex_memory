@@ -271,6 +271,11 @@ class IntelligenceTests(unittest.TestCase):
                 for row in connections
             ],
         )
+        company_profile = profile(self.conn, "company", int(company_id))
+        self.assertEqual(
+            ["Person: Michael"],
+            [row.title for row in company_profile["connections"]],
+        )
         self.conn.execute(
             "UPDATE graph_edges SET authority_status='observed' WHERE relationship_type='works_for'"
         )
@@ -284,6 +289,9 @@ class IntelligenceTests(unittest.TestCase):
                 )
                 if row.result_type == "connection"
             ],
+        )
+        self.assertEqual(
+            [], profile(self.conn, "company", int(company_id))["connections"]
         )
 
     def test_related_retrieval_supports_each_canonical_scope(self) -> None:

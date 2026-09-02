@@ -9,7 +9,12 @@ from datetime import date, datetime, timedelta, timezone
 
 from .chat_policy import set_chat_policy
 from .config import Settings
-from .retrieval import SearchResult, retrieve, retrieve_related
+from .retrieval import (
+    SearchResult,
+    append_authoritative_graph_context,
+    retrieve,
+    retrieve_related,
+)
 from .utils import utc_now
 
 __all__ = ["set_chat_policy"]
@@ -537,7 +542,16 @@ def profile(conn: sqlite3.Connection, entity_type: str, entity_id: int) -> dict:
             WHERE {column}=? ORDER BY source_date DESC,item_id DESC LIMIT 12""",
         (entity_id,),
     ).fetchall()
-    data = {"entity": entity, "tasks": tasks, "memories": memories}
+    connections: list[SearchResult] = []
+    append_authoritative_graph_context(
+        conn, entity_type, entity_id, utc_now(), limit=8, results=connections
+    )
+    data = {
+        "entity": entity,
+        "tasks": tasks,
+        "memories": memories,
+        "connections": connections,
+    }
     if entity_type == "person":
         data["conversation"] = conn.execute(
             """SELECT current_summary,long_term_summary,last_contact_at,updated_at

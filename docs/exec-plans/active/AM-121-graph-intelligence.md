@@ -75,3 +75,7 @@ plan.
   claim-backed or historical-event edges. Manual rows stay provenance-honest;
   observed rows remain absent. No ContextBuilder caller, schema, graph writer,
   compatibility-reader, or live state changed.
+- 2026-09-02: Company and Project profile rendering now consumes that same
+  shared one-hop query, showing endpoint, authority-labelled relationship, and
+  provenance. The helper remains a bounded read-only primitive rather than a
+  second graph implementation.

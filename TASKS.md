@@ -91,6 +91,10 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     claim-evidence or historical-event source-message citation; manual entries
     remain labelled manual. Observed graph rows stay excluded. ContextBuilder
     and compatibility relationship readers are unchanged.
+  - Progress 2026-09-02: Company and Project profiles now render the same
+    bounded authoritative one-hop connection results with their provenance.
+    The shared query remains read-only and preserves the exclusion of observed
+    graph rows; no Person Profile or ContextBuilder change is involved.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

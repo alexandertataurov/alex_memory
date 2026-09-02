@@ -56,6 +56,10 @@ def main() -> None:
     command = text_from(event)
     if not command:
         return
+    if event.get("tool_name") == "apply_patch":
+        command = "\n".join(
+            line for line in command.splitlines() if line.startswith("*** ")
+        )
     if PRIVATE_PATH.search(command):
         deny(
             "Protected private path detected. Do not inspect or modify secrets, "

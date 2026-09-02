@@ -20,6 +20,8 @@ grounded in reviewed local files, Git history, and verification output.
 - AM-121 entity-scoped retrieval now exposes bounded one-hop accepted/manual
   graph connections with exact automatic provenance. Observed graph rows,
   ranking, and ContextBuilder compatibility-reader changes remain excluded.
+- Company and Project profile rendering now presents the same bounded AM-121
+  graph connections with authority and provenance labels.
 - AM-120's owner-run, non-truncated graph-parity gate now passes with zero
   gaps. This is readiness evidence only: ContextBuilder remains on the
   compatibility reader and no cutover, replay, backfill, migration, or live

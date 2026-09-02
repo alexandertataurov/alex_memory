@@ -37,8 +37,25 @@ def show_profile(
     if entity_type == "person" and data.get("conversation"):
         _show_person_conversation(data, console)
     _show_tasks(tasks, console)
+    _show_connections(data.get("connections", []), console)
     _show_memories(memories, console)
     console.print()
+
+
+def _show_connections(connections: list, console: Console) -> None:
+    if not connections:
+        return
+    table = Table(expand=True)
+    table.add_column("Connected entity", ratio=3)
+    table.add_column("Relationship", ratio=2)
+    table.add_column("Evidence", ratio=2)
+    for connection in connections:
+        table.add_row(
+            safe_text(connection.title, 100, single_line=True),
+            safe_text(connection.snippet, 80, single_line=True),
+            safe_text(connection.citation, 80, single_line=True),
+        )
+    console.print(table)
 
 
 def _show_person_profile(data: dict, console: Console, section: str) -> None:

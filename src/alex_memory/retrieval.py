@@ -229,7 +229,7 @@ def retrieve_related(
             )
 
     if entity_type != "task":
-        _append_graph_context_results(
+        append_authoritative_graph_context(
             conn,
             entity_type,
             entity_id,
@@ -255,7 +255,7 @@ def _require_entity(conn: sqlite3.Connection, entity_type: str, entity_id: int) 
         raise ValueError(f"unknown {entity_type} {entity_id}")
 
 
-def _append_graph_context_results(
+def append_authoritative_graph_context(
     conn: sqlite3.Connection,
     entity_type: str,
     entity_id: int,
