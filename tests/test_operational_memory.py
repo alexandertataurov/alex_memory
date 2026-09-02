@@ -14,6 +14,7 @@ from alex_memory.context.refresh import enqueue_context_refresh, refresh_pending
 from alex_memory.database import connect
 from alex_memory.models import AIBatch, AIMessage
 from alex_memory.operational import (
+    _likely_duplicate_projects,
     EntityResolver,
     TaskReconciler,
     backfill_direct_chat_identities,
@@ -32,6 +33,7 @@ from alex_memory.repair import (
     apply_fts_repair,
     apply_project_health_repair,
     apply_segment_repair,
+    apply_task_lifecycle_repair,
     apply_task_project_repair,
     derived_state_repair_dry_run,
     derived_state_repair_inventory,
@@ -355,6 +357,314 @@ class OperationalMemoryTests(unittest.TestCase):
                         recovery_receipt=receipt,
                         limit=1,
                     )
+            finally:
+                conn.close()
+
+    def test_task_lifecycle_repair_preserves_manual_authority_and_terminal_state(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (113,'Work','group')"
+                )
+                conn.executemany(
+                    "INSERT INTO messages(chat_id,message_id,date,text) VALUES (113,?,?,?)",
+                    [
+                        (1, "2026-08-22T09:00:00+00:00", "Send invoice."),
+                        (2, "2026-08-22T10:00:00+00:00", "Report completed."),
+                    ],
+                )
+                conn.executemany(
+                    """INSERT INTO semantic_claims(batch_id,claim_type,statement,payload_json,
+                           extractor_version,provider,model,confidence,authority_status,dedupe_key,created_at)
+                       VALUES (1,'action_candidate',?,'{}',1,'test','test',0.96,'observed',?,'now')""",
+                    [
+                        ("Send invoice", "lifecycle-claim-open"),
+                        ("Report completed", "lifecycle-claim-done"),
+                    ],
+                )
+                claim_ids = [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT claim_id FROM semantic_claims ORDER BY claim_id"
+                    ).fetchall()
+                ]
+                conn.executemany(
+                    """INSERT INTO semantic_claim_evidence(
+                           claim_id,ordinal,source_chat_id,source_message_id,created_at
+                       ) VALUES (?,0,113,?,'now')""",
+                    [(claim_ids[0], 1), (claim_ids[1], 2)],
+                )
+                conn.executemany(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                           source_chat_id,source_message_id,source_date,source_claim_id,created_at,dedupe_key)
+                       VALUES (1,'task',?,'',?,'me',0.96,113,?,?,?,'now',?)""",
+                    [
+                        (
+                            "Send invoice",
+                            "open",
+                            1,
+                            "2026-08-22T09:00:00+00:00",
+                            claim_ids[0],
+                            "lifecycle-open",
+                        ),
+                        (
+                            "Send report",
+                            "done",
+                            2,
+                            "2026-08-22T10:00:00+00:00",
+                            claim_ids[1],
+                            "lifecycle-done",
+                        ),
+                    ],
+                )
+                manual_task = conn.execute(
+                    """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                           manual_status_locked,confidence,created_at,updated_at)
+                       VALUES ('Send invoice','send invoice','waiting','me',113,1,1.0,'now','now')"""
+                ).lastrowid
+                terminal_task = conn.execute(
+                    """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                           confidence,created_at,updated_at)
+                       VALUES ('Send report','send report','open','me',113,1.0,'now','now')"""
+                ).lastrowid
+                unrelated_task = conn.execute(
+                    """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                           confidence,created_at,updated_at)
+                       VALUES ('Unrelated','unrelated','open','me',114,1.0,'now','now')"""
+                ).lastrowid
+                assert (
+                    manual_task is not None
+                    and terminal_task is not None
+                    and unrelated_task is not None
+                )
+                report = derived_state_repair_dry_run(
+                    conn, operations={"task-lifecycle"}, limit=10
+                )
+                self.assertEqual(
+                    2, report["operations"]["task-lifecycle"]["eligible_units"]
+                )
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+
+                outcome = apply_task_lifecycle_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                    limit=10,
+                )
+
+                self.assertEqual("completed", outcome["status"])
+                self.assertEqual(2, outcome["source_items"])
+                self.assertEqual(
+                    ("waiting", 1),
+                    conn.execute(
+                        "SELECT status,manual_status_locked FROM tasks WHERE task_id=?",
+                        (manual_task,),
+                    ).fetchone(),
+                )
+                self.assertEqual(
+                    "open",
+                    conn.execute(
+                        "SELECT status FROM tasks WHERE task_id=?", (unrelated_task,)
+                    ).fetchone()[0],
+                )
+                self.assertEqual(
+                    "done",
+                    conn.execute(
+                        "SELECT status FROM tasks WHERE task_id=?", (terminal_task,)
+                    ).fetchone()[0],
+                )
+                checkpoint = json.loads(
+                    conn.execute(
+                        "SELECT value FROM app_meta WHERE key=?",
+                        (f"derived_state_repair:{report['fingerprint']}",),
+                    ).fetchone()[0]
+                )
+                self.assertEqual("completed", checkpoint["status"])
+                self.assertEqual(
+                    {claim_ids[0], claim_ids[1]},
+                    {item["source_claim_id"] for item in checkpoint["source_items"]},
+                )
+                self.assertEqual(
+                    "already-complete",
+                    apply_task_lifecycle_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=10,
+                    )["status"],
+                )
+            finally:
+                conn.close()
+
+    def test_task_lifecycle_repair_rejects_stale_scope_and_retries_exact_items(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (115,'Work','group')"
+                )
+                conn.execute(
+                    "INSERT INTO messages(chat_id,message_id,date,text) VALUES (115,1,'2026-08-22T09:00:00+00:00','Send invoice.')"
+                )
+                claim_id = conn.execute(
+                    """INSERT INTO semantic_claims(batch_id,claim_type,statement,payload_json,
+                           extractor_version,provider,model,confidence,authority_status,dedupe_key,created_at)
+                       VALUES (1,'action_candidate','Send invoice','{}',1,'test','test',0.96,
+                               'observed','lifecycle-retry-claim','now')"""
+                ).lastrowid
+                assert claim_id is not None
+                conn.execute(
+                    "INSERT INTO semantic_claim_evidence(claim_id,ordinal,source_chat_id,source_message_id,created_at) VALUES (?,0,115,1,'now')",
+                    (claim_id,),
+                )
+                item_id = conn.execute(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                           source_chat_id,source_message_id,source_date,source_claim_id,created_at,dedupe_key)
+                       VALUES (1,'task','Send invoice','','open','me',0.96,115,1,
+                               '2026-08-22T09:00:00+00:00',?,'now','lifecycle-retry')""",
+                    (claim_id,),
+                ).lastrowid
+                assert item_id is not None
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+                stale = derived_state_repair_dry_run(
+                    conn, operations={"task-lifecycle"}, limit=1
+                )
+                conn.execute(
+                    "UPDATE ai_items SET title='Changed title' WHERE item_id=?",
+                    (item_id,),
+                )
+                with self.assertRaisesRegex(ValueError, "fingerprint"):
+                    apply_task_lifecycle_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(stale["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+                report = derived_state_repair_dry_run(
+                    conn, operations={"task-lifecycle"}, limit=1
+                )
+
+                def partial_failure(*_args, **_kwargs) -> dict[str, object]:
+                    conn.execute(
+                        "INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,confidence,created_at,updated_at) VALUES ('Partial','partial','open','me',115,1.0,'now','now')"
+                    )
+                    raise RuntimeError("injected lifecycle failure")
+
+                with (
+                    patch(
+                        "alex_memory.repair._reconcile_task_lifecycle_rows",
+                        side_effect=partial_failure,
+                    ),
+                    self.assertRaisesRegex(RuntimeError, "injected lifecycle failure"),
+                ):
+                    apply_task_lifecycle_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )
+                self.assertEqual(
+                    0,
+                    conn.execute(
+                        "SELECT COUNT(*) FROM tasks WHERE title='Partial'"
+                    ).fetchone()[0],
+                )
+                self.assertEqual(
+                    "failed",
+                    json.loads(
+                        conn.execute(
+                            "SELECT value FROM app_meta WHERE key=?",
+                            (f"derived_state_repair:{report['fingerprint']}",),
+                        ).fetchone()[0]
+                    )["status"],
+                )
+                self.assertEqual(
+                    "completed",
+                    apply_task_lifecycle_repair(
+                        conn,
+                        settings,
+                        dry_run_fingerprint=str(report["fingerprint"]),
+                        recovery_receipt=receipt,
+                        limit=1,
+                    )["status"],
+                )
+            finally:
+                conn.close()
+
+    def test_task_lifecycle_repair_does_not_re_resolve_missing_project_context(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = make_settings(path)
+            conn = connect(settings)
+            try:
+                conn.execute(
+                    "INSERT INTO chats(chat_id,title,chat_type) VALUES (116,'Work','group')"
+                )
+                conn.execute(
+                    "INSERT INTO messages(chat_id,message_id,date,text) VALUES (116,1,'2026-08-22T09:00:00+00:00','Prepare Georgia documents.')"
+                )
+                for name in ("Georgia LP", "Georgia Fund"):
+                    EntityResolver(conn).entity("project", name, source="manual")
+                claim_id = conn.execute(
+                    """INSERT INTO semantic_claims(batch_id,claim_type,statement,payload_json,
+                           extractor_version,provider,model,confidence,authority_status,dedupe_key,created_at)
+                       VALUES (1,'action_candidate','Prepare Georgia documents','{}',1,'test','test',0.96,
+                               'observed','lifecycle-unresolved-claim','now')"""
+                ).lastrowid
+                assert claim_id is not None
+                conn.execute(
+                    "INSERT INTO semantic_claim_evidence(claim_id,ordinal,source_chat_id,source_message_id,created_at) VALUES (?,0,116,1,'now')",
+                    (claim_id,),
+                )
+                conn.execute(
+                    """INSERT INTO ai_items(batch_id,kind,title,details,status,owner,confidence,
+                           source_chat_id,source_message_id,source_date,source_claim_id,created_at,dedupe_key)
+                       VALUES (1,'task','Prepare Georgia documents','','open','me',0.96,116,1,
+                               '2026-08-22T09:00:00+00:00',?,'now','lifecycle-unresolved')""",
+                    (claim_id,),
+                )
+                receipt = path / "recovery-receipt.sqlite"
+                receipt.touch()
+                report = derived_state_repair_dry_run(
+                    conn, operations={"task-lifecycle"}, limit=1
+                )
+
+                apply_task_lifecycle_repair(
+                    conn,
+                    settings,
+                    dry_run_fingerprint=str(report["fingerprint"]),
+                    recovery_receipt=receipt,
+                    limit=1,
+                )
+
+                self.assertIsNone(
+                    conn.execute(
+                        "SELECT related_project_id FROM tasks WHERE title='Prepare Georgia documents'"
+                    ).fetchone()[0]
+                )
+                self.assertEqual(
+                    0,
+                    conn.execute(
+                        "SELECT COUNT(*) FROM review_queue WHERE review_type='graph_task_link'"
+                    ).fetchone()[0],
+                )
             finally:
                 conn.close()
 
@@ -1186,6 +1496,116 @@ class OperationalMemoryTests(unittest.TestCase):
                 EntityResolver(conn).entity(
                     "project", "Georgia L.P.", allow_create=False
                 ),
+            )
+            conn.close()
+
+    def test_ambiguous_duplicate_projects_queue_review_alternatives(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            first = EntityResolver(conn).entity(
+                "project", "Georgia LP Alpha", source="manual"
+            )
+            second = EntityResolver(conn).entity(
+                "project", "Georgia LP Alpah", source="manual"
+            )
+            assert first is not None and second is not None
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (106,'Work','group')"
+            )
+            conn.execute(
+                """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+                   VALUES (106,1,'2026-08-22T09:00:00+00:00','Georgia LP Alpa documents',0,0)"""
+            )
+            batch = AIBatch(
+                106,
+                "Work",
+                [
+                    AIMessage(
+                        106,
+                        1,
+                        None,
+                        "2026-08-22T09:00:00+00:00",
+                        "Georgia LP Alpa documents",
+                        False,
+                        "Work",
+                        "group",
+                    )
+                ],
+                "prompt",
+            )
+            items = [
+                {
+                    "kind": "project",
+                    "title": "Georgia LP Alpa",
+                    "details": "Document work.",
+                    "status": "informational",
+                    "owner": "unknown",
+                    "due_date": None,
+                    "person": None,
+                    "company": None,
+                    "project_name": None,
+                    "amount": None,
+                    "currency": None,
+                    "confidence": 0.96,
+                    "source_chat_id": 106,
+                    "source_message_id": 1,
+                },
+                {
+                    "kind": "task",
+                    "title": "Send documents",
+                    "details": "For Georgia LP Alpa.",
+                    "status": "open",
+                    "owner": "me",
+                    "due_date": None,
+                    "person": None,
+                    "company": None,
+                    "project_name": "Georgia LP Alpa",
+                    "amount": None,
+                    "currency": None,
+                    "confidence": 0.96,
+                    "source_chat_id": 106,
+                    "source_message_id": 1,
+                },
+            ]
+            saved = save_ai_success(
+                conn, batch, {"summary": "Georgia documents.", "items": items}, settings
+            )
+
+            self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
+            self.assertEqual(
+                2, conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+            )
+            reviews = conn.execute(
+                """SELECT payload_json FROM review_queue
+                   WHERE review_type='project_duplicate' ORDER BY review_id"""
+            ).fetchall()
+            self.assertEqual(2, len(reviews))
+            self.assertEqual(
+                {first, second},
+                {
+                    project_id
+                    for row in reviews
+                    for project_id in json.loads(row[0])["candidate_project_ids"]
+                },
+            )
+            conn.close()
+
+    def test_duplicate_project_scan_includes_candidates_beyond_recent_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            earliest = resolver.entity("project", "Georgia LP", source="manual")
+            assert earliest is not None
+            for index in range(80):
+                resolver.entity(
+                    "project", f"Unrelated project {index}", source="manual"
+                )
+
+            self.assertEqual(
+                (earliest,), _likely_duplicate_projects(conn, "Georgia L.P.")
             )
             conn.close()
 

@@ -30,11 +30,13 @@ ambiguity uses the existing entity-merge Review flow.
 
 ## Outcome
 
-Completed 2026-08-29. The accepted-batch writer now creates a new project only
+Completed 2026-08-29; acceptance repair completed 2026-08-30. The accepted-batch writer now creates a new project only
 for a high-confidence project observation accompanied by an explicit
 same-batch project reference. All other project names resolve existing aliases
-only. A bounded normalized-name comparison sends likely duplicates to
-`project_duplicate` Review; manual acceptance links the source observation to
-the selected existing project and records its alias. Existing manual project
-merge retains source-observation references. No schema or historical-data work
-ran.
+only. The normalized-name comparison now examines every non-merged canonical
+project, so a former arbitrary 80-row cutoff and an ambiguous match set cannot
+allow a new row. Every detected candidate produces a `project_duplicate`
+Review carrying the complete ordered candidate list; manual acceptance links
+the source observation to the selected existing project and records its alias.
+Existing manual project merge retains source-observation references. No schema
+or historical-data work ran.

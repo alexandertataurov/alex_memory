@@ -758,15 +758,15 @@ def backfill_task_project_links(
     return linked, reviewed
 
 
-def _likely_duplicate_project(conn: sqlite3.Connection, name: str) -> int | None:
-    """Return one bounded likely duplicate; do not create or merge anything."""
+def _likely_duplicate_projects(conn: sqlite3.Connection, name: str) -> tuple[int, ...]:
+    """Return every plausible duplicate; ambiguity must never permit creation."""
     normalized = normalize_task_title(name)
     if len(normalized) < 4:
-        return None
+        return ()
     candidates: list[int] = []
     for project_id, canonical_name in conn.execute(
         """SELECT project_id,canonical_name FROM projects
-           WHERE status<>'merged' ORDER BY updated_at DESC,project_id DESC LIMIT 80"""
+           WHERE status<>'merged' ORDER BY project_id"""
     ):
         existing = normalize_task_title(str(canonical_name))
         if existing == normalized or (
@@ -774,11 +774,16 @@ def _likely_duplicate_project(conn: sqlite3.Connection, name: str) -> int | None
             and SequenceMatcher(a=normalized, b=existing).ratio() >= 0.92
         ):
             candidates.append(int(project_id))
-    return candidates[0] if len(candidates) == 1 else None
+    return tuple(candidates)
 
 
 def _queue_project_duplicate_review(
-    conn: sqlite3.Connection, *, item_id: int, project_id: int, name: str
+    conn: sqlite3.Connection,
+    *,
+    item_id: int,
+    project_id: int,
+    name: str,
+    alternatives: tuple[int, ...] = (),
 ) -> None:
     exists = conn.execute(
         """SELECT 1 FROM review_queue WHERE review_type='project_duplicate'
@@ -798,6 +803,7 @@ def _queue_project_duplicate_review(
                 {
                     "source_item_id": item_id,
                     "candidate_project_id": project_id,
+                    "candidate_project_ids": list(alternatives),
                     "proposed_project_name": name,
                     "reason": "normalized project name is likely a duplicate",
                 },
@@ -884,14 +890,16 @@ def _project_ai_batch(
             and float(confidence) >= settings.ai_auto_accept_confidence
             and project_name in referenced_project_names
         ):
-            duplicate_project_id = _likely_duplicate_project(conn, str(title))
-            if duplicate_project_id is not None:
-                _queue_project_duplicate_review(
-                    conn,
-                    item_id=int(item_id),
-                    project_id=duplicate_project_id,
-                    name=str(title),
-                )
+            duplicate_project_ids = _likely_duplicate_projects(conn, str(title))
+            if duplicate_project_ids:
+                for duplicate_project_id in duplicate_project_ids:
+                    _queue_project_duplicate_review(
+                        conn,
+                        item_id=int(item_id),
+                        project_id=duplicate_project_id,
+                        name=str(title),
+                        alternatives=duplicate_project_ids,
+                    )
             else:
                 project_id = resolver.entity("project", title, confidence=confidence)
         if project_id is None:
