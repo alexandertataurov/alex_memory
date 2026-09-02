@@ -13,6 +13,10 @@ Company and Project profiles now render the identical one-hop connection
 results. The query helper is shared rather than reimplemented, so the same
 authority and evidence rules apply in both product surfaces.
 
+Automatic graph connections now use the canonical semantic-claim evidence
+column names when resolving their exact message citation; regression coverage
+exercises this path directly.
+
 ## 2026-09-02 — Patch safety-hook path parsing
 
 The pre-tool private-path guard now scans `apply_patch` file headers rather

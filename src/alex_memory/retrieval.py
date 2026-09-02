@@ -331,7 +331,7 @@ def _edge_evidence_locator(
         return None, None
     marks = ",".join("?" for _ in claim_ids)
     row = conn.execute(
-        f"""SELECT chat_id,message_id FROM semantic_claim_evidence
+        f"""SELECT source_chat_id,source_message_id FROM semantic_claim_evidence
                WHERE claim_id IN ({marks})
                ORDER BY claim_id,ordinal LIMIT 1""",
         list(claim_ids),

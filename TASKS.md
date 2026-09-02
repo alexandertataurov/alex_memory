@@ -95,6 +95,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     bounded authoritative one-hop connection results with their provenance.
     The shared query remains read-only and preserves the exclusion of observed
     graph rows; no Person Profile or ContextBuilder change is involved.
+  - Verification 2026-09-02: retrieval coverage now proves an accepted
+    claim-backed graph connection resolves its exact source-message citation,
+    in addition to manual and observed-edge boundaries.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

@@ -79,3 +79,6 @@ plan.
   shared one-hop query, showing endpoint, authority-labelled relationship, and
   provenance. The helper remains a bounded read-only primitive rather than a
   second graph implementation.
+- 2026-09-02: automatic-connection coverage now verifies the exact claim
+  evidence locator that the retrieval result exposes, alongside manual and
+  observed-edge exclusion coverage.

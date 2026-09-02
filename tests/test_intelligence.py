@@ -294,6 +294,48 @@ class IntelligenceTests(unittest.TestCase):
             [], profile(self.conn, "company", int(company_id))["connections"]
         )
 
+    def test_related_retrieval_cites_accepted_graph_claim_evidence(self) -> None:
+        now = "2026-08-21T12:00:00+00:00"
+        claim_id = self.conn.execute(
+            """INSERT INTO semantic_claims(
+                   batch_id,claim_type,statement,payload_json,extractor_version,
+                   provider,model,confidence,authority_status,dedupe_key,created_at
+               ) VALUES (1,'relationship','Michael is involved in Georgia LP','{}',2,
+                         'test','test',0.9,'accepted','related-graph-claim',?)""",
+            (now,),
+        ).lastrowid
+        assert claim_id is not None
+        self.conn.execute(
+            """INSERT INTO semantic_claim_evidence(
+                   claim_id,ordinal,source_chat_id,source_message_id,created_at
+               ) VALUES (?,0,100,82411,?)""",
+            (claim_id, now),
+        )
+        projector = SemanticGraphProjector(self.conn)
+        projector._edge(
+            from_node_id=projector._canonical_node("person", int(self.person_id)),
+            to_node_id=projector._canonical_node("project", int(self.project_id)),
+            relationship_type="involved_in",
+            valid_from=now,
+            confidence=0.9,
+            authority_status="accepted",
+            claim_id=int(claim_id),
+            properties={"reducer": "accepted_event_context"},
+        )
+        self.conn.commit()
+
+        connections = [
+            row
+            for row in retrieve_related(
+                self.conn, "person", self.person_id, self.settings
+            )
+            if row.result_type == "connection"
+        ]
+        self.assertEqual(
+            [("Project: Georgia LP", 100, 82411)],
+            [(row.title, row.chat_id, row.message_id) for row in connections],
+        )
+
     def test_related_retrieval_supports_each_canonical_scope(self) -> None:
         now = "2026-08-21T12:00:00+00:00"
         company_id = self.conn.execute(
