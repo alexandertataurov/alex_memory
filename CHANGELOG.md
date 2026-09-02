@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-120's bounded accepted-graph query now exposes an exact-claim-backed
+  current task context at read time only when an older stored task-context edge
+  is absent. The derived edge is explicitly labelled and has no stored ID;
+  it never reads or promotes compatibility rows, respects manual task
+  authority, and requires no replay or backfill.
 - `make tasks` now reports line-level repository queue and active-ExecPlan
   contradictions. With `NOTION_TASKS_JSON=export.json`, it also validates a
   metadata-only Notion task export for explicit Done/Completed state, required

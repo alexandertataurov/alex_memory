@@ -184,3 +184,14 @@ a live reader change.
   canonical task moves to another project or a manual task-project decision
   takes precedence. The temporal regression proves all three derived edge kinds
   become superseded rather than surviving as current state.
+- 2026-09-02: an owner-run, non-truncated parity check still found the three
+  task-context compatibility kinds (`person involved_in project`, `company
+  involved_in project`, and `company associated_with project`). Tracing showed
+  they can predate persisted task-context graph rows because the legacy
+  ContextService and ContextGraphImprover write compatibility rows directly.
+  The bounded authoritative query now exposes only the same exact-claim-backed
+  current task reducer at read time when its stored context edge is absent.
+  The fallback is marked derived, has no stored edge ID, honours a manual
+  task-project decision, and never reads or promotes `relationships`; a
+  temporary-SQLite regression proves parity without replay/backfill. Fresh
+  owner parity evidence is still required before reader cutover.

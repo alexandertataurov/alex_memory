@@ -220,6 +220,85 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             ).fetchone()[0],
         )
 
+    def test_exact_task_context_is_available_without_historical_materialization(
+        self,
+    ) -> None:
+        """A read-only fallback covers tasks projected before context edges existed."""
+        batch = AIBatch(100, "Work", [message()], "prompt")
+        saved = save_ai_success(
+            self.conn,
+            batch,
+            {
+                "summary": "Project invoice work.",
+                "items": [
+                    valid_item()
+                    | {
+                        "kind": "project",
+                        "title": "Project Amber",
+                        "details": "Invoice work.",
+                        "status": "informational",
+                        "owner": "unknown",
+                    },
+                    valid_item()
+                    | {
+                        "project_name": "Project Amber",
+                        "person": "Ari",
+                        "company": "Acme",
+                        "confidence": 0.96,
+                    },
+                ],
+            },
+            self.settings,
+        )
+        self.assertTrue(process_ai_batch(self.conn, saved.batch_id, self.settings))
+        person_id, company_id, project_id = self.conn.execute(
+            """SELECT person_id,company_id,project_id FROM ai_items
+               WHERE batch_id=? AND kind='task'""",
+            (saved.batch_id,),
+        ).fetchone()
+        self.conn.execute(
+            """DELETE FROM graph_edges
+               WHERE json_extract(properties_json, '$.reducer')='accepted_task_context'"""
+        )
+        ContextGraphImprover(self.conn).improve_global()
+
+        edges = current_authoritative_edges(
+            self.conn,
+            [("person", int(person_id)), ("company", int(company_id))],
+            "2026-08-25T00:00:00+00:00",
+        )
+        task_context = [
+            edge
+            for edge in edges
+            if edge["to_type"] == "project" and edge["from_type"] != "task"
+        ]
+        self.assertEqual(
+            {
+                ("person", int(person_id), "involved_in"),
+                ("company", int(company_id), "involved_in"),
+                ("company", int(company_id), "associated_with"),
+            },
+            {
+                (edge["from_type"], edge["from_id"], edge["relationship_type"])
+                for edge in task_context
+            },
+        )
+        self.assertTrue(
+            all(
+                edge["materialization"] == "derived_task_context"
+                for edge in task_context
+            )
+        )
+        self.assertTrue(all(edge["claim_ids"] for edge in task_context))
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", int(person_id)), ("company", int(company_id))],
+                "2026-08-25T00:00:00+00:00",
+            )["gaps"],
+        )
+
     def test_replaying_the_same_claim_does_not_duplicate_graph_rows(self) -> None:
         batch = AIBatch(100, "Work", [message()], "prompt")
         saved = save_ai_success(

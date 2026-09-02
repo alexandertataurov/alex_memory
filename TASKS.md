@@ -109,6 +109,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Temporal authority 2026-08-30: those task-derived edges close when a
     manual task-project decision wins, so old person/company project context
     cannot remain current after the underlying canonical decision changes.
+  - Progress 2026-09-02: the owner parity gate reproduced the same three
+    non-truncated person/company-to-project gaps. They may be legacy rows that
+    predate persisted task-context graph edges, so the bounded accepted-graph
+    query now exposes the existing exact-claim task reducer read-only when its
+    stored context edge is absent. It never reads/promotes compatibility rows,
+    is blocked by manual task authority, and needs no replay or backfill.
+    Fresh owner parity evidence remains required; no reader cutover is
+    authorized.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

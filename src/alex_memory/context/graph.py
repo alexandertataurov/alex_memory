@@ -392,6 +392,11 @@ def current_authoritative_edges(
     Observed claim material is intentionally excluded. Accepted automatic edges
     are limited to the projector's task-to-project allowlist and must retain
     claim evidence; manual edges remain usable without a fabricated AI source.
+
+    An exact-claim-backed task context is also represented at read time when a
+    historical graph materialization is absent. This is the same allowlisted
+    reducer as ``accepted_task_context``--not a compatibility-row promotion--
+    and lets a bounded reader see the canonical task decision without a replay.
     """
     if not seeds or limit <= 0:
         return []
@@ -465,7 +470,7 @@ def current_authoritative_edges(
             LIMIT ?""",
         [*parameters, as_of, as_of, bounded_limit],
     ).fetchall()
-    return [
+    stored_edges = [
         {
             "edge_id": int(row[0]),
             "from_type": str(row[1]),
@@ -485,6 +490,143 @@ def current_authoritative_edges(
         }
         for row in rows
     ]
+    derived_edges = _current_task_context_edges(conn, seeds, as_of, bounded_limit)
+    edges = {
+        (
+            str(edge["from_type"]),
+            cast(int, edge["from_id"]),
+            str(edge["to_type"]),
+            cast(int, edge["to_id"]),
+            str(edge["relationship_type"]),
+        ): edge
+        for edge in derived_edges
+    }
+    # Stored graph rows remain the representation when both paths describe the
+    # same accepted reducer result.
+    edges.update(
+        {
+            (
+                str(edge["from_type"]),
+                cast(int, edge["from_id"]),
+                str(edge["to_type"]),
+                cast(int, edge["to_id"]),
+                str(edge["relationship_type"]),
+            ): edge
+            for edge in stored_edges
+        }
+    )
+    return sorted(
+        edges.values(),
+        key=lambda edge: (
+            str(edge["valid_from"]),
+            1 if edge.get("materialization") != "derived_task_context" else 0,
+            int(cast(int, edge["edge_id"])) if edge["edge_id"] is not None else 0,
+        ),
+        reverse=True,
+    )[:bounded_limit]
+
+
+def _current_task_context_edges(
+    conn: sqlite3.Connection,
+    seeds: list[tuple[str, int]],
+    as_of: str,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Return the exact-claim task-context reducer without materializing it.
+
+    This narrow fallback exists for accepted tasks projected before their
+    context graph edges were persisted. It reads canonical task endpoints and
+    their immutable claim only; it never reads ``relationships`` and never
+    turns an unreviewed compatibility inference into accepted graph authority.
+    """
+    task_columns = {
+        "person": "related_person_id",
+        "company": "related_company_id",
+        "project": "related_project_id",
+        "task": "task_id",
+    }
+    predicates: list[str] = []
+    parameters: list[object] = []
+    for entity_type, entity_id in seeds:
+        column = task_columns.get(entity_type)
+        if column is None:
+            continue
+        predicates.append(f"task.{column}=?")
+        parameters.append(entity_id)
+    if not predicates:
+        return []
+    endpoint_predicates = " OR ".join(predicates)
+    rows = conn.execute(
+        f"""SELECT task.task_id,task.related_person_id,task.related_company_id,
+                   task.related_project_id,item.person_id,item.company_id,item.project_id,
+                   task.source_claim_id,COALESCE(item.source_date,task.created_at),
+                   item.confidence
+              FROM tasks AS task
+              JOIN ai_items AS item ON item.item_id=task.source_item_id
+                                  AND item.source_claim_id=task.source_claim_id
+             WHERE ({endpoint_predicates})
+               AND task.source_claim_id IS NOT NULL
+               AND task.related_project_id IS NOT NULL
+               AND item.project_id=task.related_project_id
+               AND COALESCE(item.source_date,task.created_at)<=?
+               AND EXISTS (
+                   SELECT 1 FROM semantic_claim_evidence AS evidence
+                    WHERE evidence.claim_id=task.source_claim_id
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM graph_edges AS manual_edge
+                   JOIN graph_nodes AS manual_task
+                     ON manual_task.node_id=manual_edge.from_node_id
+                    WHERE manual_task.canonical_entity_type='task'
+                      AND manual_task.canonical_entity_id=task.task_id
+                      AND manual_edge.relationship_type='belongs_to'
+                      AND manual_edge.authority_status='manual'
+                      AND manual_edge.valid_to IS NULL
+               )
+             ORDER BY COALESCE(item.source_date,task.created_at) DESC,task.task_id DESC
+             LIMIT ?""",
+        [*parameters, as_of, limit],
+    ).fetchall()
+    edges: list[dict[str, object]] = []
+    for (
+        task_id,
+        task_person_id,
+        task_company_id,
+        project_id,
+        item_person_id,
+        item_company_id,
+        _item_project_id,
+        claim_id,
+        valid_from,
+        confidence,
+    ) in rows:
+        contexts: tuple[tuple[str, int, tuple[str, ...]], ...] = ()
+        if task_person_id is not None and task_person_id == item_person_id:
+            contexts += (("person", int(task_person_id), ("involved_in",)),)
+        if task_company_id is not None and task_company_id == item_company_id:
+            contexts += (
+                ("company", int(task_company_id), ("involved_in", "associated_with")),
+            )
+        for from_type, from_id, relationship_types in contexts:
+            for relationship_type in relationship_types:
+                edges.append(
+                    {
+                        "edge_id": None,
+                        "from_type": from_type,
+                        "from_id": from_id,
+                        "to_type": "project",
+                        "to_id": int(project_id),
+                        "relationship_type": relationship_type,
+                        "valid_from": str(valid_from),
+                        "valid_to": None,
+                        "confidence": float(confidence),
+                        "authority_status": "accepted",
+                        "materialization": "derived_task_context",
+                        "claim_ids": (int(cast(int, claim_id)),),
+                        "task_id": int(task_id),
+                    }
+                )
+    return edges
 
 
 def context_builder_relationship_parity_gaps(

@@ -1,5 +1,19 @@
 # Implementation Journal
 
+## 2026-09-02 — AM-120 read-only historical task-context parity
+
+An owner-run, non-truncated ContextBuilder parity check reproduced the same
+person/company-to-project compatibility gaps after persisted task-context graph
+projection was introduced. The legacy ContextService and ContextGraphImprover
+can retain those rows independently, including rows created before the graph
+materialization existed. `current_authoritative_edges` now returns a clearly
+labelled, read-only task-context result only when the current canonical task,
+its source item, and its immutable claim match exactly and a manual task link
+does not override it. It never reads `relationships` or upgrades confidence;
+the fallback needs no replay, backfill, or live write. Temporary SQLite tests
+cover the missing-materialization parity case. A fresh owner parity run remains
+required before any reader cutover.
+
 ## 2026-09-02 — Completion-evidence consistency audit
 
 `make tasks` now reports exact repository queue and active-ExecPlan
