@@ -737,12 +737,25 @@ def context_builder_relationship_parity_gaps(
         )
         for edge in graph_edges
     }
+    missing_edges = legacy_edges - accepted
     groups: dict[tuple[str, str, str], int] = {}
-    for from_type, _from_id, to_type, _to_id, relationship_type in (
-        legacy_edges - accepted
-    ):
+    authority_diagnostics: dict[tuple[str, str, str, str], int] = {}
+    for from_type, from_id, to_type, to_id, relationship_type in missing_edges:
         key = (from_type, relationship_type, to_type)
         groups[key] = groups.get(key, 0) + 1
+        reason_key = (
+            *key,
+            _task_context_gap_reason(
+                conn,
+                from_type=from_type,
+                from_id=from_id,
+                to_type=to_type,
+                to_id=to_id,
+                relationship_type=relationship_type,
+                as_of=as_of,
+            ),
+        )
+        authority_diagnostics[reason_key] = authority_diagnostics.get(reason_key, 0) + 1
     return {
         "reader": "ContextBuilder",
         "as_of": as_of,
@@ -758,4 +771,102 @@ def context_builder_relationship_parity_gaps(
             }
             for (from_type, relationship_type, to_type), count in sorted(groups.items())
         ],
+        "gap_authority_diagnostics": [
+            {
+                "from_type": from_type,
+                "relationship_type": relationship_type,
+                "to_type": to_type,
+                "reason": reason,
+                "count": count,
+            }
+            for (from_type, relationship_type, to_type, reason), count in sorted(
+                authority_diagnostics.items()
+            )
+        ],
     }
+
+
+def _task_context_gap_reason(
+    conn: sqlite3.Connection,
+    *,
+    from_type: str,
+    from_id: int,
+    to_type: str,
+    to_id: int,
+    relationship_type: str,
+    as_of: str,
+) -> str:
+    """Classify a missing edge without returning its private provenance.
+
+    The result is deliberately aggregate-safe: it states only which authority
+    boundary prevented the existing task reducer from representing a legacy
+    relationship. It does not inspect message content or expose task/item IDs.
+    """
+    allowed_relationships = {
+        ("person", "involved_in"),
+        ("company", "involved_in"),
+        ("company", "associated_with"),
+    }
+    if (
+        to_type != "project"
+        or (from_type, relationship_type) not in allowed_relationships
+    ):
+        return "not_allowlisted_task_context"
+    task_column = "related_person_id" if from_type == "person" else "related_company_id"
+    rows = conn.execute(
+        f"""SELECT task.task_id,task.source_item_id,task.source_claim_id,
+                   item.item_id,item.source_claim_id,item.person_id,item.company_id,
+                   item.project_id,COALESCE(item.source_date,task.created_at),
+                   EXISTS (
+                       SELECT 1 FROM semantic_claim_evidence AS evidence
+                        WHERE evidence.claim_id=task.source_claim_id
+                   ),
+                   EXISTS (
+                       SELECT 1 FROM graph_edges AS manual_edge
+                       JOIN graph_nodes AS manual_task
+                         ON manual_task.node_id=manual_edge.from_node_id
+                        WHERE manual_task.canonical_entity_type='task'
+                          AND manual_task.canonical_entity_id=task.task_id
+                          AND manual_edge.relationship_type='belongs_to'
+                          AND manual_edge.authority_status='manual'
+                          AND manual_edge.valid_to IS NULL
+                   )
+              FROM tasks AS task
+              LEFT JOIN ai_items AS item ON item.item_id=task.source_item_id
+             WHERE task.{task_column}=? AND task.related_project_id=?""",
+        (from_id, to_id),
+    ).fetchall()
+    if not rows:
+        return "no_matching_current_task"
+    for row in rows:
+        (
+            _task_id,
+            source_item_id,
+            source_claim_id,
+            item_id,
+            item_claim_id,
+            item_person_id,
+            item_company_id,
+            item_project_id,
+            valid_from,
+            has_claim_evidence,
+            has_manual_override,
+        ) = row
+        if has_manual_override:
+            return "manual_task_project_override"
+        if source_item_id is None or source_claim_id is None:
+            continue
+        if item_id is None or item_claim_id != source_claim_id:
+            continue
+        if item_project_id != to_id:
+            continue
+        if from_type == "person" and item_person_id != from_id:
+            continue
+        if from_type == "company" and item_company_id != from_id:
+            continue
+        if str(valid_from) > as_of:
+            continue
+        if not has_claim_evidence:
+            continue
+        return "eligible_task_context_not_returned"
+    return "missing_exact_task_claim_lineage"

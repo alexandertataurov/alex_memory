@@ -117,6 +117,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     is blocked by manual task authority, and needs no replay or backfill.
     Fresh owner parity evidence remains required; no reader cutover is
     authorized.
+  - Investigation 2026-09-02: the first fresh owner run remained negative
+    after the exact-claim task fallback. `make graph-parity` now reports only
+    aggregate gap-authority reasons (not IDs or content), separating missing
+    task/claim lineage from manual overrides and any eligible query omission.
+    The next read-only owner run decides whether a narrower query fix is
+    justified; confidence-only rows remain excluded.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

@@ -22,6 +22,10 @@ grounded in reviewed local files, Git history, and verification output.
   is absent. The derived edge is explicitly labelled and has no stored ID;
   it never reads or promotes compatibility rows, respects manual task
   authority, and requires no replay or backfill.
+- `make graph-parity` now includes grouped, aggregate-safe authority diagnostics
+  for each remaining gap. It distinguishes task/claim-lineage absence, manual
+  task override, and a possible accepted-query omission without exposing IDs,
+  source text, or relationship content.
 - `make tasks` now reports line-level repository queue and active-ExecPlan
   contradictions. With `NOTION_TASKS_JSON=export.json`, it also validates a
   metadata-only Notion task export for explicit Done/Completed state, required

@@ -195,3 +195,12 @@ a live reader change.
   task-project decision, and never reads or promotes `relationships`; a
   temporary-SQLite regression proves parity without replay/backfill. Fresh
   owner parity evidence is still required before reader cutover.
+- 2026-09-02: the first fresh owner result remained negative after the
+  read-only task-context fallback, proving its exact-claim predicate does not
+  cover these real compatibility rows. `graph-parity` now adds a grouped,
+  non-disclosing authority diagnostic for each gap: it distinguishes no matching
+  canonical task, missing exact task-claim lineage, a manual task override, and
+  an eligible reducer result omitted by the bounded query. It contains no
+  task/item IDs, evidence text, or relationship content. The next owner result
+  determines whether a query correction is justified or the rows must remain
+  compatibility-only pending manual authority.

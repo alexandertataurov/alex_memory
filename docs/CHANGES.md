@@ -14,6 +14,12 @@ the fallback needs no replay, backfill, or live write. Temporary SQLite tests
 cover the missing-materialization parity case. A fresh owner parity run remains
 required before any reader cutover.
 
+The first fresh owner run remained negative, so `make graph-parity` now also
+reports grouped authority reasons for the bounded gaps without returning
+relationship IDs, task/item IDs, or evidence text. This distinguishes a real
+allowlisted-query omission from a compatibility row that lacks deterministic
+task/claim authority or is stale after a manual override. It remains read-only.
+
 ## 2026-09-02 — Completion-evidence consistency audit
 
 `make tasks` now reports exact repository queue and active-ExecPlan

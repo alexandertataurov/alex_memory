@@ -925,6 +925,46 @@ class SemanticGraphProjectionTests(unittest.TestCase):
 
         self.assertTrue(report["truncated"])
 
+    def test_parity_diagnostic_classifies_unproven_task_context_without_ids(
+        self,
+    ) -> None:
+        resolver = EntityResolver(self.conn)
+        person_id = resolver.entity("person", "Ari", source="manual")
+        project_id = resolver.entity("project", "Amber", source="manual")
+        assert person_id is not None
+        assert project_id is not None
+        ensure_relationship(
+            self.conn,
+            "person",
+            person_id,
+            "project",
+            project_id,
+            "involved_in",
+            0.95,
+            100,
+            1,
+            "2026-08-24T10:00:00+00:00",
+        )
+
+        report = context_builder_relationship_parity_gaps(
+            self.conn,
+            [("person", person_id)],
+            "2026-08-25T00:00:00+00:00",
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "from_type": "person",
+                    "relationship_type": "involved_in",
+                    "to_type": "project",
+                    "reason": "no_matching_current_task",
+                    "count": 1,
+                }
+            ],
+            report["gap_authority_diagnostics"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
