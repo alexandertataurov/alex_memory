@@ -12,6 +12,7 @@ from alex_memory.context.graph import (
     context_builder_relationship_parity_gaps,
     current_authoritative_edges,
 )
+from alex_memory.context.improver import ContextGraphImprover
 from alex_memory.context.repository import ensure_relationship
 from alex_memory.database import connect
 from alex_memory.models import AIBatch
@@ -109,6 +110,113 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 """SELECT resolution_status FROM semantic_claim_entity_refs
                    WHERE claim_id=? AND entity_type='project'""",
                 (task_claim_id,),
+            ).fetchone()[0],
+        )
+
+    def test_accepted_task_context_projects_only_matching_claim_endpoints(self) -> None:
+        batch = AIBatch(100, "Work", [message()], "prompt")
+        saved = save_ai_success(
+            self.conn,
+            batch,
+            {
+                "summary": "Project invoice work.",
+                "items": [
+                    valid_item()
+                    | {
+                        "kind": "project",
+                        "title": "Project Amber",
+                        "details": "Invoice work.",
+                        "status": "informational",
+                        "owner": "unknown",
+                    },
+                    valid_item()
+                    | {
+                        "project_name": "Project Amber",
+                        "person": "Ari",
+                        "company": "Acme",
+                        "confidence": 0.96,
+                    },
+                ],
+            },
+            self.settings,
+        )
+
+        self.assertTrue(process_ai_batch(self.conn, saved.batch_id, self.settings))
+        task_item = self.conn.execute(
+            """SELECT source_claim_id,person_id,company_id,project_id FROM ai_items
+               WHERE batch_id=? AND kind='task'""",
+            (saved.batch_id,),
+        ).fetchone()
+        assert task_item is not None
+        claim_id, person_id, company_id, project_id = task_item
+        edges = current_authoritative_edges(
+            self.conn,
+            [("person", person_id), ("company", company_id), ("project", project_id)],
+            "2026-08-25T00:00:00+00:00",
+        )
+        self.assertEqual(
+            {
+                ("person", int(person_id), "involved_in"),
+                ("company", int(company_id), "involved_in"),
+                ("company", int(company_id), "associated_with"),
+            },
+            {
+                (edge["from_type"], edge["from_id"], edge["relationship_type"])
+                for edge in edges
+                if edge["to_type"] == "project" and edge["from_type"] != "task"
+            },
+        )
+        self.assertTrue(
+            all(
+                edge["claim_ids"] == (claim_id,)
+                for edge in edges
+                if edge["to_type"] == "project" and edge["from_type"] != "task"
+            )
+        )
+        ContextGraphImprover(self.conn).improve_global()
+        self.assertEqual(
+            [],
+            context_builder_relationship_parity_gaps(
+                self.conn,
+                [("person", int(person_id))],
+                "2026-08-25T00:00:00+00:00",
+            )["gaps"],
+        )
+
+        task_id = self.conn.execute("SELECT task_id FROM tasks").fetchone()[0]
+        manual_project_id = EntityResolver(self.conn).entity(
+            "project", "Operator Project", source="manual"
+        )
+        assert manual_project_id is not None
+        projector = SemanticGraphProjector(self.conn)
+        projector.project_manual_relationship(
+            from_type="task",
+            from_id=int(task_id),
+            to_type="project",
+            to_id=manual_project_id,
+            relationship_type="belongs_to",
+            valid_from="2026-08-24T12:00:00+00:00",
+        )
+        projector.project_item(
+            claim_id=int(claim_id),
+            item_id=int(
+                self.conn.execute(
+                    "SELECT item_id FROM ai_items WHERE batch_id=? AND kind='task'",
+                    (saved.batch_id,),
+                ).fetchone()[0]
+            ),
+            source_at="2026-08-24T12:00:00+00:00",
+            person_id=int(person_id),
+            company_id=int(company_id),
+            project_id=int(project_id),
+            task_id=int(task_id),
+        )
+        self.assertEqual(
+            3,
+            self.conn.execute(
+                """SELECT COUNT(*) FROM graph_edges
+                   WHERE json_extract(properties_json, '$.reducer')='accepted_task_context'
+                     AND authority_status='superseded'"""
             ).fetchone()[0],
         )
 

@@ -171,3 +171,16 @@ a live reader change.
   explicit `ready` flag; it does not print relationship content or mutate
   state. This enables owner-run real-reader proof without authorizing a
   reader cutover.
+- 2026-08-30: extended the deterministic accepted-task reducer to emit only
+  the task's exact-claim-backed current person/company-to-project context:
+  person `involved_in`, and company `involved_in` / `associated_with`.
+  The bounded graph read admits these three kinds only when the edge records
+  that reducer and immutable claim evidence. A parity fixture proves the
+  matching legacy ContextService/ContextGraphImprover relationships have no
+  gap; arbitrary confidence-only compatibility relationships remain excluded.
+  No replay, repair, conversion, migration, runtime reader change, or live
+  operation ran. A fresh owner read-only parity result remains required.
+- 2026-08-30: task-derived person/company context edges now close when the
+  canonical task moves to another project or a manual task-project decision
+  takes precedence. The temporal regression proves all three derived edge kinds
+  become superseded rather than surviving as current state.

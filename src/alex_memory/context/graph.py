@@ -90,6 +90,11 @@ class SemanticGraphProjector:
             task_node = entity_nodes["task"]
             project_node = entity_nodes["project"]
             manual_task_project = self._has_manual_task_project(task_node)
+            self._supersede_other_task_context(
+                task_id,
+                None if manual_task_project else project_node,
+                observed_at,
+            )
             if not manual_task_project:
                 self._supersede_other_task_projects(
                     task_node, project_node, observed_at
@@ -104,6 +109,34 @@ class SemanticGraphProjector:
                     claim_id=claim_id,
                     properties={"source_item_id": item_id},
                 )
+                for (
+                    entity_type,
+                    _entity_id,
+                    relationship_types,
+                ) in self._accepted_task_entity_project_context(
+                    task_id=task_id,
+                    item_id=item_id,
+                    claim_id=claim_id,
+                    person_id=person_id,
+                    company_id=company_id,
+                    project_id=project_id,
+                ):
+                    entity_node = entity_nodes[entity_type]
+                    for relationship_type in relationship_types:
+                        self._edge(
+                            from_node_id=entity_node,
+                            to_node_id=project_node,
+                            relationship_type=relationship_type,
+                            valid_from=observed_at,
+                            confidence=float(confidence),
+                            authority_status="accepted",
+                            claim_id=claim_id,
+                            properties={
+                                "source_item_id": item_id,
+                                "task_id": task_id,
+                                "reducer": "accepted_task_context",
+                            },
+                        )
 
         self.conn.execute(
             """UPDATE semantic_claims
@@ -230,6 +263,62 @@ class SemanticGraphProjector:
             ).fetchone()
         )
 
+    def _supersede_other_task_context(
+        self, task_id: int, project_node_id: int | None, valid_to: str
+    ) -> None:
+        """Close prior deterministic task context when its project is replaced.
+
+        These edges inherit their validity from one canonical task/project
+        decision. They must not remain current after that decision is replaced
+        or a manual task-project edge takes precedence.
+        """
+        predicates = [
+            "authority_status='accepted'",
+            "valid_to IS NULL",
+            "json_extract(properties_json, '$.reducer')='accepted_task_context'",
+            "json_extract(properties_json, '$.task_id')=?",
+        ]
+        parameters: list[object] = [task_id]
+        if project_node_id is not None:
+            predicates.append("to_node_id<>?")
+            parameters.append(project_node_id)
+        self.conn.execute(
+            f"""UPDATE graph_edges SET valid_to=?,authority_status='superseded',
+                   updated_at=? WHERE {" AND ".join(predicates)}""",
+            (valid_to, utc_now(), *parameters),
+        )
+
+    def _accepted_task_entity_project_context(
+        self,
+        *,
+        task_id: int,
+        item_id: int,
+        claim_id: int,
+        person_id: int | None,
+        company_id: int | None,
+        project_id: int,
+    ) -> tuple[tuple[str, int, tuple[str, ...]], ...]:
+        """Return only canonical task context backed by this exact claim.
+
+        This reducer makes no relationship decision from a confidence-only
+        compatibility observation. Its inputs are the task reconciler's current
+        canonical endpoints and the immutable claim already required by the
+        accepted task-to-project edge.
+        """
+        task = self.conn.execute(
+            """SELECT related_person_id,related_company_id,related_project_id
+               FROM tasks WHERE task_id=? AND source_item_id=? AND source_claim_id=?""",
+            (task_id, item_id, claim_id),
+        ).fetchone()
+        if task is None or task[2] != project_id:
+            return ()
+        contexts: list[tuple[str, int, tuple[str, ...]]] = []
+        if person_id is not None and task[0] == person_id:
+            contexts.append(("person", person_id, ("involved_in",)))
+        if company_id is not None and task[1] == company_id:
+            contexts.append(("company", company_id, ("involved_in", "associated_with")))
+        return tuple(contexts)
+
     def _edge(
         self,
         *,
@@ -345,10 +434,30 @@ def current_authoritative_edges(
               AND (
                   edge.authority_status='manual'
                   OR (
-                      edge.relationship_type='belongs_to'
-                      AND from_node.canonical_entity_type='task'
-                      AND to_node.canonical_entity_type='project'
-                      AND edge_claim.claim_id IS NOT NULL
+                      edge_claim.claim_id IS NOT NULL AND (
+                          (
+                              edge.relationship_type='belongs_to'
+                              AND from_node.canonical_entity_type='task'
+                              AND to_node.canonical_entity_type='project'
+                          )
+                          OR (
+                              json_extract(edge.properties_json, '$.reducer')
+                                ='accepted_task_context'
+                              AND to_node.canonical_entity_type='project'
+                              AND (
+                                  (
+                                      from_node.canonical_entity_type='person'
+                                      AND edge.relationship_type='involved_in'
+                                  )
+                                  OR (
+                                      from_node.canonical_entity_type='company'
+                                      AND edge.relationship_type IN (
+                                          'involved_in','associated_with'
+                                      )
+                                  )
+                              )
+                          )
+                      )
                   )
               )
             GROUP BY edge.edge_id
