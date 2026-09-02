@@ -101,6 +101,9 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Progress 2026-09-02: Company and Project profiles now include a bounded
     source-backed canonical event timeline. Events without an exact source
     message are omitted rather than shown as unsupported history.
+  - Progress 2026-09-02: Company and Project commitments now disclose exact
+    source-message provenance when available and otherwise stay labelled
+    manual/canonical; waiting/open state remains visible without inference.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

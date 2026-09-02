@@ -531,7 +531,12 @@ def profile(conn: sqlite3.Connection, entity_type: str, entity_id: int) -> dict:
     if not entity:
         return {}
     tasks = conn.execute(
-        f"SELECT task_id,title,status,due_date FROM tasks WHERE related_{entity_type}_id=? ORDER BY updated_at DESC LIMIT 20",
+        f"""SELECT task.task_id,task.title,task.status,task.due_date,
+                   item.source_chat_id,item.source_message_id
+              FROM tasks AS task
+              LEFT JOIN ai_items AS item ON item.item_id=task.source_item_id
+             WHERE task.related_{entity_type}_id=?
+             ORDER BY task.updated_at DESC LIMIT 20""",
         (entity_id,),
     ).fetchall()
     column = {"person": "person_id", "company": "company_id", "project": "project_id"}[

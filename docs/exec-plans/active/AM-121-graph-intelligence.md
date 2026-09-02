@@ -84,3 +84,6 @@ plan.
   observed-edge exclusion coverage.
 - 2026-09-02: Company and Project profiles now include a bounded canonical
   event timeline only where the event retains an exact source-message locator.
+- 2026-09-02: Company and Project task rendering now exposes source-message
+  provenance when a canonical task retains it, otherwise labels the record
+  manual/canonical rather than inventing evidence.

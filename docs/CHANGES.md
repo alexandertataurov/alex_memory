@@ -20,6 +20,9 @@ exercises this path directly.
 Company and Project profiles also expose a bounded canonical event timeline.
 Events without an exact source-message locator remain omitted.
 
+Company and Project commitments now show their exact source message when one
+is retained, or an explicit manual/canonical label when none exists.
+
 ## 2026-09-02 — Patch safety-hook path parsing
 
 The pre-tool private-path guard now scans `apply_patch` file headers rather

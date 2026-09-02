@@ -538,11 +538,19 @@ def _show_tasks(tasks: list[tuple], console: Console) -> None:
     table.add_column("Status", width=10)
     table.add_column("Task", ratio=3)
     table.add_column("Due", width=12)
-    for _, title, status, due in tasks:
+    table.add_column("Evidence", ratio=2)
+    for _, title, status, due, chat_id, message_id in tasks:
         table.add_row(
             status_text(status),
             safe_text(title, 180, single_line=True),
             safe_text(due or "—", 12),
+            safe_text(
+                f"Telegram chat {chat_id} / msg {message_id}"
+                if chat_id is not None and message_id is not None
+                else "Manual/canonical",
+                80,
+                single_line=True,
+            ),
         )
     console.print(table)
 

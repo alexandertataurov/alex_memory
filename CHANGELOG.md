@@ -26,6 +26,8 @@ grounded in reviewed local files, Git history, and verification output.
   semantic-claim evidence columns.
 - Company and Project profiles now include a bounded exact-source canonical
   event timeline.
+- Company and Project commitments now display exact source provenance when it
+  exists and otherwise retain an explicit manual/canonical label.
 - AM-120's owner-run, non-truncated graph-parity gate now passes with zero
   gaps. This is readiness evidence only: ContextBuilder remains on the
   compatibility reader and no cutover, replay, backfill, migration, or live
