@@ -14,13 +14,13 @@ from .config import Settings
 from .database import set_app_meta
 from .context.segments import ConversationSegmenter
 from .context.refresh import refresh_selected_conversations
-from .operational import backfill_task_project_links
+from .operational import TASK_KINDS, TaskReconciler, backfill_task_project_links
 from .intelligence import evaluate_project_health
 from .schema_support import fts5_available, fts_source_fingerprint, rebuild_fts
 
 
 REPAIR_OPERATIONS = frozenset(
-    {"fts", "task-project", "segments", "context", "project-health"}
+    {"fts", "task-project", "task-lifecycle", "segments", "context", "project-health"}
 )
 
 
@@ -44,6 +44,10 @@ def derived_state_repair_inventory(
         probe_limit,
     )
     task_project_unit_fingerprint = _task_project_unit_fingerprint(conn, limit)
+    task_lifecycle_items = _task_lifecycle_candidate_rows(conn, limit)
+    task_lifecycle_unit_fingerprint = _task_lifecycle_unit_fingerprint(
+        task_lifecycle_items
+    )
     segment_chats = _bounded_count(
         conn,
         """SELECT DISTINCT source_chat_id FROM tasks
@@ -73,6 +77,10 @@ def derived_state_repair_inventory(
         "task_project_candidates": min(task_links, limit),
         "task_project_truncated": task_links > limit,
         "task_project_unit_fingerprint": task_project_unit_fingerprint,
+        "task_lifecycle_candidates": len(task_lifecycle_items),
+        "task_lifecycle_truncated": _task_lifecycle_candidate_count(conn, limit)
+        > limit,
+        "task_lifecycle_unit_fingerprint": task_lifecycle_unit_fingerprint,
         "segment_chat_candidates": min(segment_chats, limit),
         "segment_chat_truncated": segment_chats > limit,
         "segment_chat_unit_fingerprint": segment_chat_unit_fingerprint,
@@ -159,6 +167,84 @@ def apply_task_project_repair(
                 "linked": linked,
                 "reviewed": reviewed,
             }
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {**checkpoint, "status": "completed", "outcome": outcome},
+                    sort_keys=True,
+                ),
+            )
+    except Exception as error:
+        with conn:
+            set_app_meta(
+                conn,
+                key,
+                json.dumps(
+                    {
+                        **checkpoint,
+                        "status": "failed",
+                        "error": f"{type(error).__name__}: {error}"[:500],
+                    },
+                    sort_keys=True,
+                ),
+            )
+        raise
+    return {"status": "completed", **outcome}
+
+
+def apply_task_lifecycle_repair(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    *,
+    dry_run_fingerprint: str,
+    recovery_receipt: Path,
+    limit: int = 500,
+) -> dict[str, object]:
+    """Replay one exact, claim-backed task-item set through ``TaskReconciler``.
+
+    This fixture-only unit never reconstructs work from canonical task rows.
+    Every selected item has immutable claim evidence for its exact source
+    message, and the checkpoint retains its source/item membership privately.
+    """
+    _validate_recovery_receipt(settings, recovery_receipt)
+    key = f"derived_state_repair:{dry_run_fingerprint}"
+    prior = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    if prior is not None:
+        stored = json.loads(str(prior[0]))
+        if stored.get("status") == "completed":
+            return {"status": "already-complete", **stored["outcome"]}
+    report = derived_state_repair_dry_run(
+        conn, operations={"task-lifecycle"}, limit=limit
+    )
+    if report["fingerprint"] != dry_run_fingerprint:
+        raise ValueError("repair apply dry-run fingerprint no longer matches")
+    rows = _task_lifecycle_candidate_rows(conn, limit)
+    checkpoint: dict[str, object] = {
+        "status": "running",
+        "operation": "task-lifecycle",
+        "limit": limit,
+        "recovery_receipt": str(recovery_receipt),
+        "fingerprint": dry_run_fingerprint,
+        "source_items": [
+            {
+                "item_id": int(cast(int, row[0])),
+                "source_claim_id": int(cast(int, row[11])),
+                "source_chat_id": int(cast(int, row[8])),
+                "source_message_id": int(cast(int, row[10])),
+                "person_id": row[12],
+                "company_id": row[13],
+                "project_id": row[14],
+            }
+            for row in rows
+        ],
+    }
+    with conn:
+        set_app_meta(conn, key, json.dumps(checkpoint, sort_keys=True))
+    try:
+        with conn:
+            outcome = _reconcile_task_lifecycle_rows(conn, settings, rows)
+            outcome["fingerprint"] = dry_run_fingerprint
             set_app_meta(
                 conn,
                 key,
@@ -473,6 +559,7 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
         }
     prefix = {
         "task-project": "task_project",
+        "task-lifecycle": "task_lifecycle",
         "segments": "segment_chat",
         "context": "pending_context",
         "project-health": "project_health",
@@ -483,6 +570,8 @@ def _operation_report(name: str, inventory: dict[str, object]) -> dict[str, obje
     }
     if name == "task-project":
         report["unit_fingerprint"] = str(inventory["task_project_unit_fingerprint"])
+    elif name == "task-lifecycle":
+        report["unit_fingerprint"] = str(inventory["task_lifecycle_unit_fingerprint"])
     elif name == "segments":
         report["unit_fingerprint"] = str(inventory["segment_chat_unit_fingerprint"])
     elif name == "context":
@@ -515,6 +604,90 @@ def _task_project_unit_fingerprint(conn: sqlite3.Connection, limit: int) -> str:
             _task_project_candidate_ids(conn, limit), separators=(",", ":")
         ).encode()
     ).hexdigest()
+
+
+def _task_lifecycle_candidate_count(conn: sqlite3.Connection, limit: int) -> int:
+    return sum(1 for _ in _task_lifecycle_candidate_rows(conn, limit + 1))
+
+
+def _task_lifecycle_candidate_rows(
+    conn: sqlite3.Connection, limit: int
+) -> list[tuple[object, ...]]:
+    """Select only unfinished, exact-evidence task decisions in a bounded order."""
+    placeholders = ",".join("?" for _ in TASK_KINDS)
+    return [
+        tuple(row)
+        for row in conn.execute(
+            f"""SELECT i.item_id,i.kind,i.title,i.details,i.status,i.owner,i.due_date,
+                       i.confidence,i.source_chat_id,i.source_date,i.source_message_id,
+                       i.source_claim_id,i.person_id,i.company_id,i.project_id
+                  FROM ai_items AS i
+                  JOIN semantic_claims AS claim ON claim.claim_id=i.source_claim_id
+                  JOIN messages AS message
+                    ON message.chat_id=i.source_chat_id
+                   AND message.message_id=i.source_message_id
+                 WHERE i.kind IN ({placeholders})
+                   AND i.source_chat_id IS NOT NULL
+                   AND i.source_message_id IS NOT NULL
+                   AND i.source_claim_id IS NOT NULL
+                   AND COALESCE(message.is_deleted,0)=0
+                   AND claim.authority_status IN ('observed','accepted','manual')
+                   AND EXISTS (
+                       SELECT 1 FROM semantic_claim_evidence AS evidence
+                       WHERE evidence.claim_id=i.source_claim_id
+                         AND evidence.source_chat_id=i.source_chat_id
+                         AND evidence.source_message_id=i.source_message_id
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM task_events AS event
+                       WHERE event.source='ai' AND event.source_item_id=i.item_id
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM review_queue AS review
+                       WHERE review.subject_type='ai_item' AND review.subject_id=i.item_id
+                   )
+                 ORDER BY i.item_id LIMIT ?""",
+            (*sorted(TASK_KINDS), limit),
+        )
+    ]
+
+
+def _task_lifecycle_unit_fingerprint(rows: list[tuple[object, ...]]) -> str:
+    return hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+def _reconcile_task_lifecycle_rows(
+    conn: sqlite3.Connection, settings: Settings, rows: list[tuple[object, ...]]
+) -> dict[str, object]:
+    """Run only checkpoint-selected source items through the canonical reducer."""
+    before_tasks = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+    before_reviews = int(
+        conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+    )
+    reconciler = TaskReconciler(conn, settings)
+    reconciled = 0
+    for row in rows:
+        task_id = reconciler.process_item(
+            row[:9],
+            cast(int | None, row[12]),
+            cast(int | None, row[13]),
+            cast(int | None, row[14]),
+            source_claim_id=int(cast(int, row[11])),
+            source_at=cast(str | None, row[9]),
+        )
+        reconciled += int(task_id is not None)
+    return {
+        "source_items": len(rows),
+        "reconciled": reconciled,
+        "tasks_created": int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+        - before_tasks,
+        "reviews_created": int(
+            conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+        )
+        - before_reviews,
+    }
 
 
 def _segment_chat_candidate_ids(conn: sqlite3.Connection, limit: int) -> list[int]:
