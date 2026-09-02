@@ -130,6 +130,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     excluded. This covers the same three directions without reading/promoting
     `relationships`, replaying data, or weakening confidence authority. Fresh
     owner parity evidence remains required.
+  - Progress 2026-09-02: the next owner diagnostic narrowed the same three
+    gaps to historical canonical events whose event and source item both lack
+    claim lineage. The bounded reader now represents only that exact legacy
+    event path when the canonical endpoints and non-deleted source message
+    agree, no task owns the item, and neither side has partial claim lineage.
+    It returns source-message provenance without fabricating a claim, reads no
+    compatibility rows, and requires no replay, backfill, or live action. A
+    fresh non-truncated owner parity run remains required before reader cutover.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.

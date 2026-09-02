@@ -220,11 +220,11 @@ a live reader change.
   claim, evidence, endpoint, or temporal eligibility. The diagnostic remains
   read-only and never promotes either result into graph authority.
 - 2026-09-02: added the historical canonical-event reducer for records created
-  before `context_events.source_claim_id` was populated. It resolves only the
-  event's exact source item and its immutable evidenced claim, requires matching
-  event/item endpoints and source message, and rejects a non-null mismatched
-  claim. It is read-only, does not consult compatibility rows, and needs no
-  replay or backfill.
+  before claim lineage was populated on both the event and source item. It
+  requires matching event/item endpoints and exact surviving source message,
+  rejects task ownership and any partial/mismatched claim lineage, and returns
+  the source-message locator without fabricating a claim ID. It is read-only,
+  does not consult compatibility rows, and needs no replay or backfill.
 - 2026-09-02: parity diagnostics now identify the rejected event boundary as an
   aggregate-safe reason (missing source item or claim, lineage mismatch,
   endpoint/source-message mismatch, temporal exclusion, task ownership, or

@@ -390,6 +390,11 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             (person_id, company_id, project_id),
         )
         self.conn.execute(
+            """UPDATE ai_items SET source_claim_id=NULL
+               WHERE batch_id=? AND kind='payment'""",
+            (saved.batch_id,),
+        )
+        self.conn.execute(
             """DELETE FROM graph_edges
                WHERE json_extract(properties_json, '$.reducer')='accepted_event_context'"""
         )
@@ -401,11 +406,16 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 [("person", int(person_id)), ("company", int(company_id))],
                 "2026-08-25T00:00:00+00:00",
             )
-            if edge.get("materialization") == "derived_event_context"
+            if edge.get("materialization") == "derived_historical_event_context"
         ]
 
         self.assertEqual(3, len(historical_event_context))
-        self.assertTrue(all(edge["claim_ids"] for edge in historical_event_context))
+        self.assertTrue(all(not edge["claim_ids"] for edge in historical_event_context))
+        self.assertTrue(
+            all(
+                edge["source_evidence"] == (100, 1) for edge in historical_event_context
+            )
+        )
         self.assertEqual(
             [],
             context_builder_relationship_parity_gaps(
@@ -413,6 +423,21 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 [("person", int(person_id)), ("company", int(company_id))],
                 "2026-08-25T00:00:00+00:00",
             )["gaps"],
+        )
+        self.conn.execute(
+            "UPDATE messages SET is_deleted=1 WHERE chat_id=100 AND message_id=1"
+        )
+        self.assertEqual(
+            [],
+            [
+                edge
+                for edge in current_authoritative_edges(
+                    self.conn,
+                    [("person", int(person_id)), ("company", int(company_id))],
+                    "2026-08-25T00:00:00+00:00",
+                )
+                if edge.get("materialization") == "derived_historical_event_context"
+            ],
         )
 
     def test_parity_diagnostic_reports_event_lineage_not_task_absence(self) -> None:

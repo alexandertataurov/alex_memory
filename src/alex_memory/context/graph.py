@@ -548,9 +548,11 @@ def current_authoritative_edges(
         }
         for row in rows
     ]
-    derived_edges = _current_task_context_edges(
-        conn, seeds, as_of, bounded_limit
-    ) + _current_event_context_edges(conn, seeds, as_of, bounded_limit)
+    derived_edges = (
+        _current_task_context_edges(conn, seeds, as_of, bounded_limit)
+        + _current_event_context_edges(conn, seeds, as_of, bounded_limit)
+        + _current_historical_event_context_edges(conn, seeds, as_of, bounded_limit)
+    )
     edges = {
         (
             str(edge["from_type"]),
@@ -737,7 +739,6 @@ def _current_event_context_edges(
                AND NOT EXISTS (
                    SELECT 1 FROM tasks AS task
                     WHERE task.source_item_id=event.source_ai_item_id
-                      AND task.source_claim_id=item.source_claim_id
                )
                AND EXISTS (
                    SELECT 1 FROM semantic_claim_evidence AS evidence
@@ -784,6 +785,112 @@ def _current_event_context_edges(
                         "materialization": "derived_event_context",
                         "claim_ids": (int(cast(int, claim_id)),),
                         "event_id": int(event_id),
+                    }
+                )
+    return edges
+
+
+def _current_historical_event_context_edges(
+    conn: sqlite3.Connection,
+    seeds: list[tuple[str, int]],
+    as_of: str,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Return source-message-backed historical canonical-event context.
+
+    Some canonical events predate immutable claim lineage.  This deliberately
+    narrow read-only reducer accepts only those events when both the event and
+    its source item have no claim, their canonical endpoints and exact source
+    message agree, and that message is still available.  It never consults a
+    compatibility relationship or treats an AI confidence value as authority.
+    """
+    event_columns = {
+        "person": "person_id",
+        "company": "company_id",
+        "project": "project_id",
+    }
+    predicates: list[str] = []
+    parameters: list[object] = []
+    for entity_type, entity_id in seeds:
+        column = event_columns.get(entity_type)
+        if column is None:
+            continue
+        predicates.append(f"event.{column}=?")
+        parameters.append(entity_id)
+    if not predicates:
+        return []
+    rows = conn.execute(
+        f"""SELECT event.event_id,event.person_id,event.company_id,event.project_id,
+                   item.person_id,item.company_id,item.project_id,
+                   event.source_chat_id,event.source_message_id,event.occurred_at,
+                   event.confidence
+              FROM context_events AS event
+              JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
+             WHERE ({" OR ".join(predicates)})
+               AND event.source_type='ai_item'
+               AND event.source_claim_id IS NULL
+               AND item.source_claim_id IS NULL
+               AND event.project_id IS NOT NULL
+               AND item.project_id=event.project_id
+               AND event.source_chat_id IS item.source_chat_id
+               AND event.source_message_id IS item.source_message_id
+               AND event.occurred_at<=?
+               AND EXISTS (
+                   SELECT 1 FROM messages AS message
+                    WHERE message.chat_id=event.source_chat_id
+                      AND message.message_id=event.source_message_id
+                      AND COALESCE(message.is_deleted,0)=0
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM tasks AS task
+                    WHERE task.source_item_id=event.source_ai_item_id
+               )
+             ORDER BY event.occurred_at DESC,event.event_id DESC
+             LIMIT ?""",
+        [*parameters, as_of, limit],
+    ).fetchall()
+    edges: list[dict[str, object]] = []
+    for (
+        event_id,
+        event_person_id,
+        event_company_id,
+        project_id,
+        item_person_id,
+        item_company_id,
+        _item_project_id,
+        source_chat_id,
+        source_message_id,
+        valid_from,
+        confidence,
+    ) in rows:
+        contexts: tuple[tuple[str, int, tuple[str, ...]], ...] = ()
+        if event_person_id is not None and event_person_id == item_person_id:
+            contexts += (("person", int(event_person_id), ("involved_in",)),)
+        if event_company_id is not None and event_company_id == item_company_id:
+            contexts += (
+                ("company", int(event_company_id), ("involved_in", "associated_with")),
+            )
+        for from_type, from_id, relationship_types in contexts:
+            for relationship_type in relationship_types:
+                edges.append(
+                    {
+                        "edge_id": None,
+                        "from_type": from_type,
+                        "from_id": from_id,
+                        "to_type": "project",
+                        "to_id": int(project_id),
+                        "relationship_type": relationship_type,
+                        "valid_from": str(valid_from),
+                        "valid_to": None,
+                        "confidence": float(confidence),
+                        "authority_status": "accepted",
+                        "materialization": "derived_historical_event_context",
+                        "claim_ids": (),
+                        "event_id": int(event_id),
+                        "source_evidence": (
+                            int(source_chat_id),
+                            int(source_message_id),
+                        ),
                     }
                 )
     return edges
@@ -1105,7 +1212,12 @@ def _event_context_gap_reason(
                    EXISTS (
                        SELECT 1 FROM tasks AS task
                         WHERE task.source_item_id=event.source_ai_item_id
-                          AND task.source_claim_id=item.source_claim_id
+                   ),
+                   EXISTS (
+                       SELECT 1 FROM messages AS message
+                        WHERE message.chat_id=event.source_chat_id
+                          AND message.message_id=event.source_message_id
+                          AND COALESCE(message.is_deleted,0)=0
                    )
               FROM context_events AS event
               LEFT JOIN ai_items AS item ON item.item_id=event.source_ai_item_id
@@ -1136,13 +1248,44 @@ def _event_context_gap_reason(
             item_project_id,
             has_claim_evidence,
             belongs_to_task,
+            has_source_message,
         ) = row
         if source_type != "ai_item" or source_item_id is None:
             rejected_reasons.add("event_missing_source_item")
             continue
-        if item_id is None or item_claim_id is None:
-            rejected_reasons.add("event_source_item_missing_claim")
+        if item_id is None:
+            rejected_reasons.add("event_missing_source_item")
             continue
+        if item_claim_id is None:
+            if source_claim_id is not None:
+                rejected_reasons.add("event_source_item_missing_claim")
+                continue
+            if event_chat_id != item_chat_id or event_message_id != item_message_id:
+                rejected_reasons.add("event_source_message_mismatch")
+                continue
+            if event_project_id != to_id or item_project_id != to_id:
+                rejected_reasons.add("event_project_endpoint_mismatch")
+                continue
+            if from_type == "person" and (
+                event_person_id != from_id or item_person_id != from_id
+            ):
+                rejected_reasons.add("event_person_endpoint_mismatch")
+                continue
+            if from_type == "company" and (
+                event_company_id != from_id or item_company_id != from_id
+            ):
+                rejected_reasons.add("event_company_endpoint_mismatch")
+                continue
+            if occurred_at is None or str(occurred_at) > as_of:
+                rejected_reasons.add("event_outside_as_of")
+                continue
+            if belongs_to_task:
+                rejected_reasons.add("event_owned_by_task")
+                continue
+            if not has_source_message:
+                rejected_reasons.add("event_source_message_unavailable")
+                continue
+            return "eligible_historical_event_context_not_returned"
         if source_claim_id is not None and item_claim_id != source_claim_id:
             rejected_reasons.add("event_claim_item_mismatch")
             continue

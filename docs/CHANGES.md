@@ -13,10 +13,11 @@ checking only tasks. It now checks the exact canonical-event reducer boundary
 and reports absent events separately from incomplete event lineage. The tool
 remains read-only and aggregate-only.
 
-The historical event reducer now recovers an event created before its claim ID
-was recorded only through the event's exact source item, matching source message
-and endpoints, and immutable claim evidence. It remains a bounded read-time
-representation rather than a compatibility-row promotion or maintenance action.
+The historical event reducer now recovers an event and source item created
+before either retained claim lineage only through matching endpoints and the
+exact surviving source message. It exposes that source-message locator without
+fabricating a claim ID, and remains a bounded read-time representation rather
+than a compatibility-row promotion or maintenance action.
 
 Event rejection reasons are now aggregate-safe and specific enough to separate
 absent source items, missing claims, mismatches, timing, task ownership, and

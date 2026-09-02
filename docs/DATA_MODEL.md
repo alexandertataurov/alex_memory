@@ -136,8 +136,12 @@ evidence. Its task-context and non-task canonical-event-context subsets may be
 derived at read time when an older materialized graph edge is absent; derived
 results are explicitly labelled and have no stored edge ID. Event context
 requires the canonical event, source item, claim, and endpoints to match
-exactly, and excludes an item already owned by a task reducer. It never reads
-or promotes `relationships`, so it requires neither a replay nor a backfill.
+exactly, and excludes an item already owned by a task reducer. A separate
+historical-event subset is limited to events and source items that both predate
+claim lineage: it requires the same endpoints, exact surviving source message,
+and no task ownership, and returns that message locator without inventing a
+claim ID. It never reads or promotes `relationships`, so it requires neither a
+replay nor a backfill.
 Manual edges remain manual without fabricated claim lineage and block the
 automatic task path. It does not yet replace any compatibility reader.
 

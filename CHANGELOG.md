@@ -22,8 +22,10 @@ grounded in reviewed local files, Git history, and verification output.
 - AM-120's read-only parity diagnostic now verifies canonical-event lineage
   before classifying a gap as lacking both task and event authority.
 - AM-120 can now derive an accepted historical event-context edge when a
-  canonical event predates its persisted claim ID but its exact source item and
-  immutable evidence still agree. Compatibility rows remain outside the query.
+  canonical event and its exact source item both predate persisted claim IDs,
+  but their endpoints and surviving source message agree. The derived result
+  carries the source-message locator without fabricating claim lineage;
+  compatibility rows remain outside the query.
 - AM-120 parity diagnostics now distinguish the specific event-lineage boundary
   that prevents an authority result, without exposing record identifiers or
   content.
