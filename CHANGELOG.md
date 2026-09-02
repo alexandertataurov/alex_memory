@@ -17,6 +17,8 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Corrected AM-074's completed task record to link to its completed ExecPlan,
+  rather than the former active-plan path.
 - AM-120's bounded accepted-graph query now exposes an exact-claim-backed
   current task context at read time only when an older stored task-context edge
   is absent. The derived edge is explicitly labelled and has no stored ID;

@@ -389,7 +389,7 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 ## Completed
 
 - [x] AM-074 [P1] [Data repair] — Add a safe, resumable derived-state repair/backfill command for the existing live database after logic fixes.
-  - Plan: `docs/exec-plans/active/AM-074.md`.
+  - Plan: `docs/exec-plans/completed/AM-074.md`.
   - Progress 2026-08-28: bounded read-only inventory now reports capped
     task-project, segment-chat, and pending-context candidate counts without
     exposing content or writing rows. The dry-run/apply workflow, run ledger,

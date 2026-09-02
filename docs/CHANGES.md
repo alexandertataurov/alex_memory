@@ -1,5 +1,11 @@
 # Implementation Journal
 
+## 2026-09-02 — Completed AM-074 plan-reference reconciliation
+
+The completed AM-074 task record now links to its completed ExecPlan. This is a
+repository-control correction only; no repair workflow, database state, or live
+operation changed.
+
 ## 2026-09-02 — AM-120 read-only historical task-context parity
 
 An owner-run, non-truncated ContextBuilder parity check reproduced the same
