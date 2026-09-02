@@ -77,6 +77,15 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Now
 
+- [ ] AM-121 [P1] [People and projects / Intelligence] — Add bounded,
+  read-only graph queries and source-backed People/Project intelligence for
+  timelines, commitments, recency, interactions, shared counterparties, and
+  explicit blockers/dependencies. Defer graph-ranking algorithms.
+  - Promoted 2026-09-02 after the AM-120 owner-run non-truncated parity gate
+    returned zero gaps and `ready: true`. Implement only the bounded reader/
+    product increment; do not cut over a compatibility reader, introduce graph
+    ranking, or weaken source, temporal, or authority constraints.
+
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact
   edge evidence; derive canonical operational state only through allowlisted
@@ -255,6 +264,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     decides identity correctness and whether the briefing prepares a real
     conversation. Temporary-SQLite coverage proves the passing, ungrounded,
     and incomplete-sample paths; no live validation ran.
+  - Review pending 2026-09-02: the owner-run structural gate passed on ten
+    representative contacts across all required shapes, with zero profile,
+    evidence, uncertainty, briefing, or write violations. The remaining
+    qualitative owner review is limited to demonstrated identity, attribution,
+    historical coherence, useful connections, commitments, and briefing value;
+    do not resume implementation without such a defect.
   - Owner validation gate: final acceptance requires 10–20 real contacts across
     recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
     shapes. Every displayed claim must retain exact evidence or be unknown/
@@ -386,17 +401,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     with visible warnings. Per-model RPM remains bounded by the separately
     documented provider-wide conservative ceiling. No provider, schema,
     migration, replay, or live action ran.
-
-## Next
-
-- [ ] AM-121 [P1] [People and projects / Intelligence] — Add bounded,
-  read-only graph queries and source-backed People/Project intelligence for
-  timelines, commitments, recency, interactions, shared counterparties, and
-  explicit blockers/dependencies. Defer graph-ranking algorithms.
-  - Parked 2026-08-30: `current_authoritative_edges` already supplies the
-    safe bounded graph read. Its remaining reader/product use must wait for the
-    AM-120 real-reader parity gate; existing compatibility readers cannot be
-    cut over while accepted/manual graph parity is incomplete.
 
 ## Completed
 
