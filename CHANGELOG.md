@@ -17,6 +17,9 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- The normal engineering verification gate now has an explicit six-of-six
+  synthetic Person Intelligence trust threshold. It is a deterministic
+  regression floor, not a replacement for AM-122 qualitative owner acceptance.
 - `make person-intelligence-benchmark` now reports six deterministic
   temporary-SQLite Person Intelligence trust cases: attribution, grounding,
   temporal state, duplicate evidence, commitments, relationships, and

@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-04 — Person Intelligence regression threshold
+
+The normal engineering verification gate now explicitly requires all six
+synthetic Person Intelligence trust cases to pass. This remains a deterministic
+engineering regression floor only; it does not replace AM-122's qualitative
+owner acceptance. No schema, writer, migration, replay, backfill, repair, or
+live action changed.
+
 ## 2026-09-04 — Repeatable Person Intelligence benchmark report
 
 `make person-intelligence-benchmark` now runs and names six deterministic

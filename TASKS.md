@@ -38,6 +38,15 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 74] Define final automated regression thresholds for
+  core Person Intelligence.
+  - Notion task: `3d0f52e9-545b-8108-9f45-c61f604906fc`; completed 2026-09-04.
+  - The normal verification gate requires all six deterministic synthetic trust
+    cases to pass. This is an engineering regression floor only and explicitly
+    does not replace AM-122's qualitative owner acceptance.
+  - Verification: focused benchmark and the full repository gate passed; no
+    migration, replay, backfill, repair, schema, writer, or live action changed.
+
 - [x] [Notion / Sequence 72] Add repeatable quality report over synthetic
   benchmark.
   - Notion task: `3d0f52e9-545b-81ff-9d75-dd36d86abf33`; completed 2026-09-04.

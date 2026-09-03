@@ -11,6 +11,12 @@ attribution, exact grounding, current versus superseded state, duplicate
 evidence, commitments, relationships, and no-write behavior. It does not read
 private archive data or score an LLM.
 
+The automated threshold is six of six named cases passing. `make verify`
+already includes this test module, so any failed synthetic trust dimension fails
+the normal engineering gate. This is an engineering regression floor only: it
+does not replace AM-122's owner-run qualitative review of representative
+contacts, attribution, history, connection quality, or briefing usefulness.
+
 ```bash
 uv sync
 make hooks        # install local Git hooks after `uv sync`
