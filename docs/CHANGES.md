@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-03 — Compact Profile primary navigation
+
+The Profile footer now reserves primary navigation for the eight existing
+numeric destinations: Overview, Actions, Projects, Profile, Connections,
+Timeline, Messages, and Evidence. Deep Scan remains reachable through its
+existing shortcut and Command Palette workflow; uncertainty remains a filter.
+No backend model, retrieval, profile composition, evidence semantics, or scan
+behavior changed.
+
 ## 2026-09-03 — Minimal Textual semantic presentation contract
 
 The existing Textual screens now share semantic accent, success, warning,

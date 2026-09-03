@@ -48,6 +48,24 @@ def test_textual_uses_semantic_roles_and_one_focus_rule() -> None:
     assert "ListView:focus > ListItem.-highlight" in css
 
 
+def test_profile_navigation_keeps_only_eight_primary_destinations() -> None:
+    bindings = {binding.key: binding for binding in ProfileScreen.BINDINGS}
+
+    assert [bindings[key].description for key in "12345678"] == [
+        "Overview",
+        "Actions",
+        "Projects",
+        "Profile",
+        "Connections",
+        "Timeline",
+        "Messages",
+        "Evidence",
+    ]
+    assert bindings["d"].action == "scan"
+    assert bindings["d"].show is False
+    assert bindings["u"].action == "uncertain"
+
+
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:
     with tempfile.TemporaryDirectory() as directory:
         settings = make_settings(Path(directory))

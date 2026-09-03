@@ -200,7 +200,7 @@ class ProfileScreen(Screen[None]):
         Binding("6", "section('timeline')", "Timeline"),
         Binding("7", "section('messages')", "Messages"),
         Binding("8", "section('evidence')", "Evidence"),
-        Binding("d", "scan", "Scan"),
+        Binding("d", "scan", "Scan", show=False),
         Binding("p", "palette", "Commands"),
         Binding("at", "contacts", "Contacts"),
         Binding("a", "actions", "Action"),

@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Profile navigation now presents only Overview, Actions, Projects, Profile,
+  Connections, Timeline, Messages, and Evidence as primary destinations. Deep
+  Scan remains accessible by its existing shortcut and Command Palette command,
+  without competing in the footer; no data or scan behavior changed.
 - Textual's existing People, Profile, navigation, scan, and status primitives
   now use a small shared semantic presentation vocabulary (accent, success,
   warning, error, evidence, muted) and one consistent focused-list treatment.

@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 47] Consolidate person navigation and demote
+  debug-only surfaces.
+  - Notion task: `3c7f52e9-545b-8171-aff2-c0cb175a41e9`; completed 2026-09-03.
+  - The eight existing numeric Profile destinations remain the primary
+    navigation. Deep Scan stays reachable through its existing shortcut and
+    Command Palette workflow, but no longer competes in the primary footer;
+    uncertain remains a filter. No data model, retrieval, profile composition,
+    evidence, or scan behavior changed.
+  - Verification: focused terminal navigation tests and the full repository
+    gate passed.
+
 - [x] [Notion / Sequence 45] Extract minimal Textual design tokens and shared
   focus/status rules.
   - Notion task: `3d0f52e9-545b-81f6-b243-ed0792a519c0`; completed 2026-09-03.
