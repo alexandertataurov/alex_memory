@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 70] Define synthetic Person Intelligence quality
+  benchmark v1.
+  - Notion task: `3d0f52e9-545b-813d-83d0-e86fb614ce93`; completed 2026-09-04.
+  - A compact temporary-SQLite fixture asserts identity/attribution, exact
+    grounding, current-vs-history, direct supersession, evidence deduplication,
+    a waiting commitment, typed relationship output, and read-only profile
+    composition. No scoring infrastructure or private data was added.
+  - Verification: focused Profile regressions and the full repository gate
+    passed; no migration, replay, backfill, repair, schema, writer, or live
+    action changed.
+
 - [x] [Notion / Sequence 64] Temporal history — guard historical `as_of`
   against current-state leakage.
   - Notion task: `3d0f52e9-545b-8184-a91c-c33a9b059896`; completed 2026-09-04.

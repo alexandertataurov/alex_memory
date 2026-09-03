@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-04 — Synthetic Person Intelligence benchmark
+
+A compact temporary-SQLite fixture now records expected Person Profile behavior
+for identity/attribution, exact evidence closure, current versus superseded
+facts, commitments, typed relationships, duplicate evidence suppression, and
+read-only composition. It is a test contract only: no scoring harness, private
+archive data, schema, writer, migration, replay, backfill, repair, or live
+action changed.
+
 ## 2026-09-04 — Historical timeline membership guard
 
 Historical contact timelines now select high-priority message chats only from

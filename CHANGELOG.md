@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- A compact synthetic temporary-SQLite Person Intelligence benchmark now fixes
+  expected profile-read contracts for identity/attribution, exact grounding,
+  temporal supersession, commitments, relationships, duplicate evidence, and
+  read-only behavior. It adds no scoring infrastructure or production data.
 - Historical contact timelines now resolve high-priority message membership from
   interval-active contact segments at `as_of`, rather than the mutable current
   conversation mapping. Current timelines retain the existing materialized
