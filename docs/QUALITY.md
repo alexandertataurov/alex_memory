@@ -5,6 +5,12 @@ without treating every local edit as a release process.
 
 ## Canonical commands
 
+`make person-intelligence-benchmark` reruns the synthetic, temporary-SQLite
+Person Intelligence trust contract. Its verbose case names cover identity and
+attribution, exact grounding, current versus superseded state, duplicate
+evidence, commitments, relationships, and no-write behavior. It does not read
+private archive data or score an LLM.
+
 ```bash
 uv sync
 make hooks        # install local Git hooks after `uv sync`

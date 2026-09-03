@@ -102,15 +102,27 @@ class PersonIntelligenceBenchmarkTests(unittest.TestCase):
         self.conn.close()
         self.directory.cleanup()
 
-    def test_synthetic_person_intelligence_contract(self) -> None:
-        before = self.conn.total_changes
+    def _profile(self) -> tuple[dict, dict]:
         profile = build_person_profile(self.conn, int(self.person_id))
-        package = profile_summary_package(self.conn, int(self.person_id))
+        return profile, profile_summary_package(self.conn, int(self.person_id))
 
-        self.assertEqual(before, self.conn.total_changes)
+    def test_identity_and_attribution(self) -> None:
+        profile, _ = self._profile()
+
         self.assertEqual("Mikhail", profile["entity"][1])
         self.assertTrue(profile["identity"]["direct_chat_owned"])
         self.assertEqual(["Michael"], profile["aliases"])
+
+    def test_grounding_omits_unsupported_automatic_fact(self) -> None:
+        profile, _ = self._profile()
+
+        self.assertNotIn(
+            "Unproven", [fact["display_value"] for fact in profile["facts"]]
+        )
+
+    def test_temporal_state_preserves_direct_supersession(self) -> None:
+        profile, _ = self._profile()
+
         self.assertEqual(
             [("Legal lead", "Now"), ("Counsel", "Previously")],
             [
@@ -119,12 +131,28 @@ class PersonIntelligenceBenchmarkTests(unittest.TestCase):
                 if fact["predicate"] == "professional.role"
             ],
         )
-        self.assertNotIn(
-            "Unproven", [fact["display_value"] for fact in profile["facts"]]
+
+    def test_duplicate_evidence_is_suppressed(self) -> None:
+        _, package = self._profile()
+
+        self.assertEqual(
+            [(100, 1)],
+            [(item["chat_id"], item["message_id"]) for item in package["sources"]],
         )
+        self.assertEqual(1, len(package["sources"]))
+
+    def test_waiting_commitment_is_present(self) -> None:
+        profile, _ = self._profile()
+
         self.assertEqual(
             ["Send contract"], [task["title"] for task in profile["tasks"]]
         )
+
+    def test_typed_relationship_is_present_and_read_only(self) -> None:
+        before = self.conn.total_changes
+        profile, _ = self._profile()
+
+        self.assertEqual(before, self.conn.total_changes)
         self.assertEqual(
             [("company", int(self.company_id), "Atlas")],
             [
@@ -136,8 +164,3 @@ class PersonIntelligenceBenchmarkTests(unittest.TestCase):
                 for relationship in profile["relationships"]
             ],
         )
-        self.assertEqual(
-            [(100, 1)],
-            [(item["chat_id"], item["message_id"]) for item in package["sources"]],
-        )
-        self.assertEqual(1, len(package["sources"]))

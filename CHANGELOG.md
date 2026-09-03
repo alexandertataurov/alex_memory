@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- `make person-intelligence-benchmark` now reports six deterministic
+  temporary-SQLite Person Intelligence trust cases: attribution, grounding,
+  temporal state, duplicate evidence, commitments, relationships, and
+  read-only behavior. No production data, scoring platform, or dashboard was
+  added.
 - A compact synthetic temporary-SQLite Person Intelligence benchmark now fixes
   expected profile-read contracts for identity/attribution, exact grounding,
   temporal supersession, commitments, relationships, duplicate evidence, and

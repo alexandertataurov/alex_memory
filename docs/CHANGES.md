@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-04 — Repeatable Person Intelligence benchmark report
+
+`make person-intelligence-benchmark` now runs and names six deterministic
+temporary-SQLite trust cases for attribution, grounding, temporal state,
+duplicate evidence, commitments, relationships, and read-only behavior. No
+production data, model benchmarking platform, dashboard, schema, writer,
+migration, replay, backfill, repair, or live action changed.
+
 ## 2026-09-04 — Synthetic Person Intelligence benchmark
 
 A compact temporary-SQLite fixture now records expected Person Profile behavior

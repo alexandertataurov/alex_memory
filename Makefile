@@ -5,7 +5,7 @@ GRAPH_DEPTH ?= 2
 NOTION_TASKS_JSON ?=
 PROFILE_CONTACTS ?=
 
-.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity profile-acceptance docs docs-check changes tasks review codex-hooks-check codex-check
+.PHONY: help setup hooks run daemon test test-fast coverage lint format format-check typecheck check lock-check deps audit verify health db-check db-backup repair-dry-run graph-parity profile-acceptance person-intelligence-benchmark docs docs-check changes tasks review codex-hooks-check codex-check
 
 help:
 	@printf '%s\n' 'Alex Memory development commands:' \
@@ -29,6 +29,7 @@ help:
 	  '  make repair-dry-run  Report an explicit bounded repair scope.' \
 	  '  make graph-parity    Report bounded ContextBuilder graph readiness.' \
 	  '  make profile-acceptance Check aggregate-only AM-122 owner validation.' \
+	  '  make person-intelligence-benchmark Run the synthetic Person Intelligence trust contract.' \
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
@@ -105,6 +106,9 @@ graph-parity:
 profile-acceptance:
 	@test -n "$(PROFILE_CONTACTS)" || { echo "Set PROFILE_CONTACTS to 10-20 distinct shape:positive-person-id values."; exit 2; }
 	$(PYTHON) scripts/dev_tools.py profile-acceptance $(foreach contact,$(PROFILE_CONTACTS),--contact "$(contact)")
+
+person-intelligence-benchmark:
+	$(PYTHON) -m pytest -v tests/test_person_intelligence_benchmark.py
 
 docs:
 	$(PYTHON) scripts/dev_tools.py docs

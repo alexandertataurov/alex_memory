@@ -38,6 +38,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 72] Add repeatable quality report over synthetic
+  benchmark.
+  - Notion task: `3d0f52e9-545b-81ff-9d75-dd36d86abf33`; completed 2026-09-04.
+  - `make person-intelligence-benchmark` now reports six deterministic
+    temporary-SQLite trust cases: attribution, grounding, temporal state,
+    duplicate evidence, commitments, relationships, and read-only behavior.
+    No production data, scoring platform, or dashboard was added.
+  - Verification: benchmark command and the full repository gate passed; no
+    migration, replay, backfill, repair, schema, writer, or live action changed.
+
 - [x] [Notion / Sequence 70] Define synthetic Person Intelligence quality
   benchmark v1.
   - Notion task: `3d0f52e9-545b-813d-83d0-e86fb614ce93`; completed 2026-09-04.
