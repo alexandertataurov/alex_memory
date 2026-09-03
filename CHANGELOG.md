@@ -17,6 +17,8 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Textual EvidenceScreen now shows its visible source range and total, with
+  bounded keyboard pagination instead of silently discarding sources after 16.
 - The Textual Command Palette now filters and invokes the highlighted command
   with Enter. People/search/profile actions route locally, while Review,
   System Status, and Maintenance use distinct explicit operation handoffs.

@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-03 — Bounded EvidenceScreen pagination
+
+EvidenceScreen now reports `showing N / total` and renders at most 16 exact
+sources per page. Keyboard P/N navigation preserves source order and text;
+the screen remains read-only and does not load every source into one rendered
+view.
+
 ## 2026-09-03 — Keyboard-first Command Palette routing
 
 The Textual Command Palette now filters, highlights its first filtered command,

@@ -180,6 +180,43 @@ async def test_profile_palette_routes_profile_actions_directly() -> None:
 
 
 @pytest.mark.asyncio
+async def test_evidence_screen_pages_in_exact_source_order_without_writes() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        settings = make_settings(Path(directory))
+        app_owner = AlexMemoryApp(settings, Console())
+        app_owner.conn = connect(settings)
+        evidence = [
+            {
+                "speaker": "OTHER",
+                "date": f"2026-08-{index:02}",
+                "chat_id": 1,
+                "message_id": index,
+                "text": f"Exact source [{index:02}]",
+            }
+            for index in range(1, 19)
+        ]
+        app = AlexMemoryTerminal(app_owner)
+        async with app.run_test() as pilot:
+            changes_before = app_owner.conn.total_changes
+            await app.push_screen(EvidenceScreen(evidence, "Sources"))
+            body = str(app.screen.query_one("#evidence-body", Static).render())
+            assert "showing 1–16 / 18" in body
+            assert "Exact source [01]" in body
+            assert "Exact source [17]" not in body
+            await pilot.press("n")
+            body = str(app.screen.query_one("#evidence-body", Static).render())
+            assert "showing 17–18 / 18" in body
+            assert "Exact source [17]" in body
+            assert "Exact source [01]" not in body
+            await pilot.press("p")
+            assert "showing 1–16 / 18" in str(
+                app.screen.query_one("#evidence-body", Static).render()
+            )
+            assert app_owner.conn.total_changes == changes_before
+        app_owner.conn.close()
+
+
+@pytest.mark.asyncio
 async def test_profile_task_status_change_requires_confirmation() -> None:
     with tempfile.TemporaryDirectory() as directory:
         settings = make_settings(Path(directory))

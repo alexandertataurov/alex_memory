@@ -351,27 +351,57 @@ class RecordDetailScreen(Screen[None]):
 
 
 class EvidenceScreen(Screen[None]):
-    BINDINGS = [Binding("escape", "back", "Back")]
+    PAGE_SIZE = 16
+    BINDINGS = [
+        Binding("escape", "back", "Back"),
+        Binding("p", "previous_page", "Previous"),
+        Binding("n", "next_page", "Next"),
+    ]
 
     def __init__(self, evidence: list[dict], title: str) -> None:
         super().__init__()
-        self.evidence, self.title = evidence[:16], title
+        self.evidence, self.title = tuple(evidence), title
+        self.page = 0
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
+        yield Static(_literal_text(self._page_text()), id="evidence-body")
+        yield Footer()
+
+    def _page_text(self) -> str:
+        start = self.page * self.PAGE_SIZE
+        visible = self.evidence[start : start + self.PAGE_SIZE]
+        end = start + len(visible)
         body = (
             "\n\n".join(
                 f"{item.get('speaker', 'OTHER')} · {item.get('date') or 'undated'}"
                 + _evidence_locator(item)
                 + f"\n{item.get('text', '')}"
-                for item in self.evidence
+                for item in visible
             )
             or "No supporting evidence is available."
         )
-        yield Static(
-            _literal_text(f"EVIDENCE · {self.title}\n\n{body}"), id="evidence-body"
+        showing = (
+            f"showing {start + 1}–{end} / {len(self.evidence)}"
+            if visible
+            else "showing 0 / 0"
         )
-        yield Footer()
+        return f"EVIDENCE · {self.title}\n{showing}\n\n{body}"
+
+    def _refresh_page(self) -> None:
+        self.query_one("#evidence-body", Static).update(
+            _literal_text(self._page_text())
+        )
+
+    def action_next_page(self) -> None:
+        if (self.page + 1) * self.PAGE_SIZE < len(self.evidence):
+            self.page += 1
+            self._refresh_page()
+
+    def action_previous_page(self) -> None:
+        if self.page:
+            self.page -= 1
+            self._refresh_page()
 
     def action_back(self) -> None:
         self.app.pop_screen()

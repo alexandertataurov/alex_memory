@@ -38,6 +38,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 60] Add bounded Evidence pagination/count instead of
+  silent truncation.
+  - Notion task: `3c7f52e9-545b-81ac-942f-f74df0e0b190`; completed 2026-09-03.
+  - Evidence now shows `showing N / total`, displays at most 16 exact sources
+    per page, and supports keyboard previous/next navigation without writes.
+  - Verification: full repository gate passed (384 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks).
+
 - [x] [Notion / Sequence 50] Make Command Palette real and keyboard-first.
   - Notion task: `3c7f52e9-545b-8185-ab61-dcce7f5a08a1`; completed 2026-09-03.
   - Palette filtering highlights the first result and Enter invokes it;
