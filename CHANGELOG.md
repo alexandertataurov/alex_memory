@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- The synthetic forwarded-attribution audit found a concrete Person Profile
+  authority gap: persisted forwarded metadata is not carried into direct-claim
+  validation, so a forwarded message can be accepted as a selected contact's
+  own statement. This audit adds regression evidence only; no runtime behavior
+  changed.
 - Person Overview is now a dense five-block operational dashboard in the
   Textual product path and Rich recovery renderer: identity/status, a compact
   existing-data brief, needs attention, active threads/projects, and

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from io import StringIO
 from rich.console import Console
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from alex_memory.models import AIAnalysisResult
@@ -32,6 +33,7 @@ from alex_memory.ui.profile import show_profile
 from test_ai_pipeline import make_settings
 from alex_memory.database import connect
 from alex_memory.profile_enrichment import PROFILE_EXTRACTOR_VERSION
+from alex_memory.telegram.normalize import normalize_message
 
 
 class _SummaryRouter:
@@ -111,6 +113,39 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.assertEqual(2, profile["stats"]["total"])
         self.assertEqual(2, profile["stats"]["conversations"][0]["incoming"])
+
+    def test_audit_normalization_keeps_only_explicit_forward_metadata(self) -> None:
+        base = {
+            "id": 1,
+            "sender_id": 100,
+            "date": datetime(2026, 8, 24, tzinfo=UTC),
+            "raw_text": "Quoted or copied assertion",
+            "out": False,
+            "media": None,
+        }
+        known_forward = SimpleNamespace(
+            **base,
+            fwd_from=SimpleNamespace(from_name="Known origin", from_id=None),
+            reply_to=None,
+        )
+        hidden_forward = SimpleNamespace(
+            **base,
+            fwd_from=SimpleNamespace(from_name=None, from_id=None, channel_post=None),
+            reply_to=None,
+        )
+        reply = SimpleNamespace(
+            **base,
+            fwd_from=None,
+            reply_to=SimpleNamespace(reply_to_msg_id=99),
+        )
+        copied = SimpleNamespace(**base, fwd_from=None, reply_to=None)
+
+        self.assertEqual((1, "Known origin"), normalize_message(100, known_forward)[8:])
+        self.assertEqual((1, None), normalize_message(100, hidden_forward)[8:])
+        reply_data = normalize_message(100, reply)
+        self.assertEqual(99, reply_data[5])
+        self.assertEqual((0, None), reply_data[8:])
+        self.assertEqual((0, None), normalize_message(100, copied)[8:])
 
     def test_profile_omits_canonical_records_without_exact_evidence(self) -> None:
         claim_id = self.conn.execute(
@@ -766,7 +801,7 @@ class PersonProfileTests(unittest.TestCase):
             self.conn,
             work,
             {
-                "summary": "",
+                "summary": "Forwarded profile assertion.",
                 "items": [
                     {
                         "kind": "important_fact",
@@ -794,6 +829,64 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(0, result.claims_inserted)
         self.assertEqual(
             0, self.conn.execute("SELECT COUNT(*) FROM ai_items").fetchone()[0]
+        )
+
+    def test_audit_forwarded_text_can_be_accepted_as_a_direct_profile_claim(
+        self,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO messages(chat_id,message_id,sender_id,date,text,is_outgoing,has_media,
+               is_forwarded,forward_source) VALUES (100,3,100,'2026-08-25T12:00:00+00:00',
+               'I founded Forwarded Co.',0,0,1,'Known origin')"""
+        )
+        self.conn.commit()
+        queue_profile_scan(self.conn, self.settings, int(self.person_id))
+        job_id, work = claim_ai_jobs(
+            self.conn,
+            "profile",
+            1,
+            self.settings,
+            profile_person_id=int(self.person_id),
+        )[0]
+
+        result = save_ai_success(
+            self.conn,
+            work,
+            {
+                "summary": "Forwarded profile assertion.",
+                "items": [
+                    {
+                        "kind": "important_fact",
+                        "title": "professional.role: Founder",
+                        "details": "",
+                        "status": "informational",
+                        "owner": "other",
+                        "due_date": None,
+                        "person": "Michael",
+                        "company": "Forwarded Co.",
+                        "project_name": None,
+                        "amount": None,
+                        "currency": None,
+                        "confidence": 0.9,
+                        "source_chat_id": 100,
+                        "source_message_id": 3,
+                        "assertion_kind": "direct",
+                        "effective_from": None,
+                        "effective_to": None,
+                    }
+                ],
+            },
+            self.settings,
+            lane="profile",
+            job_id=job_id,
+        )
+
+        self.assertEqual(1, result.claims_inserted, result.rejection_reasons)
+        self.assertEqual(
+            "direct",
+            build_person_profile(self.conn, int(self.person_id))["profile_claims"][0][
+                "assertion_kind"
+            ],
         )
 
     def test_profile_third_party_claim_is_traceable_but_not_canonical(self) -> None:

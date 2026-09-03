@@ -1,5 +1,18 @@
 # Implementation Journal
 
+## 2026-09-03 — Forwarded-attribution audit
+
+Synthetic normal authored, known-origin forward, hidden-origin forward,
+reply/quote, and copy-paste fixtures trace the Telegram metadata boundary. An
+explicit forwarded flag survives normalization, SQLite persistence, and
+classification, but is absent from the profile batch and direct-claim authority
+check. A forwarded body whose `sender_id` matches the selected contact can
+therefore become a direct profile claim. Reply/quote and copy-paste have no
+forward metadata, so the system cannot distinguish them from authored text.
+This is an audit finding with a passing regression that demonstrates the gap;
+it deliberately makes no production behavior, schema, migration, replay,
+backfill, repair, or live-state change.
+
 ## 2026-09-03 — Person Overview operational dashboard
 
 The normal Textual Person Overview and Rich recovery renderer now share the

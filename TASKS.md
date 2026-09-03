@@ -38,6 +38,19 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 42] Prove authored-vs-forwarded attribution boundary.
+  - Notion task: `3d0f52e9-545b-8125-8e4e-e754b4f493c1`; completed 2026-09-03.
+  - Audit result: explicit forwarded metadata survives Telegram normalization,
+    SQLite storage, and classification, but the Person Profile batch and direct
+    claim validator omit it. A forwarded message whose `sender_id` is the
+    selected contact can therefore become a direct profile claim. Reply/quote
+    and copied text have no forward metadata and remain an acknowledged source
+    boundary. No production behavior changed in this audit-only leaf.
+  - Verification: synthetic normal/known-origin/hidden-origin/reply/copy
+    fixtures plus direct-claim regression; full repository gate passed (391
+    tests, Ruff, formatting, MyPy, docs, lock/dependency/vulnerability, and
+    SQLite checks).
+
 - [x] [Notion / Sequence 40] Redesign person Overview as an operational
   dashboard.
   - Notion task: `3c7f52e9-545b-8137-a74f-eb1a6d9d631c`; completed 2026-09-03.
