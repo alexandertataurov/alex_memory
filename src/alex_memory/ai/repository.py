@@ -929,6 +929,8 @@ def save_ai_success(
         valid_refs = {(m.chat_id, m.message_id): m.date for m in batch.messages}
         source_texts = {(m.chat_id, m.message_id): m.text for m in batch.messages}
         profile_authorized_refs: set[tuple[int, int]] | None = None
+        profile_known_forward_refs: set[tuple[int, int]] = set()
+        profile_hidden_forward_refs: set[tuple[int, int]] = set()
         profile_person_id: int | None = None
         if lane == "profile":
             row = (
@@ -945,11 +947,31 @@ def save_ai_success(
             person_id = row[0] if row is not None else None
             telegram_user_id = row[1] if row is not None else None
             profile_person_id = int(person_id) if person_id is not None else None
+            forward_metadata = {
+                (message.chat_id, message.message_id): conn.execute(
+                    """SELECT is_forwarded,forward_source FROM messages
+                       WHERE chat_id=? AND message_id=?""",
+                    (message.chat_id, message.message_id),
+                ).fetchone()
+                for message in batch.messages
+            }
+            profile_known_forward_refs = {
+                key
+                for key, metadata in forward_metadata.items()
+                if metadata is not None and metadata[0] and metadata[1]
+            }
+            profile_hidden_forward_refs = {
+                key
+                for key, metadata in forward_metadata.items()
+                if metadata is not None and metadata[0] and not metadata[1]
+            }
             profile_authorized_refs = {
                 (message.chat_id, message.message_id)
                 for message in batch.messages
                 if telegram_user_id is not None
                 and message.sender_id == telegram_user_id
+                and (message.chat_id, message.message_id)
+                not in profile_known_forward_refs | profile_hidden_forward_refs
             }
 
         save_result = AISaveResult(batch_id=batch_id)
@@ -981,6 +1003,12 @@ def save_ai_success(
                 and source_key in profile_authorized_refs
             ):
                 reason = "third-party profile item must cite another participant"
+            if (
+                reason is None
+                and assertion_kind == "third_party"
+                and source_key in profile_hidden_forward_refs
+            ):
+                reason = "forwarded profile source has no attributable origin"
             if (
                 reason is None
                 and profile_authorized_refs is not None

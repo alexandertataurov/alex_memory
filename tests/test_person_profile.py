@@ -831,7 +831,7 @@ class PersonProfileTests(unittest.TestCase):
             0, self.conn.execute("SELECT COUNT(*) FROM ai_items").fetchone()[0]
         )
 
-    def test_audit_forwarded_text_can_be_accepted_as_a_direct_profile_claim(
+    def test_forwarded_text_cannot_be_accepted_as_a_direct_profile_claim(
         self,
     ) -> None:
         self.conn.execute(
@@ -881,12 +881,11 @@ class PersonProfileTests(unittest.TestCase):
             job_id=job_id,
         )
 
-        self.assertEqual(1, result.claims_inserted, result.rejection_reasons)
-        self.assertEqual(
-            "direct",
-            build_person_profile(self.conn, int(self.person_id))["profile_claims"][0][
-                "assertion_kind"
-            ],
+        self.assertEqual(1, result.rejected)
+        self.assertEqual(0, result.claims_inserted)
+        self.assertIn(
+            "profile item source must be authored by the selected person",
+            result.rejection_reasons[0],
         )
 
     def test_profile_third_party_claim_is_traceable_but_not_canonical(self) -> None:

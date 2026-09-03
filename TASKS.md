@@ -38,6 +38,18 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 43] Fix forwarded-message misattribution only if
+  proven.
+  - Notion task: `3d0f52e9-545b-8120-b94d-fdd657252505`; completed 2026-09-03.
+  - Profile direct assertions now require a selected-contact source that is not
+    marked forwarded. Known-origin forwarded rows may remain explicitly
+    third-party; hidden-origin forwarded rows are rejected as unattributable.
+    Ordinary authored messages are unchanged. No new evidence store, schema,
+    extraction redesign, replay, backfill, repair, or live action occurred.
+  - Verification: focused synthetic profile regressions and full repository
+    gate passed (391 tests, Ruff, formatting, MyPy, docs, lock/dependency/
+    vulnerability, and SQLite checks).
+
 - [x] [Notion / Sequence 42] Prove authored-vs-forwarded attribution boundary.
   - Notion task: `3d0f52e9-545b-8125-8e4e-e754b4f493c1`; completed 2026-09-03.
   - Audit result: explicit forwarded metadata survives Telegram normalization,

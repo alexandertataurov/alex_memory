@@ -1,5 +1,16 @@
 # Implementation Journal
 
+## 2026-09-03 — Forwarded-profile attribution correction
+
+The existing Person Profile claim validator now reads the persisted forward
+metadata for its exact batch membership. A direct assertion requires both the
+selected contact's sender ID and a non-forwarded source. Known-origin forwards
+may remain explicitly third-party context; hidden-origin forwards are rejected
+as unattributable. Ordinary authored message handling is unchanged. Focused
+temporary-SQLite regressions cover the source boundary; no schema, evidence
+store, extractor redesign, migration, replay, backfill, repair, or live action
+changed.
+
 ## 2026-09-03 — Forwarded-attribution audit
 
 Synthetic normal authored, known-origin forward, hidden-origin forward,

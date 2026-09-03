@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Person Profile direct assertions now require a selected-contact source that
+  is not explicitly forwarded. Known-origin forwards remain eligible only as
+  third-party context; hidden-origin forwards are rejected as unattributable.
+  Ordinary authored messages are unchanged.
 - The synthetic forwarded-attribution audit found a concrete Person Profile
   authority gap: persisted forwarded metadata is not carried into direct-claim
   validation, so a forwarded message can be accepted as a selected contact's
