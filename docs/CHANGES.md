@@ -1,5 +1,15 @@
 # Implementation Journal
 
+## 2026-09-03 — Person Overview operational dashboard
+
+The normal Textual Person Overview and Rich recovery renderer now share the
+same dense, read-only five-block composition: identity/status, a 2–3 line brief,
+needs attention, active threads/projects, and relationship plus memory health.
+It only formats existing canonical/profile data and surfaces unknowns honestly;
+it adds no extraction, tab, writer, schema, migration, replay, backfill,
+repair, or live action. Temporary-SQLite coverage proves the model remains
+read-only and both renderers include the five blocks.
+
 ## 2026-09-03 — Direct-person history coverage
 
 The explicit Person Profile Deep Scan now records every currently eligible

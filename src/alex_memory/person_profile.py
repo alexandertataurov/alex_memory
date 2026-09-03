@@ -103,6 +103,7 @@ def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
     from .profile_enrichment import profile_scan_status
 
     profile["scan_status"] = profile_scan_status(conn, person_id)
+    profile["overview"] = _operational_overview(profile)
     return profile
 
 
@@ -842,6 +843,65 @@ def _contact_briefing(profile: dict) -> dict:
         "unresolved_questions": questions,
         "recent_changes": recent_changes,
         "connections": connections,
+    }
+
+
+def _operational_overview(profile: dict) -> dict:
+    """Compose the existing profile package into a bounded, read-only dashboard."""
+    entity = profile["entity"]
+    contact = profile.get("contact", {})
+    identity = profile.get("identity", {})
+    freshness = profile.get("context_freshness", {})
+    scan = profile.get("scan_status", {})
+    brief = (
+        contact.get("profile_summary")
+        or contact.get("current_summary")
+        or contact.get("long_term_summary")
+        or "unknown / insufficient evidence"
+    )
+    brief_lines = [line.strip() for line in str(brief).splitlines() if line.strip()][:2]
+    topics = profile.get("topics", [])[:6]
+    if topics:
+        brief_lines.append("Topics: " + ", ".join(map(str, topics)))
+    elif len(brief_lines) < 2:
+        brief_lines.append(
+            "Last contact: "
+            + str(
+                contact.get("last_contact_at")
+                or profile.get("stats", {}).get("last_at")
+                or "unknown"
+            )
+        )
+    return {
+        "identity": {
+            "name": entity[1],
+            "status": entity[4],
+            "aliases": profile.get("aliases", [])[:4],
+            "direct_chat_owned": bool(identity.get("direct_chat_owned")),
+            "pending_reviews": int(identity.get("pending_reviews") or 0),
+        },
+        "brief_lines": brief_lines[:3],
+        "needs_attention": profile.get("actions", [])[:6],
+        "active_threads": [
+            item
+            for item in profile.get("projects", [])
+            if item.get("status") == "active"
+        ][:4]
+        + [
+            item
+            for item in profile.get("open_loops", [])
+            if item.get("status") in {"open", "waiting"}
+        ][:4],
+        "relationship_memory_health": {
+            "relationship_type": contact.get("relationship_type"),
+            "last_contact_at": contact.get("last_contact_at")
+            or profile.get("stats", {}).get("last_at"),
+            "context_state": freshness.get("state") or "unknown",
+            "completed_messages": int(scan.get("completed_messages") or 0),
+            "eligible_messages": int(scan.get("eligible_messages") or 0),
+            "pending_messages": int(scan.get("pending_messages") or 0),
+            "failed_messages": int(scan.get("failed_messages") or 0),
+        },
     }
 
 

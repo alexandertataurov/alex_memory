@@ -862,14 +862,61 @@ class AlexMemoryTerminal(App[None]):
         self.exit()
 
 
-def _summary(detail: dict) -> str:
-    contact = detail.get("contact", {})
-    summary = contact.get("profile_summary") or contact.get("current_summary")
-    if not summary:
-        summary = contact.get("long_term_summary") or "unknown / insufficient evidence"
-    topics = detail.get("topics", [])
-    suffix = f"\nTopics: {', '.join(topics[:6])}" if topics else ""
-    return f"SUMMARY\n{summary}{suffix}"
+def _operational_overview_text(detail: dict) -> str:
+    """Render the five existing-data dashboard blocks without diagnostic detail."""
+    overview = detail.get("overview", {})
+    identity = overview.get("identity", {})
+    aliases = identity.get("aliases", [])
+    identity_lines = [
+        str(identity.get("name") or "unknown"),
+        f"Status: {identity.get('status') or 'unknown'}",
+        "Direct chat: canonically owned"
+        if identity.get("direct_chat_owned")
+        else "Direct chat: unknown / not canonically owned",
+    ]
+    if aliases:
+        identity_lines.append("Aliases: " + ", ".join(map(str, aliases)))
+    if identity.get("pending_reviews"):
+        identity_lines.append(f"Review: {identity['pending_reviews']} pending")
+    health = overview.get("relationship_memory_health", {})
+    relationship_lines = [
+        f"Relationship: {health.get('relationship_type') or 'unknown'}",
+        f"Last contact: {health.get('last_contact_at') or 'unknown'}",
+        f"Memory: {health.get('context_state') or 'unknown'}",
+    ]
+    eligible = health.get("eligible_messages")
+    if eligible:
+        relationship_lines.append(
+            f"Profile coverage: {health.get('completed_messages', 0)} / {eligible} analyzed"
+        )
+    if health.get("pending_messages") or health.get("failed_messages"):
+        relationship_lines.append(
+            f"Unfinished: {health.get('pending_messages', 0)} pending · "
+            f"{health.get('failed_messages', 0)} retryable"
+        )
+    return "\n\n".join(
+        (
+            "IDENTITY / STATUS\n" + "\n".join(identity_lines),
+            "BRIEF\n"
+            + (
+                "\n".join(overview.get("brief_lines", []))
+                or "unknown / insufficient evidence"
+            ),
+            _section(
+                "NEEDS ATTENTION",
+                overview.get("needs_attention", []),
+                "action_state",
+                "title",
+            ),
+            _section(
+                "ACTIVE THREADS / PROJECTS",
+                overview.get("active_threads", []),
+                "status",
+                "name",
+            ),
+            "RELATIONSHIP + MEMORY HEALTH\n" + "\n".join(relationship_lines),
+        )
+    )
 
 
 def _section(title: str, records: list[dict], left: str, right: str) -> str:
@@ -941,14 +988,7 @@ def _dashboard_text(
     }
     title = titles.get(section, "PROFILE")
     if section == "overview":
-        return "\n\n".join(
-            (
-                _summary(detail),
-                _section("NEXT ACTIONS", records, "action_state", "title"),
-                _stats(detail.get("stats", {})),
-                _scan_coverage(detail.get("scan_status", {})),
-            )
-        )
+        return _operational_overview_text(detail)
     notice = (
         "\nUncertain third-party and inference claims included."
         if show_uncertain and section == "profile"
@@ -1048,26 +1088,6 @@ def _record_title(record: dict) -> str:
         or "unknown / insufficient evidence"
     )
     return str(value).replace("\n", " ")
-
-
-def _stats(stats: dict) -> str:
-    if not stats.get("conversations"):
-        return "COMMUNICATION\nunknown / insufficient evidence"
-    return (
-        "COMMUNICATION\n"
-        f"{stats.get('total', 0)} messages · {stats.get('incoming', 0)} received · "
-        f"{stats.get('outgoing', 0)} sent · {stats.get('active_days', 0)} active days"
-    )
-
-
-def _scan_coverage(scan: dict) -> str:
-    if not scan.get("direct_chat_available"):
-        return "AI COVERAGE\nunknown / no canonically owned direct chat"
-    return (
-        "AI PROFILE COVERAGE\n"
-        f"{scan.get('completed_messages', 0)} / {scan.get('eligible_messages', 0)} evidence messages completed · "
-        f"{scan.get('pending', 0)} ready · {scan.get('failed', 0)} failed"
-    )
 
 
 def _scan_count(status: dict[str, int | str | bool | None], key: str) -> int:

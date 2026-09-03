@@ -85,7 +85,14 @@ async def test_terminal_autofocuses_search_and_filters_people() -> None:
             assert [row.name for row in app.screen.rows] == ["Ilya Gutovskiy"]
             await pilot.press("enter")
             assert isinstance(app.screen, ProfileScreen)
-            assert "SUMMARY" in app.screen.section_text
+            for block in (
+                "IDENTITY / STATUS",
+                "BRIEF",
+                "NEEDS ATTENTION",
+                "ACTIVE THREADS / PROJECTS",
+                "RELATIONSHIP + MEMORY HEALTH",
+            ):
+                assert block in app.screen.section_text
             await pilot.press("8")
             assert "EXACT SUPPORTING EVIDENCE" in app.screen.section_text
             await pilot.press("d")

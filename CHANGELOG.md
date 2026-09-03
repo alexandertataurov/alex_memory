@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Person Overview is now a dense five-block operational dashboard in the
+  Textual product path and Rich recovery renderer: identity/status, a compact
+  existing-data brief, needs attention, active threads/projects, and
+  relationship/memory health. It performs no writes and adds no extraction,
+  tab, schema, or migration.
 - The selected-person Deep Scan now persists every currently eligible direct
   history message as an exact, bounded profile-job window before claiming only
   the requested number for provider work. Current-version status counts exact

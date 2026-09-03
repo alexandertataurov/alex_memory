@@ -948,10 +948,42 @@ class PersonProfileTests(unittest.TestCase):
             Console(file=output, force_terminal=False, width=160),
         )
         rendered = output.getvalue()
-        self.assertIn("Actionable open loops", rendered)
+        self.assertIn("Identity / status", rendered)
+        self.assertIn("Brief", rendered)
+        self.assertIn("Needs attention", rendered)
+        self.assertIn("Active threads / projects", rendered)
+        self.assertIn("Relationship + memory health", rendered)
         self.assertIn("[E]", rendered)
         self.assertNotIn("100/1", rendered)
-        self.assertIn("Communication stats", rendered)
+        self.assertNotIn("extractor v", rendered)
+
+    def test_operational_overview_reuses_existing_profile_data_without_writes(
+        self,
+    ) -> None:
+        project_id = self.conn.execute(
+            "INSERT INTO projects(canonical_name,created_at,updated_at) VALUES ('Atlas',?,?)",
+            ("now", "now"),
+        ).lastrowid
+        self.conn.execute(
+            """INSERT INTO person_project_context(person_id,project_id,status,last_activity_at,
+                   confidence,updated_at) VALUES (?,?,'active','now',0.9,'now')""",
+            (self.person_id, project_id),
+        )
+        self.conn.commit()
+        before = self.conn.total_changes
+
+        overview = build_person_profile(self.conn, int(self.person_id))["overview"]
+
+        self.assertEqual("Michael", overview["identity"]["name"])
+        self.assertTrue(overview["identity"]["direct_chat_owned"])
+        self.assertIn(
+            "WAITING", [item["action_state"] for item in overview["needs_attention"]]
+        )
+        self.assertEqual("Atlas", overview["active_threads"][0]["name"])
+        self.assertEqual(
+            "fresh", overview["relationship_memory_health"]["context_state"]
+        )
+        self.assertEqual(before, self.conn.total_changes)
 
     def test_contact_briefing_is_exact_evidence_only_and_actionable(self) -> None:
         now = "2026-08-24T12:00:00+00:00"

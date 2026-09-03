@@ -89,6 +89,10 @@ def _show_person_profile(data: dict, console: Console, section: str) -> None:
     screen_header(
         console, "Person profile", "Canonical state with exact source evidence."
     )
+    if section == "overview":
+        _show_operational_overview(data, console)
+        console.print()
+        return
     lines = [safe_text(name, 160, style="bold white", single_line=True)]
     accounts = [
         f"Telegram ID: {telegram_id}" if telegram_id else None,
@@ -148,13 +152,7 @@ def _show_person_profile(data: dict, console: Console, section: str) -> None:
                 border_style="bright_blue",
             )
         )
-    if section == "overview":
-        _show_records(
-            data.get("tasks", []), "Actionable open loops", "status", "title", console
-        )
-        _show_projects(data.get("projects", []), console)
-        _show_stats(data.get("stats", {}), console, compact=True)
-    elif section == "contact":
+    if section == "contact":
         _show_contact_briefing(data.get("contact_briefing", {}), console)
     elif section == "scan_status":
         scan = data.get("scan_status", {})
@@ -262,6 +260,103 @@ def _show_person_profile(data: dict, console: Console, section: str) -> None:
             console,
         )
     console.print()
+
+
+def _show_operational_overview(data: dict, console: Console) -> None:
+    """Render the five requested dashboard blocks from the existing profile package."""
+    overview = data.get("overview", {})
+    identity = overview.get("identity", {})
+    identity_lines = [
+        safe_text(str(identity.get("name") or "unknown"), 160, style="bold white"),
+        status_text(identity.get("status") or "unknown"),
+        safe_text(
+            "Direct Telegram chat is canonically owned."
+            if identity.get("direct_chat_owned")
+            else "Direct Telegram chat is unknown or not canonically owned.",
+            style="dim",
+        ),
+    ]
+    aliases = identity.get("aliases", [])
+    if aliases:
+        identity_lines.append(
+            safe_text("Aliases: " + ", ".join(map(str, aliases)), 400, style="dim")
+        )
+    if identity.get("pending_reviews"):
+        identity_lines.append(
+            safe_text(
+                f"{identity['pending_reviews']} review item(s) pending.", style="yellow"
+            )
+        )
+    console.print(
+        Panel(Group(*identity_lines), title="Identity / status", border_style="cyan")
+    )
+    brief = (
+        "\n".join(overview.get("brief_lines", [])) or "unknown / insufficient evidence"
+    )
+    console.print(
+        Panel(safe_text(brief, 700), title="Brief", border_style="bright_blue")
+    )
+    _show_overview_records(
+        overview.get("needs_attention", []), "Needs attention", console
+    )
+    _show_overview_records(
+        overview.get("active_threads", []), "Active threads / projects", console
+    )
+    health = overview.get("relationship_memory_health", {})
+    lines = [
+        f"Relationship: {health.get('relationship_type') or 'unknown'}",
+        f"Last contact: {health.get('last_contact_at') or 'unknown'}",
+        f"Memory: {health.get('context_state') or 'unknown'}",
+    ]
+    eligible = health.get("eligible_messages")
+    if eligible:
+        lines.append(
+            f"Profile coverage: {health.get('completed_messages', 0)} / {eligible} analyzed"
+        )
+    if health.get("pending_messages") or health.get("failed_messages"):
+        lines.append(
+            f"Unfinished: {health.get('pending_messages', 0)} pending · "
+            f"{health.get('failed_messages', 0)} retryable"
+        )
+    console.print(
+        Panel(
+            safe_text("\n".join(lines), 700),
+            title="Relationship + memory health",
+            border_style="green",
+        )
+    )
+
+
+def _show_overview_records(records: list[dict], title: str, console: Console) -> None:
+    if not records:
+        console.print(
+            Panel(
+                safe_text("unknown / insufficient evidence", style="dim"),
+                title=title,
+                border_style="yellow",
+            )
+        )
+        return
+    lines = []
+    for record in records[:6]:
+        label = (
+            record.get("display_value")
+            or record.get("title")
+            or record.get("name")
+            or "—"
+        )
+        state = (
+            record.get("display_label")
+            or record.get("action_state")
+            or record.get("status")
+            or record.get("loop_type")
+            or "record"
+        )
+        evidence = " [E]" if record.get("evidence") else ""
+        lines.append(f"• {state}: {label}{evidence}")
+    console.print(
+        Panel(safe_text("\n".join(lines), 700), title=title, border_style="yellow")
+    )
 
 
 def _show_records(
