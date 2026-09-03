@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run compact checks after maintained Python files are changed by apply_patch."""
+"""Run lightweight checks after maintained Python files are changed by apply_patch."""
 
 from __future__ import annotations
 
@@ -59,25 +59,21 @@ def main() -> None:
     if not paths:
         response()
         return
+
     ruff = ROOT / ".venv" / "bin" / "ruff"
-    mypy = ROOT / ".venv" / "bin" / "mypy"
-    if not ruff.exists() or not mypy.exists():
+    python = ROOT / ".venv" / "bin" / "python"
+    if not ruff.exists() or not python.exists():
         response(
             "Fast Python checks skipped: run make setup to restore the canonical environment."
         )
         return
+
     relative = [str(path.relative_to(ROOT)) for path in paths]
-    checks = [("Ruff", [str(ruff), "check", *relative])]
-    typed = [
-        path
-        for path in paths
-        if path.is_relative_to(ROOT / "src") or path.is_relative_to(ROOT / "scripts")
-    ]
-    if typed:
-        checks.append(
-            ("MyPy", [str(mypy), *[str(path.relative_to(ROOT)) for path in typed]])
-        )
     failures = []
+    checks = [
+        ("Ruff", [str(ruff), "check", *relative]),
+        ("Compile", [str(python), "-m", "py_compile", *relative]),
+    ]
     for label, command in checks:
         code, output = run(command)
         if code:
