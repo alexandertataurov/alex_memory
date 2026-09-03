@@ -354,3 +354,15 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
             ],
             violations,
         )
+
+    def test_task_consistency_rejects_repository_authority_wording(self) -> None:
+        violations = dev_tools.task_consistency_violations(
+            "# Tasks\n\n`TASKS.md` is the single authoritative development queue.\n"
+        )
+
+        self.assertEqual(
+            [
+                "TASKS.md:3: repository control wording conflicts with Notion-first policy"
+            ],
+            violations,
+        )

@@ -35,18 +35,31 @@ Start with [architecture](docs/ARCHITECTURE.md), [data model](docs/DATA_MODEL.md
 
 ## Working agreement
 
-Before substantial work, read `TASKS.md`, inspect the relevant architecture,
-tests, config, and schema, then create or move one task to **Now**. Use an
-ExecPlan for migrations, backfills, broad rebuilds, cross-cutting architecture,
-model/routing migrations, or non-obvious deletion. Work in the order: task →
-smallest coherent change → tests → docs → changelog → verification.
+Before substantial work, open Notion's **Codex — Ready & Authorized** view and
+select its lowest-sequence unblocked implementation leaf. Read that task's
+Prompt, structured fields, dependencies, gate fields, Owner Action, and parent
+task. Then inspect the relevant repository architecture, tests, config, schema,
+and any `TASKS.md`/ExecPlan mirror. A Notion-authorized leaf does not require a
+`Repo ID`; that field is only a cross-reference. Do not create, move, promote,
+reprioritize, authorize, unblock, or close work from repository state.
 
-Before finishing, inspect callers and failure paths as well as tests. Update
-`CHANGELOG.md`, `docs/CHANGES.md`, affected docs, `TASKS.md`, and the ExecPlan.
-Report task ID, changed behavior/files, migration (or none), tests, docs,
-limitations, and next task. Do not add generic managers, factories, wrappers,
-placeholder success paths, broad exception swallowing, or speculative
-extension points.
+Use an ExecPlan only within an authorized Notion task for migrations,
+backfills, broad rebuilds, cross-cutting architecture, model/routing
+migrations, or non-obvious deletion. An ExecPlan records implementation detail
+and never authorizes a scope change; resolve scope changes in Notion first.
+Work only within the selected leaf: task → smallest coherent change → tests →
+repository mirrors → Notion outcome/gate/status → commit.
+
+Before finishing, inspect callers and failure paths as well as tests. After
+verification, update the authoritative Notion task's outcome, status, gates,
+and dependencies, then synchronize `CHANGELOG.md`, `docs/CHANGES.md`, affected
+docs, `TASKS.md`, and any ExecPlan to that final Notion state. If code/tests
+contradict a Notion assumption, report the evidence and obtain a deliberate
+Notion update, narrowing, or closure before changing scope. Report task ID,
+changed behavior/files, migration (or none), tests, docs, limitations, and next
+Notion-authorized leaf. Do not add generic managers, factories, wrappers,
+placeholder success paths, broad exception swallowing, or speculative extension
+points.
 
 ## Commands
 
@@ -74,19 +87,19 @@ checked-in architectural truth. Use focused review roles only for independent
 work; their read-only limits are deliberate. Command rules are guardrails, not
 a sandbox or authorization substitute.
 
-## Notion project memory
+## Notion work control and project memory
 
-The configured `notion` MCP server is a bounded source of Alex Memory product
-intent and history: goals, roadmap, AI/context architecture decisions, profile
-requirements, task definitions, UI decisions, known debt, blockers, rejected
-ideas, and prioritization. Use the repository skills `notion-context`,
-`notion-status`, `notion-find`, `notion-task`, and `notion-sync` when their
-descriptions apply.
+The configured `notion` MCP server is the sole source of truth for Alex Memory
+development work control: task existence, scope, status, priority, sequence,
+dependencies, gates, owner actions, authorization, promotion, completion, and
+the next executable leaf. It also holds product intent and history. Use the
+repository skills `notion-context`, `notion-status`, `notion-find`,
+`notion-task`, and `notion-sync` when their descriptions apply.
 
-Do not query Notion for a self-contained fix or a small implementation change.
-For historical or business context, retrieve lazily: identify the concrete
-Alex Memory entity/topic, search it, fetch only the smallest relevant set, and
-compare the findings against current code and `TASKS.md`. The repository is
-authoritative for current implementation; Notion records intent and decisions.
-If either is stale, superseded, completed, rejected, or conflicts with the
-other, say so and do not turn it into unrequested feature work.
+Start work from **Codex — Ready & Authorized**, then retrieve only the selected
+task and any needed targeted context. `TASKS.md`, ExecPlans, changelog, docs,
+and GitHub prose are synchronized implementation mirrors. Repository code and
+tests are authoritative evidence of current behavior, but cannot independently
+alter work control. If a mirror conflicts with Notion, Notion wins; if code or
+tests contradict a Notion assumption, report it and resolve the task in Notion
+before changing scope.

@@ -1,5 +1,11 @@
 # AM-122 — Person Profile v1
 
+## Control-plane status
+
+This ExecPlan is a synchronized repository mirror. Notion controls this task's
+scope, status, dependencies, gates, authorization, and completion; this plan
+cannot waive the parked owner-acceptance gate or authorize further AM-122 work.
+
 ## Objective
 
 Make every canonical person readable through one bounded terminal profile that

@@ -853,7 +853,7 @@ def task_summary(notion_tasks_json: Path | None = None) -> int:
     violations = task_consistency_violations(text, notion_rows)
     ids = re.findall(r"^- \[[ x]\] (AM-\d{3})\b", text, re.MULTILINE)
     print(
-        f"Tasks: {len(ids)} IDs; {text.count('- [ ]')} open; {text.count('- [x]')} completed"
+        f"Repository task mirror: {len(ids)} IDs; {text.count('- [ ]')} open; {text.count('- [x]')} completed"
     )
     if violations:
         print("Task consistency violations:")
@@ -866,7 +866,7 @@ def task_summary(notion_tasks_json: Path | None = None) -> int:
 def task_consistency_violations(
     text: str, notion_rows: list[object] | None = None
 ) -> list[str]:
-    """Return exact repository-task state contradictions without changing tasks."""
+    """Return mirror contradictions without changing Notion or repository tasks."""
     section: str | None = None
     section_lines: dict[str, int] = {}
     completed_task_ids: list[tuple[str, int]] = []
@@ -913,6 +913,7 @@ def task_consistency_violations(
             violations.append(
                 f"TASKS.md:{line_number}: completed {task_id} still has an active ExecPlan"
             )
+    violations.extend(task_control_policy_violations(text))
     if notion_rows is not None:
         violations.extend(
             notion_task_consistency_violations(notion_rows, repository_states)
@@ -920,14 +921,52 @@ def task_consistency_violations(
     return violations
 
 
+def task_control_policy_violations(tasks_text: str) -> list[str]:
+    """Reject repository wording that claims Notion-controlled task authority."""
+    checks = (
+        ("TASKS.md", tasks_text),
+        ("AGENTS.md", _read_control_file("AGENTS.md")),
+        ("docs/PLANS.md", _read_control_file("docs/PLANS.md")),
+        ("docs/DEVELOPMENT.md", _read_control_file("docs/DEVELOPMENT.md")),
+        (
+            ".codex/hooks/session_start.py",
+            _read_control_file(".codex/hooks/session_start.py"),
+        ),
+    )
+    patterns = (
+        re.compile(
+            r"`?TASKS\.md`? is (?:the )?(?:single )?authoritative[^\n]*queue",
+            re.IGNORECASE,
+        ),
+        re.compile(r"create or move one task to \*\*Now\*\*", re.IGNORECASE),
+        re.compile(
+            r"Repo ID[^\n]*(?:is|required|require)[^\n]*(?:executable|authorization|runnable)",
+            re.IGNORECASE,
+        ),
+    )
+    violations: list[str] = []
+    for path, content in checks:
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            if any(pattern.search(line) for pattern in patterns):
+                violations.append(
+                    f"{path}:{line_number}: repository control wording conflicts with Notion-first policy"
+                )
+    return violations
+
+
+def _read_control_file(relative_path: str) -> str:
+    path = ROOT / relative_path
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
 def notion_task_consistency_violations(
     rows: list[object], repository_states: dict[str, bool]
 ) -> list[str]:
-    """Validate a caller-provided, metadata-only Notion task export.
+    """Validate a caller-provided, metadata-only Notion task export against its mirror.
 
     The export contains task properties, not page bodies or source evidence. This
     check never infers completion from Outcome prose; it only checks explicit
-    status, queue, metadata, and repository-ID state.
+    Notion state, mirror metadata, and repository-ID cross-reference state.
     """
     violations: list[str] = []
     for index, row in enumerate(rows, start=1):

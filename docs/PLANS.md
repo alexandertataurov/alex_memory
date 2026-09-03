@@ -1,9 +1,17 @@
 # Execution Plans
 
+Notion is the sole authority for task work control. These ExecPlans are
+synchronized repository implementation artifacts: they do not create,
+authorize, promote, reprioritize, unblock, or close work. Read the linked
+Notion task first; if its scope, status, dependencies, gates, or authorization
+differs from a plan, Notion wins and the plan must be synchronized.
+
 Use an ExecPlan when a change has a durable state transition or material
 rollback risk: migrations, backfills, large derived-state rebuilds,
 cross-cutting architecture changes, model/routing migrations, or non-obvious
-deletion/refactoring work.
+deletion/refactoring work. Create or revise a plan only inside a
+Notion-authorized task. A plan records the bounded implementation approach;
+scope changes require a Notion decision before repository work proceeds.
 
 Keep active plans in `docs/exec-plans/active/` and move completed plans to
 `docs/exec-plans/completed/` with their final outcome and verification. A plan
@@ -16,6 +24,7 @@ fix.
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
 - [AM-120 semantic graph projection](exec-plans/active/AM-120-semantic-graph-projection.md)
+- [AM-124 bounded shared connections](exec-plans/active/AM-124-shared-connections.md)
 
 ## Completed
 

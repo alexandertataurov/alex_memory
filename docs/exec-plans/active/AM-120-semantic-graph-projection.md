@@ -1,5 +1,11 @@
 # AM-120 — Semantic Graph Projection
 
+## Control-plane status
+
+This ExecPlan is a synchronized repository mirror. Notion controls this task's
+scope, status, dependencies, gates, authorization, and completion; this plan
+cannot authorize a further reader cutover, live action, or any scope change.
+
 ## Objective
 
 Make validated semantic claims usable as a temporal SQLite graph without

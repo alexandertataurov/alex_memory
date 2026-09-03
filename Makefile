@@ -32,7 +32,7 @@ help:
 	  '  make docs            Regenerate derived documentation.' \
 	  '  make docs-check      Verify generated documentation is current.' \
 	  '  make changes         Report available change information.' \
-	  '  make tasks           Audit the repository task queue (optionally set NOTION_TASKS_JSON).' \
+	  '  make tasks           Audit the synchronized repository task mirror (optionally set NOTION_TASKS_JSON).' \
 	  '  make review          List code-size review signals.' \
 	  '  make codex-hooks-check Validate the local Codex hook configuration.' \
 	  '  make codex-check     Run the Codex workflow check.'

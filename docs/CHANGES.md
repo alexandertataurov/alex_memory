@@ -1,5 +1,16 @@
 # Implementation Journal
 
+## 2026-09-03 — Notion-first work-control synchronization
+
+Notion's **Codex — Ready & Authorized** view is now documented as the sole
+authority for task existence, scope, status, priority, sequence, dependencies,
+gates, authorization, completion, and the next executable leaf. Repository
+`TASKS.md`, ExecPlans, changelog, docs, and GitHub task prose are synchronized
+implementation mirrors; code and tests remain evidence of actual behavior.
+The local mirror audit rejects a future claim that `TASKS.md` is an authoritative
+queue. No application behavior, schema, migration, replay, repair, backfill,
+or live-state action changed.
+
 ## 2026-09-03 — AM-120 ContextBuilder reader cutover
 
 `ContextBuilder` now obtains relationships only from the already accepted,

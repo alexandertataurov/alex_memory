@@ -17,6 +17,13 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Work control is now Notion-first: **Codex — Ready & Authorized** defines
+  task scope, sequence, gates, authorization, and completion. Repository
+  `TASKS.md`, ExecPlans, changelog, docs, and GitHub task prose are
+  synchronized implementation mirrors; code and tests remain behavioral
+  evidence. The local task audit now rejects legacy repository-authority
+  wording. No application behavior, schema, migration, replay, repair,
+  backfill, or live-state action changed.
 - AM-124 adds one reusable, read-only shared-connections graph query for exactly
   `A -> C <- B`. It intersects two bounded authoritative one-hop reads, returns
   at most 20 typed canonical shared endpoints with both leg records, and keeps

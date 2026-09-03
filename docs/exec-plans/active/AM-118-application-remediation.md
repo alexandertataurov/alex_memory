@@ -1,5 +1,11 @@
 # AM-118 — Application Review and Remediation
 
+## Control-plane status
+
+This ExecPlan is a synchronized repository mirror. Notion controls this task's
+scope, status, dependencies, gates, authorization, and completion; this plan
+does not independently promote an umbrella or authorize a child leaf.
+
 ## Objective
 
 Turn the current source-backed review into an ordered remediation program. This

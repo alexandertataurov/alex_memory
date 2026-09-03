@@ -1,8 +1,17 @@
 # Alex Memory Tasks
 
-`TASKS.md` is the single authoritative, human-readable development queue.
+`TASKS.md` is a synchronized, human-readable repository mirror of the Notion
+task control plane. Notion is the sole authority for task existence, scope,
+status, priority, sequence, dependencies, gates, authorization, completion,
+and the next executable leaf. This file must not independently create,
+promote, reprioritize, authorize, unblock, or close work.
 
-Rules:
+When this mirror conflicts with Notion, resolve the decision in Notion first
+and then synchronize this file. Code and tests remain evidence of implemented
+behavior; they can expose a stale Notion assumption but cannot silently change
+work control.
+
+Mirror rules:
 - Keep each unit of work under exactly one active section.
 - Do not duplicate the same work under a second `Bugs` alias.
 - Raw/source evidence and manual corrections outrank derived AI state.

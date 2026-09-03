@@ -12,6 +12,21 @@ code .
 
 Copy `.env.example` to `.env` and provide your Telegram credentials. Tests use temporary SQLite databases and must not authenticate with Telegram.
 
+## Work control
+
+Notion's **Codex — Ready & Authorized** view is the sole source of truth for
+development work control. Start from its lowest-sequence unblocked
+implementation leaf, and read its Prompt, dependencies, and gates before
+coding. Repository code and tests are behavioral evidence; `TASKS.md`,
+ExecPlans, changelog, and documentation are synchronized mirrors and cannot
+independently authorize, promote, reprioritize, unblock, or close work. A
+missing `Repo ID` does not gate an otherwise authorized Notion leaf.
+
+After implementation and verification, update the authoritative Notion task's
+outcome/status/gates first, then synchronize repository mirrors and commit. If
+code or tests contradict a Notion assumption, record and resolve that conflict
+in Notion before changing scope.
+
 ## Environment reference
 
 <!-- AUTO-GENERATED:START -->

@@ -1,5 +1,11 @@
 # AM-124 — Bounded Shared Connections
 
+## Control-plane status
+
+This ExecPlan is a synchronized repository mirror. Notion controls this task's
+scope, status, dependencies, gates, authorization, and completion; this plan
+cannot authorize a subsequent AM-124 increment.
+
 ## Objective
 
 For two canonical person/company/project endpoints, return the current shared
