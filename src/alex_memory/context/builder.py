@@ -4,9 +4,11 @@ import json
 import re
 import sqlite3
 from datetime import datetime, timezone
+from typing import cast
 
 from ..config import Settings
 from ..utils import canonical_utc_timestamp
+from .graph import current_authoritative_edges
 from .models import BuiltContext, ContextRequest
 from .ranking import highest, rank_item
 from .repository import current_facts
@@ -165,52 +167,60 @@ class ContextBuilder:
         distances = dict(seeds)
         frontier = list(seeds)
         collected: list[dict] = []
+        collected_ids: set[int | str] = set()
         for depth in range(self.settings.context_max_graph_depth + 1):
             if not frontier:
                 break
-            clauses = " OR ".join(
-                "(from_type=? AND from_id=?) OR (to_type=? AND to_id=?)"
-                for _ in frontier
-            )
-            params: list[object] = []
-            for kind, entity_id in frontier:
-                params.extend((kind, entity_id, kind, entity_id))
-            rows = self.conn.execute(
-                f"""SELECT relationship_id,from_type,from_id,to_type,to_id,relationship_type,
-                           valid_from,valid_to,is_current,confidence,source_chat_id,source_message_id,source_claim_id,updated_at
-                    FROM relationships WHERE ({clauses}) AND valid_from<=?
-                    AND (valid_to IS NULL OR valid_to>?) LIMIT 160""",
-                [*params, as_of, as_of],
-            ).fetchall()
+            edges = current_authoritative_edges(self.conn, frontier, as_of, limit=160)
             next_frontier: list[tuple[str, int]] = []
-            for row in rows:
+            for edge in edges:
+                edge_id = edge["edge_id"]
+                relationship_id: int | str
+                if isinstance(edge_id, int):
+                    relationship_id = edge_id
+                else:
+                    relationship_id = _derived_relationship_id(edge)
+                source_evidence = edge.get("source_evidence")
+                source_chat_id, source_message_id = (
+                    source_evidence
+                    if isinstance(source_evidence, tuple) and len(source_evidence) == 2
+                    else (None, None)
+                )
+                claim_ids = edge.get("claim_ids")
                 relation = {
-                    "relationship_id": row[0],
-                    "from_type": row[1],
-                    "from_id": row[2],
-                    "to_type": row[3],
-                    "to_id": row[4],
-                    "relationship_type": row[5],
-                    "description": f"{row[1]} {row[2]} → {row[5]} → {row[3]} {row[4]}",
-                    "valid_from": row[6],
-                    "valid_to": row[7],
-                    "is_current": bool(row[8]),
-                    "confidence": row[9],
-                    "source_chat_id": row[10],
-                    "source_message_id": row[11],
-                    "source_claim_id": row[12],
-                    "updated_at": row[13],
+                    "relationship_id": relationship_id,
+                    "from_type": edge["from_type"],
+                    "from_id": edge["from_id"],
+                    "to_type": edge["to_type"],
+                    "to_id": edge["to_id"],
+                    "relationship_type": edge["relationship_type"],
+                    "description": (
+                        f"{edge['from_type']} {edge['from_id']} → "
+                        f"{edge['relationship_type']} → {edge['to_type']} {edge['to_id']}"
+                    ),
+                    "valid_from": edge["valid_from"],
+                    "valid_to": edge["valid_to"],
+                    "is_current": edge["valid_to"] is None,
+                    "confidence": edge["confidence"],
+                    "source_chat_id": source_chat_id,
+                    "source_message_id": source_message_id,
+                    "source_claim_id": (
+                        claim_ids[0]
+                        if isinstance(claim_ids, tuple) and claim_ids
+                        else None
+                    ),
+                    "updated_at": edge.get("updated_at", edge["valid_from"]),
+                    "authority_status": edge["authority_status"],
                 }
                 relation = rank_item(
                     relation, "relationship", graph_distance=depth, now=as_of
                 )
-                if relation["relationship_id"] not in {
-                    item["relationship_id"] for item in collected
-                }:
+                if relationship_id not in collected_ids:
+                    collected_ids.add(relationship_id)
                     collected.append(relation)
                 for kind, entity_id in (
-                    (str(row[1]), int(row[2])),
-                    (str(row[3]), int(row[4])),
+                    (str(edge["from_type"]), cast(int, edge["from_id"])),
+                    (str(edge["to_type"]), cast(int, edge["to_id"])),
                 ):
                     if kind not in _ENTITY_TABLES:
                         continue
@@ -731,6 +741,24 @@ class ContextBuilder:
                 {"name": row[0], "open_loops": int(row[1])} for row in attention
             ],
         }
+
+
+def _derived_relationship_id(edge: dict[str, object]) -> str:
+    """Give a read-time canonical reducer result a stable local identity."""
+    return ":".join(
+        str(value)
+        for value in (
+            "derived",
+            edge.get("materialization", "authoritative"),
+            edge.get("task_id", edge.get("event_id", "")),
+            edge["from_type"],
+            edge["from_id"],
+            edge["relationship_type"],
+            edge["to_type"],
+            edge["to_id"],
+            edge["valid_from"],
+        )
+    )
 
 
 def _alias_candidates(query: str) -> set[str]:

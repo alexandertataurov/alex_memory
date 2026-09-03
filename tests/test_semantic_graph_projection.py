@@ -182,6 +182,39 @@ class SemanticGraphProjectionTests(unittest.TestCase):
                 "2026-08-25T00:00:00+00:00",
             )["gaps"],
         )
+        context = ContextBuilder(self.conn, self.settings).build(
+            ContextRequest(
+                person_ids=[int(person_id)],
+                as_of=datetime.fromisoformat("2026-08-25T00:00:00+00:00"),
+            )
+        )
+        task_context = [
+            relationship
+            for relationship in context.relationships
+            if relationship["to_type"] == "project"
+            and relationship["from_type"] != "task"
+        ]
+        self.assertEqual(
+            {
+                ("person", int(person_id), "involved_in"),
+                ("company", int(company_id), "involved_in"),
+                ("company", int(company_id), "associated_with"),
+            },
+            {
+                (
+                    relationship["from_type"],
+                    relationship["from_id"],
+                    relationship["relationship_type"],
+                )
+                for relationship in task_context
+            },
+        )
+        self.assertTrue(
+            all(
+                relationship["source_claim_id"] == claim_id
+                for relationship in task_context
+            )
+        )
 
         task_id = self.conn.execute("SELECT task_id FROM tasks").fetchone()[0]
         manual_project_id = EntityResolver(self.conn).entity(
@@ -1029,8 +1062,8 @@ class SemanticGraphProjectionTests(unittest.TestCase):
         )
         self.assertEqual((), edges[0]["claim_ids"])
 
-    def test_parity_diagnostic_matches_context_builder_top_relationships(self) -> None:
-        """A parity green result must cover the reader's ranked, not first, rows."""
+    def test_context_builder_excludes_compatibility_only_relationships(self) -> None:
+        """The cutover admits only the accepted graph rows, never legacy confidence."""
         resolver = EntityResolver(self.conn)
         project_id = resolver.entity("project", "Amber", source="manual")
         assert project_id is not None
@@ -1084,9 +1117,13 @@ class SemanticGraphProjectionTests(unittest.TestCase):
             )
         )
         self.assertEqual(80, len(context.relationships))
-        self.assertIn(
+        self.assertNotIn(
             newest_company_id,
             {relation["to_id"] for relation in context.relationships},
+        )
+        self.assertEqual(
+            {"manual"},
+            {relation["authority_status"] for relation in context.relationships},
         )
         self.assertEqual(
             [

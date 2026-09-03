@@ -17,6 +17,16 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-120 now routes `ContextBuilder` relationship expansion through the bounded
+  authoritative graph query, preserving its existing depth/frontier/result
+  limits, endpoint traversal, and temporal `as_of` behavior. Automatic edges
+  retain exact claim/source-message provenance for evidence closure; manual
+  edges remain manual; compatibility-only and non-authoritative graph rows are
+  excluded. No writer, schema, conversion, replay, repair, backfill, or live
+  action ran, and no other reader cutover is included.
+- AM-121 is complete by owner decision: its implemented one-hop, read-only
+  intelligence scope is sufficient. Multi-hop/shared-counterparty intelligence
+  is explicitly deferred to separately scoped AM-124.
 - AM-121 entity-scoped retrieval now exposes bounded one-hop accepted/manual
   graph connections with exact automatic provenance. Observed graph rows,
   ranking, and ContextBuilder compatibility-reader changes remain excluded.

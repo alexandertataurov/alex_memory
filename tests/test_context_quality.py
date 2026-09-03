@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alex_memory.ai.repository import claim_ai_jobs, ensure_daily_jobs
 from alex_memory.context import ContextBuilder, ContextRequest
+from alex_memory.context.graph import SemanticGraphProjector
 from alex_memory.context.repository import (
     add_event,
     ensure_relationship,
@@ -49,6 +50,20 @@ class ContextQualityTests(unittest.TestCase):
             100,
             1,
         )
+        projector = SemanticGraphProjector(self.conn)
+        for from_type, from_id, to_type, to_id, relationship_type in (
+            ("person", self.michael, "project", self.project, "involved_in"),
+            ("person", self.george, "project", self.project, "involved_in"),
+            ("project", self.project, "company", self.tbc, "uses_bank"),
+        ):
+            projector.project_manual_relationship(
+                from_type=from_type,
+                from_id=from_id,
+                to_type=to_type,
+                to_id=to_id,
+                relationship_type=relationship_type,
+                valid_from="2026-08-19T00:00:00+00:00",
+            )
         ensure_relationship(
             self.conn,
             "person",

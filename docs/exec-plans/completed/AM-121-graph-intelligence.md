@@ -1,4 +1,4 @@
-# AM-121 — Bounded Graph Intelligence
+# AM-121 — Bounded Graph Intelligence (Completed 2026-09-03)
 
 ## Objective
 
@@ -61,9 +61,12 @@ plan.
 
 ## Explicitly deferred
 
-- ContextBuilder cutover from `relationships`.
-- Multi-hop traversal, scoring/ranking, recommendations, graph UI, and graph
-  discovery expansion.
+- ContextBuilder cutover from `relationships` (separately authorized as the
+  bounded AM-120 increment; it is not part of this completed task).
+- AM-124: multi-hop/shared-counterparty intelligence. It requires its own
+  product scope, traversal bound, authority/evidence contract, and acceptance
+  criteria; no such traversal is implemented here.
+- Scoring/ranking, recommendations, graph UI, and graph discovery expansion.
 - Any migration, conversion, replay, repair, or live operation.
 
 ## Progress
@@ -87,3 +90,6 @@ plan.
 - 2026-09-02: Company and Project task rendering now exposes source-message
   provenance when a canonical task retains it, otherwise labels the record
   manual/canonical rather than inventing evidence.
+- 2026-09-03: owner accepted the implemented one-hop scope as sufficient.
+  AM-121 is complete. Multi-hop/shared-counterparty intelligence is explicitly
+  deferred to AM-124 rather than being inferred under this task.

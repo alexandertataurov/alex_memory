@@ -145,9 +145,11 @@ replay nor a backfill.
 Entity-scoped intelligence may consume this same bounded contract as a one-hop
 connection result: automatic entries retain an exact claim-evidence or
 source-message citation, while manual entries remain visibly manual. This is
-not a ContextBuilder relationship-reader cutover.
-Manual edges remain manual without fabricated claim lineage and block the
-automatic task path. It does not yet replace any compatibility reader.
+also the sole authoritative relationship source for `ContextBuilder`: it keeps
+the reader's existing bounded depth/frontier/result limits and temporal
+`as_of` semantics while excluding compatibility-only rows. Automatic entries
+remain evidence-backed and manual entries remain manual. Other compatibility
+readers have not moved under this increment.
 
 ## Intelligence coverage
 

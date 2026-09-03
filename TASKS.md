@@ -29,6 +29,21 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] AM-121 [P1] [People and projects / Intelligence] — Deliver bounded,
+  read-only one-hop graph intelligence for entity-scoped retrieval and Company/
+  Project profiles without graph ranking, canonical mutation, or a compatibility
+  reader cutover.
+  - Plan: `docs/exec-plans/completed/AM-121-graph-intelligence.md`.
+  - Completed 2026-09-03 by owner decision: the implemented bounded one-hop
+    scope is sufficient. Automatic connections retain exact claim-evidence or
+    historical-event source-message provenance; manual connections remain
+    explicitly manual; observed rows remain excluded.
+  - Deferred: AM-124 separately scopes multi-hop/shared-counterparty
+    intelligence. It is not authorized under AM-121.
+  - Verification: focused temporary-SQLite retrieval/profile coverage and the
+    full repository gate (recorded with this completion). No schema, graph
+    writer, compatibility reader, replay, repair, or live-state action ran.
+
 - [x] Notion maintenance 2026-08-30 [P1] [Documentation / Control plane] —
   Reconciled current repository documentation with Git provenance and terminal
   product truth. README, development, quality, changelog, and architecture
@@ -77,34 +92,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Now
 
-- [ ] AM-121 [P1] [People and projects / Intelligence] — Add bounded,
-  read-only graph queries and source-backed People/Project intelligence for
-  timelines, commitments, recency, interactions, shared counterparties, and
-  explicit blockers/dependencies. Defer graph-ranking algorithms.
-  - Plan: `docs/exec-plans/active/AM-121-graph-intelligence.md`.
-  - Promoted 2026-09-02 after the AM-120 owner-run non-truncated parity gate
-    returned zero gaps and `ready: true`. Implement only the bounded reader/
-    product increment; do not cut over a compatibility reader, introduce graph
-    ranking, or weaken source, temporal, or authority constraints.
-  - Progress 2026-09-02: entity-scoped related retrieval now includes bounded
-    one-hop accepted/manual graph context. Automatic entries require an exact
-    claim-evidence or historical-event source-message citation; manual entries
-    remain labelled manual. Observed graph rows stay excluded. ContextBuilder
-    and compatibility relationship readers are unchanged.
-  - Progress 2026-09-02: Company and Project profiles now render the same
-    bounded authoritative one-hop connection results with their provenance.
-    The shared query remains read-only and preserves the exclusion of observed
-    graph rows; no Person Profile or ContextBuilder change is involved.
-  - Verification 2026-09-02: retrieval coverage now proves an accepted
-    claim-backed graph connection resolves its exact source-message citation,
-    in addition to manual and observed-edge boundaries.
-  - Progress 2026-09-02: Company and Project profiles now include a bounded
-    source-backed canonical event timeline. Events without an exact source
-    message are omitted rather than shown as unsupported history.
-  - Progress 2026-09-02: Company and Project commitments now disclose exact
-    source-message provenance when available and otherwise stay labelled
-    manual/canonical; waiting/open state remains visible without inference.
-
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact
   edge evidence; derive canonical operational state only through allowlisted
@@ -118,8 +105,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     result and makes clipped diagnostic scope explicit; it remains the
     first-reader readiness gate. Owner-run `make graph-parity` now reports a
     bounded, non-disclosing real-reader readiness result without writing state.
-    No reader cutover, relationship conversion, replay, graph repair,
-    migration, or live action is authorized.
+    No relationship conversion, replay, graph repair, migration, or live action
+    is authorized.
 
   - External gate 2026-08-30: an owner-run, non-truncated parity check found
     three compatibility-only relationship kinds with no independently
@@ -168,9 +155,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     fresh non-truncated owner parity run remains required before reader cutover.
   - Acceptance 2026-09-02: the owner reran the bounded, non-truncated
     `graph-parity` gate after the historical-event representation change. It
-    returned zero gaps and `ready: true`. ContextBuilder remains on its
-    compatibility reader; a reader cutover is separate work and remains
-    unauthorized by this acceptance result.
+    returned zero gaps and `ready: true`.
+  - Current bounded increment 2026-09-03: ContextBuilder alone now consumes
+    `current_authoritative_edges()` at its existing depth, 160-row frontier,
+    80-row result cap, temporal `as_of`, and endpoint traversal boundaries.
+    Automatic edges retain immutable-claim evidence (or the historical event
+    source-message locator); manual edges remain manual. Compatibility-only,
+    observed, confidence-only, expired, rejected, and source-less automatic
+    rows are excluded. No other reader is authorized to move.
+  - Verification: focused temporary-SQLite parity/regressions plus the full
+    repository gate (recorded with this increment). No writer, schema,
+    conversion, replay, repair, backfill, or live-state action ran.
 
 - [ ] AM-118 [P0] [Architecture / Remediation] — Execute the evidence-backed
   application review remediation plan before further feature expansion.
@@ -376,6 +371,20 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Deep Scan coverage by scoping visible counts, audit rows, and profile-job
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
+
+## Next
+
+- [ ] AM-124 [P2] [People and projects / Intelligence] — Define and implement
+  multi-hop/shared-counterparty intelligence only as a separate, bounded graph
+  product increment.
+  - Deferred 2026-09-03 from completed AM-121 by explicit owner decision.
+  - Before implementation, define the product question, hop and result limits,
+    temporal `as_of` behavior, endpoint/deduplication semantics, exact evidence
+    requirements for automatic paths, manual-authority handling, and focused
+    acceptance coverage. Do not infer this work from one-hop AM-121.
+  - Excludes graph ranking/recommendations, canonical mutation, relationship
+    conversion, writer/schema changes, replay/backfill/repair, and live-state
+    mutation unless separately authorized.
 
 ## Completed
 

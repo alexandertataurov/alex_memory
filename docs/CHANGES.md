@@ -1,5 +1,25 @@
 # Implementation Journal
 
+## 2026-09-03 — AM-120 ContextBuilder reader cutover
+
+`ContextBuilder` now obtains relationships only from the already accepted,
+bounded `current_authoritative_edges()` contract. It preserves the reader's
+existing graph depth, 160-row per-frontier query bound, 80-row final cap,
+endpoint traversal, and canonical UTC temporal behavior. Graph-authoritative
+automatic rows retain claim lineage (or the historical event's exact
+source-message locator) for evidence closure, while manual authority remains
+explicitly manual. Compatibility-only, observed, confidence-only, expired,
+rejected, and source-less automatic rows are excluded. No writer, schema,
+conversion, replay, repair, backfill, or live-state action ran; no other reader
+cutover is authorized by this increment.
+
+## 2026-09-03 — AM-121 completed; multi-hop deferred
+
+The owner accepted AM-121's implemented bounded one-hop intelligence scope as
+sufficient. Multi-hop/shared-counterparty intelligence is recorded as separate
+future task AM-124, with product and authority boundaries to be defined before
+any implementation.
+
 ## 2026-09-02 — AM-121 bounded graph intelligence
 
 `retrieve_related()` now presents the existing bounded authoritative graph

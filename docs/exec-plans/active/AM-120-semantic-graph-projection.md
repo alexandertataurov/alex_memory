@@ -234,3 +234,13 @@ a live reader change.
   `ready: true`. This satisfies the first-reader readiness evidence only;
   ContextBuilder remains on its compatibility reader until a separately
   authorized cutover increment.
+- 2026-09-03: owner authorized and completed that smallest reader increment:
+  `ContextBuilder` now calls only `current_authoritative_edges()` while keeping
+  its existing depth, 160-row per-frontier query bound, 80-row result cap,
+  endpoint traversal, ranking path, and canonical UTC `as_of` behavior.
+  Stored and derived automatic edges retain immutable-claim/source-message
+  evidence for exact closure; manual authority stays manual. Compatibility-only,
+  observed, confidence-only, expired, rejected, and source-less automatic rows
+  are excluded. Focused temporary-SQLite coverage proves automatic provenance
+  and compatibility exclusion. No writer, schema, conversion, replay, repair,
+  backfill, or live-state action ran. No other reader cutover is authorized.
