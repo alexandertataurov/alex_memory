@@ -1063,9 +1063,11 @@ def _profile_sections(records: list[dict]) -> str:
         return "PROFILE\nunknown / insufficient evidence"
     grouped: dict[str, list[dict]] = {}
     for record in records:
-        grouped.setdefault(str(record.get("display_section") or "Profile"), []).append(
-            record
-        )
+        section = str(record.get("display_section") or "Profile")
+        temporal = str(record.get("temporal_state") or "")
+        grouped.setdefault(
+            f"{temporal} — {section}" if temporal else section, []
+        ).append(record)
     blocks = []
     for section, section_records in grouped.items():
         lines = [section]

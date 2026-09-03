@@ -346,9 +346,42 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
         )
         for row in rows
     ]
+    for fact in facts:
+        fact["temporal_state"] = "Now"
+    previous = []
+    for fact in facts:
+        if fact["predicate"] not in _PROFILE_FIELD_PRESENTATION:
+            continue
+        row = conn.execute(
+            """SELECT fact_id,predicate,value_json,valid_from,confidence,source_claim_id,
+                      source_chat_id,source_message_id,source_ai_item_id
+               FROM context_facts WHERE superseded_by_fact_id=? AND is_current=0
+                 AND valid_from IS NOT NULL AND valid_to IS NOT NULL
+               ORDER BY valid_to DESC,fact_id DESC LIMIT 1""",
+            (fact["fact_id"],),
+        ).fetchone()
+        if row is not None:
+            prior = _record(
+                row,
+                (
+                    "fact_id",
+                    "predicate",
+                    "value_json",
+                    "valid_from",
+                    "confidence",
+                    "source_claim_id",
+                    "source_chat_id",
+                    "source_message_id",
+                    "source_ai_item_id",
+                ),
+            )
+            prior["temporal_state"] = "Previously"
+            previous.append(prior)
     return [
         fact
-        for fact in (_present_profile_field(item, "predicate") for item in facts)
+        for fact in (
+            _present_profile_field(item, "predicate") for item in (*facts, *previous)
+        )
         if fact
     ]
 

@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Person Profile now distinguishes supported interval-backed facts that are
+  true **Now** from their directly superseded, closed-interval **Previously**
+  values. Facts without a complete historical interval remain omitted; exact
+  evidence and existing authority behavior are unchanged.
 - Selected Person Profile views now compactly report only their own durable
   profile-job work (queued, analyzing, retryable, completed). No global
   diagnostics, scheduler state, or execution behavior is exposed or changed.

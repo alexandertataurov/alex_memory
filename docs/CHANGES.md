@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-03 — Interval-backed Person Profile history
+
+Person Profile now renders supported canonical facts as Now and only their
+directly superseded predecessor as Previously when its validity interval is
+closed. Incomplete historical intervals fail closed and remain absent. This is
+read-only composition over existing canonical facts and exact evidence; no new
+store, extractor, ranking, inference, schema, migration, replay, backfill,
+repair, or live action changed.
+
 ## 2026-09-03 — Selected-person profile work status
 
 Textual and Rich Person Profile health views now compactly report durable work

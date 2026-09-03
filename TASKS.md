@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 60] Temporal history — render supported current vs
+  previous facts.
+  - Notion task: `3d0f52e9-545b-8105-85b2-daf30c194a2d`; completed 2026-09-03.
+  - Person Profile now labels supported interval-backed facts as Now and their
+    directly linked, closed predecessors as Previously. Incomplete historical
+    intervals are omitted; existing exact evidence and authority behavior are
+    preserved. No store, extractor, ranking, inference, migration, replay,
+    backfill, repair, or live action changed.
+  - Verification: focused temporary-SQLite Profile/Textual regressions and the
+    full repository gate passed.
+
 - [x] [Notion / Sequence 54] Show person-scoped scan/history status only when
   relevant.
   - Notion task: `3d0f52e9-545b-817f-bb7c-fe52a2402a10`; completed 2026-09-03.

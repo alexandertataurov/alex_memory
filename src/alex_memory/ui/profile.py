@@ -398,9 +398,11 @@ def _show_profile_facts(facts: list[dict], console: Console) -> None:
     """Group already-presented canonical facts without exposing schema labels."""
     sections: dict[str, list[dict]] = {}
     for fact in facts:
-        sections.setdefault(str(fact.get("display_section") or "Profile"), []).append(
-            fact
-        )
+        section = str(fact.get("display_section") or "Profile")
+        temporal = str(fact.get("temporal_state") or "")
+        sections.setdefault(
+            f"{temporal} — {section}" if temporal else section, []
+        ).append(fact)
     for section, records in sections.items():
         _show_records(records, section, "display_label", "display_value", console)
 

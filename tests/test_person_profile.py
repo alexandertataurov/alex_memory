@@ -30,6 +30,7 @@ from alex_memory.profile_summary import (
     refresh_profile_summary,
 )
 from alex_memory.ui.profile import show_profile
+from alex_memory.ui.textual_app import _profile_sections
 from test_ai_pipeline import make_settings
 from alex_memory.database import connect
 from alex_memory.profile_enrichment import PROFILE_EXTRACTOR_VERSION
@@ -191,6 +192,84 @@ class PersonProfileTests(unittest.TestCase):
         self.assertNotIn(
             "relationship.history", [fact["predicate"] for fact in profile["facts"]]
         )
+
+    def test_profile_facts_show_only_the_direct_closed_interval_predecessor(
+        self,
+    ) -> None:
+        current_id, claim_id = self.conn.execute(
+            "SELECT fact_id,source_claim_id FROM context_facts WHERE predicate='capability'"
+        ).fetchone()
+        self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,valid_to,is_current,
+                   superseded_by_fact_id,observed_at,confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'capability','{"role":"contracts"}',?, ?,0,?,?,0.9,?,?,?)""",
+            (
+                self.person_id,
+                "2026-07-01T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+                current_id,
+                "2026-08-24T12:00:00+00:00",
+                claim_id,
+                "2026-08-24T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+            ),
+        )
+        self.conn.commit()
+
+        facts = [
+            fact
+            for fact in build_person_profile(self.conn, int(self.person_id))["facts"]
+            if fact["predicate"] == "capability"
+        ]
+
+        self.assertEqual(
+            ["Now", "Previously"], [fact["temporal_state"] for fact in facts]
+        )
+        self.assertEqual(
+            ["legal", "contracts"], [fact["display_value"] for fact in facts]
+        )
+        self.assertTrue(all(fact["evidence"] for fact in facts))
+        self.assertIn("Now — Capabilities", _profile_sections(facts))
+        self.assertIn("Previously — Capabilities", _profile_sections(facts))
+        output = StringIO()
+        show_profile(
+            build_person_profile(self.conn, int(self.person_id)),
+            "person",
+            Console(file=output, force_terminal=False, width=160),
+            section="context",
+        )
+        self.assertIn("Now — Capabilities", output.getvalue())
+        self.assertIn("Previously — Capabilities", output.getvalue())
+
+    def test_profile_facts_fail_closed_for_an_unclosed_prior_interval(self) -> None:
+        current_id, claim_id = self.conn.execute(
+            "SELECT fact_id,source_claim_id FROM context_facts WHERE predicate='capability'"
+        ).fetchone()
+        self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,valid_to,is_current,
+                   superseded_by_fact_id,observed_at,confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'capability','{"role":"unclosed"}',?,NULL,0,?,?,0.9,?,?,?)""",
+            (
+                self.person_id,
+                "2026-07-01T12:00:00+00:00",
+                current_id,
+                "2026-08-24T12:00:00+00:00",
+                claim_id,
+                "2026-08-24T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+            ),
+        )
+        self.conn.commit()
+
+        facts = [
+            fact
+            for fact in build_person_profile(self.conn, int(self.person_id))["facts"]
+            if fact["predicate"] == "capability"
+        ]
+
+        self.assertEqual(["Now"], [fact["temporal_state"] for fact in facts])
 
     def test_profile_exposes_pending_raw_conversation_evidence(self) -> None:
         self.conn.execute(
