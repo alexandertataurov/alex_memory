@@ -262,7 +262,7 @@ class ProfileScreen(Screen[None]):
         self.app.push_screen(ScanScreen(self.owner, self.person_id))
 
     def action_palette(self) -> None:
-        self.app.push_screen(CommandPalette(self.owner))
+        self.app.push_screen(CommandPalette(self.owner, profile=self))
 
     def action_search(self) -> None:
         self.app.push_screen(SearchScreen(self.owner, self.person_id))
@@ -693,20 +693,24 @@ class ScanScreen(Screen[None]):
 
 class CommandPalette(Screen[None]):
     BINDINGS = [Binding("escape", "close_palette", "Close")]
-    _COMMANDS = (
+    _GLOBAL_COMMANDS = (
         ("People", "people"),
+        ("Search", "search"),
         ("Review", "review"),
         ("System Status", "status"),
         ("Maintenance", "maintenance"),
     )
 
-    def __init__(self, owner: AlexMemoryApp) -> None:
+    def __init__(
+        self, owner: AlexMemoryApp, profile: ProfileScreen | None = None
+    ) -> None:
         super().__init__()
         self.owner = owner
+        self.profile = profile
 
     def compose(self) -> ComposeResult:
         yield Input(placeholder="Search commands…", id="command-search")
-        yield ListView(*self._command_items(), id="commands")
+        yield ListView(*self._command_items(self._commands()), id="commands")
         yield Static(
             "People is the product. Review and System Status are operational views. "
             "Maintenance is for explicit recovery only."
@@ -721,31 +725,76 @@ class CommandPalette(Screen[None]):
         query = event.value.casefold().strip()
         commands = [
             command
-            for command in self._COMMANDS
+            for command in self._commands()
             if not query or query in command[0].casefold()
         ]
         view = self.query_one("#commands", ListView)
         await view.clear()
         for item in self._command_items(commands):
             await view.append(item)
+        if commands:
+            view.index = 0
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "command-search":
+            self._select_highlighted_command()
 
     @classmethod
     def _command_items(
-        cls, commands: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None = None
+        cls, commands: tuple[tuple[str, str], ...] | list[tuple[str, str]]
     ) -> list[ListItem]:
         return [
             ListItem(Label(_literal_text(label)), id=item_id)
-            for label, item_id in commands or cls._COMMANDS
+            for label, item_id in commands
         ]
+
+    def _commands(self) -> tuple[tuple[str, str], ...]:
+        if self.profile is None:
+            return self._GLOBAL_COMMANDS
+        return (
+            *self._GLOBAL_COMMANDS,
+            ("Profile Actions", "profile-actions"),
+            ("Deep Scan", "profile-scan"),
+        )
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.item is None:
             return
-        if event.item.id == "people":
+        self._route_command(str(event.item.id))
+
+    def _select_highlighted_command(self) -> None:
+        item = self.query_one("#commands", ListView).highlighted_child
+        if isinstance(item, ListItem) and item.id is not None:
+            self._route_command(str(item.id))
+
+    def _route_command(self, command: str) -> None:
+        if command == "people":
             self.app.pop_screen()
+        elif command == "search":
+            self._open_search()
+        elif command == "profile-actions" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_section("actions")
+        elif command == "profile-scan" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_scan()
+        elif command == "review":
+            self._request_operation("review")
+        elif command == "status":
+            self._request_operation("diagnostics")
+        elif command == "maintenance":
+            self._request_operation("maintain")
+
+    def _open_search(self) -> None:
+        self.app.pop_screen()
+        if self.profile is not None:
+            self.app.push_screen(SearchScreen(self.owner, self.profile.person_id))
         else:
-            terminal = cast(AlexMemoryTerminal, self.app)
-            terminal.open_operations()
+            self.app.screen.query_one("#people-search", Input).focus()
+
+    def _request_operation(self, command: str) -> None:
+        terminal = cast(AlexMemoryTerminal, self.app)
+        terminal.request_operation(command)
 
     def action_close_palette(self) -> None:
         self.app.pop_screen()
@@ -773,13 +822,13 @@ class AlexMemoryTerminal(App[None]):
     def __init__(self, owner: AlexMemoryApp) -> None:
         super().__init__()
         self.owner = owner
-        self.operations_requested = False
+        self.operation_command: str | None = None
 
     def on_mount(self) -> None:
         self.push_screen(HomeScreen(self.owner))
 
-    def open_operations(self) -> None:
-        self.operations_requested = True
+    def request_operation(self, command: str) -> None:
+        self.operation_command = command
         self.exit()
 
 

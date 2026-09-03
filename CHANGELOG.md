@@ -17,6 +17,9 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- The Textual Command Palette now filters and invokes the highlighted command
+  with Enter. People/search/profile actions route locally, while Review,
+  System Status, and Maintenance use distinct explicit operation handoffs.
 - Canonical task workflow now includes `blocked`; due/scheduling, stale age,
   and certainty remain independent bounded presentation signals. Migration 24
   preserves existing task rows and source-claim lineage while rebuilding the

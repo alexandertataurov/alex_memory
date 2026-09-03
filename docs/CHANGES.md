@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Keyboard-first Command Palette routing
+
+The Textual Command Palette now filters, highlights its first filtered command,
+and invokes it with Enter. People/search/profile actions remain local to
+Textual; Review, System Status, and Maintenance return distinct explicit
+operation keys to the existing operational handler. This is navigation-only:
+no schema, evidence, canonical state, or live operation changed.
+
 ## 2026-09-03 — Canonical blocked task lifecycle
 
 Canonical task workflow now supports `open`, `waiting`, `blocked`, `done`, and

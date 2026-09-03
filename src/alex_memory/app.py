@@ -95,8 +95,8 @@ class AlexMemoryApp:
 
             terminal = AlexMemoryTerminal(self)
             await terminal.run_async()
-            if terminal.operations_requested:
-                await self.menu_loop()
+            if terminal.operation_command is not None:
+                await self.menu_loop(initial_command=terminal.operation_command)
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         except Exception as error:
@@ -216,38 +216,42 @@ class AlexMemoryApp:
                 exit_code = 1
         return exit_code
 
-    async def menu_loop(self) -> None:
+    async def menu_loop(self, *, initial_command: str | None = None) -> None:
         assert self.conn is not None
+        pending_command = initial_command
         while True:
             self.console.print()
             self._show_menu()
-            people = show_people(self.conn, self.console)
+            if pending_command is None:
+                people = show_people(self.conn, self.console)
 
-            try:
-                selection = Prompt.ask(
-                    "Search or person ID [dim](/ actions)[/dim]", default=""
-                ).strip()
-            except (KeyboardInterrupt, EOFError):
-                return
+                try:
+                    selection = Prompt.ask(
+                        "Search or person ID [dim](/ actions)[/dim]", default=""
+                    ).strip()
+                except (KeyboardInterrupt, EOFError):
+                    return
 
-            if selection != "/":
-                if selection:
-                    try:
-                        person_id = int(selection)
-                    except ValueError:
-                        await self._show_people_menu(query=selection)
-                    else:
-                        if person_id in people:
-                            await self._show_person_profile(person_id)
+                if selection != "/":
+                    if selection:
+                        try:
+                            person_id = int(selection)
+                        except ValueError:
+                            await self._show_people_menu(query=selection)
                         else:
-                            self.console.print(
-                                "[yellow]Choose an ID from the People list.[/yellow]"
-                            )
-                continue
+                            if person_id in people:
+                                await self._show_person_profile(person_id)
+                            else:
+                                self.console.print(
+                                    "[yellow]Choose an ID from the People list.[/yellow]"
+                                )
+                    continue
 
-            command = self._command_search()
-            if command is None:
-                continue
+                command = self._command_search()
+                if command is None:
+                    continue
+            else:
+                command, pending_command = pending_command, None
 
             if command == "maintain":
                 command = resolve_maintenance_command(

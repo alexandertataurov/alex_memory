@@ -38,6 +38,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 50] Make Command Palette real and keyboard-first.
+  - Notion task: `3c7f52e9-545b-8185-ab61-dcce7f5a08a1`; completed 2026-09-03.
+  - Palette filtering highlights the first result and Enter invokes it;
+    People/search/profile actions remain in Textual while Review, System
+    Status, and Maintenance have distinct explicit handoffs.
+  - Verification: full repository gate passed (383 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks).
+
 - [x] [Notion / Sequence 50] Normalize action lifecycle and derived action
   state.
   - Notion task: `3c7f52e9-545b-8178-91c0-f9a4efd80efa`; completed 2026-09-03.

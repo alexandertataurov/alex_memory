@@ -94,8 +94,8 @@ async def test_terminal_autofocuses_search_and_filters_people() -> None:
             await pilot.press("escape")
             await pilot.press("ctrl+k")
             assert isinstance(app.screen, CommandPalette)
-            app.open_operations()
-            assert app.operations_requested
+            app.request_operation("review")
+            assert app.operation_command == "review"
         app_owner.conn.close()
 
 
@@ -112,6 +112,70 @@ async def test_command_palette_filters_visible_commands() -> None:
             await pilot.press("s", "t", "a", "t", "u", "s")
             commands = app.screen.query_one("#commands", ListView)
             assert [item.id for item in commands.children] == ["status"]
+        app_owner.conn.close()
+
+
+@pytest.mark.asyncio
+async def test_command_palette_routes_each_operation_by_its_explicit_key() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        settings = make_settings(Path(directory))
+        app_owner = AlexMemoryApp(settings, Console())
+        app_owner.conn = connect(settings)
+        for query, expected in (
+            ("review", "review"),
+            ("system", "diagnostics"),
+            ("maint", "maintain"),
+        ):
+            app = AlexMemoryTerminal(app_owner)
+            async with app.run_test() as pilot:
+                await pilot.press("ctrl+k")
+                await pilot.press(*query)
+                await pilot.press("enter")
+                assert app.operation_command == expected
+        app_owner.conn.close()
+
+
+@pytest.mark.asyncio
+async def test_command_palette_search_returns_to_the_owning_screen() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        settings = make_settings(Path(directory))
+        app_owner = AlexMemoryApp(settings, Console())
+        app_owner.conn = connect(settings)
+        app = AlexMemoryTerminal(app_owner)
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+k")
+            await pilot.press("s", "e", "a", "r", "c", "h", "enter")
+            assert isinstance(app.screen, HomeScreen)
+            assert app.screen.query_one("#people-search").has_focus
+        app_owner.conn.close()
+
+
+@pytest.mark.asyncio
+async def test_profile_palette_routes_profile_actions_directly() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        settings = make_settings(Path(directory))
+        app_owner = AlexMemoryApp(settings, Console())
+        app_owner.conn = connect(settings)
+        now = "2026-08-24T10:00:00+00:00"
+        app_owner.conn.execute(
+            "INSERT INTO people(canonical_name,created_at,updated_at) VALUES ('Ilya',?,?)",
+            (now, now),
+        )
+        app_owner.conn.commit()
+        app = AlexMemoryTerminal(app_owner)
+        async with app.run_test() as pilot:
+            await pilot.press("enter")
+            assert isinstance(app.screen, ProfileScreen)
+            await pilot.press("p")
+            palette = app.screen
+            assert isinstance(palette, CommandPalette)
+            commands = palette.query_one("#commands", ListView)
+            assert {"profile-actions", "profile-scan"}.issubset(
+                {item.id for item in commands.children}
+            )
+            await pilot.press(*"profile", "enter")
+            assert isinstance(app.screen, ProfileScreen)
+            assert app.screen.section == "actions"
         app_owner.conn.close()
 
 
