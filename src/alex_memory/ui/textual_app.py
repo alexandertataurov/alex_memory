@@ -782,18 +782,22 @@ def _section(title: str, records: list[dict], left: str, right: str) -> str:
         return f"{title}\nunknown / insufficient evidence"
     lines = [title]
     for record in records[:6]:
-        label = record.get(right) or record.get("title") or record.get("name") or "—"
+        label = (
+            record.get("display_value")
+            or record.get(right)
+            or record.get("title")
+            or record.get("name")
+            or "—"
+        )
         kind = (
-            record.get(left)
+            record.get("display_label")
+            or record.get(left)
             or record.get("status")
             or record.get("event_type")
             or "record"
         )
         evidence = record.get("evidence", [])
-        citation = ""
-        if evidence:
-            source = evidence[0]
-            citation = f" [{source['chat_id']}/{source['message_id']}]"
+        citation = " [E]" if evidence else ""
         lines.append(f"• {kind}: {label}{citation}")
     return "\n".join(lines)
 
@@ -855,12 +859,37 @@ def _dashboard_text(
         if show_uncertain and section == "profile"
         else ""
     )
+    if section == "profile":
+        return _profile_sections(records) + notice
     return _section(title, records, "record_type", "title") + notice
+
+
+def _profile_sections(records: list[dict]) -> str:
+    """Render bounded human-facing profile groups without schema identifiers."""
+    if not records:
+        return "PROFILE\nunknown / insufficient evidence"
+    grouped: dict[str, list[dict]] = {}
+    for record in records:
+        grouped.setdefault(str(record.get("display_section") or "Profile"), []).append(
+            record
+        )
+    blocks = []
+    for section, section_records in grouped.items():
+        lines = [section]
+        for record in section_records[:6]:
+            label = record.get("display_label") or "Profile detail"
+            value = record.get("display_value") or _record_title(record)
+            evidence = record.get("evidence", [])
+            citation = " [E]" if evidence else ""
+            lines.append(f"• {label}: {value}{citation}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def _record_label(record: dict) -> str:
     kind = str(
-        record.get("action_state")
+        record.get("display_label")
+        or record.get("action_state")
         or record.get("assertion_kind")
         or record.get("relationship_type")
         or record.get("event_type")
@@ -871,9 +900,7 @@ def _record_label(record: dict) -> str:
     ).upper()
     title = _record_title(record)
     evidence = record.get("evidence", [])
-    citation = (
-        f" [{evidence[0]['chat_id']}/{evidence[0]['message_id']}]" if evidence else ""
-    )
+    citation = " [E]" if evidence else ""
     return f"{kind:14} {title[:140]}{citation}"
 
 
@@ -916,7 +943,8 @@ def _record_detail(record: dict) -> str:
 
 def _record_title(record: dict) -> str:
     value = (
-        record.get("title")
+        record.get("display_value")
+        or record.get("title")
         or record.get("name")
         or record.get("other_name")
         or record.get("project_name")

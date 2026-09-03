@@ -75,7 +75,9 @@ def _show_timeline(timeline: list[tuple], console: Console) -> None:
                 single_line=True,
             ),
             safe_text(
-                f"Telegram chat {chat_id} / msg {message_id}", 80, single_line=True
+                "[E]" if chat_id is not None and message_id is not None else "—",
+                80,
+                single_line=True,
             ),
         )
     console.print(table)
@@ -193,13 +195,7 @@ def _show_person_profile(data: dict, console: Console, section: str) -> None:
     elif section == "projects":
         _show_projects(data.get("projects", []), console)
     elif section == "context":
-        _show_records(
-            data.get("facts", []),
-            "Capabilities and useful context",
-            "predicate",
-            "value",
-            console,
-        )
+        _show_profile_facts(data.get("facts", []), console)
         _show_records(
             [
                 item
@@ -285,19 +281,24 @@ def _show_records(
                 if isinstance(value, dict)
                 else str(value)
             )
-        evidence = (
-            "; ".join(
-                f"{item['chat_id']}/{item['message_id']} · {item.get('speaker', 'unknown')} · {item.get('date') or 'unknown'}: {item['text'][:80]}"
-                for item in record.get("evidence", [])
-            )
-            or "—"
-        )
+        evidence = "[E]" if record.get("evidence") else "—"
         table.add_row(
             safe_text(record.get(left, "—"), 80, single_line=True),
             safe_text(value or "—", 230, single_line=True),
             safe_text(evidence, 22, single_line=True),
         )
     console.print(table)
+
+
+def _show_profile_facts(facts: list[dict], console: Console) -> None:
+    """Group already-presented canonical facts without exposing schema labels."""
+    sections: dict[str, list[dict]] = {}
+    for fact in facts:
+        sections.setdefault(str(fact.get("display_section") or "Profile"), []).append(
+            fact
+        )
+    for section, records in sections.items():
+        _show_records(records, section, "display_label", "display_value", console)
 
 
 def _show_projects(projects: list[dict], console: Console) -> None:
@@ -309,13 +310,7 @@ def _show_projects(projects: list[dict], console: Console) -> None:
     table.add_column("Context", ratio=3)
     table.add_column("Evidence", width=22)
     for project in projects:
-        evidence = (
-            "; ".join(
-                f"{item['chat_id']}/{item['message_id']}: {item['text'][:80]}"
-                for item in project.get("evidence", [])
-            )
-            or "—"
-        )
+        evidence = "[E]" if project.get("evidence") else "—"
         table.add_row(
             safe_text(project["name"], 100, single_line=True),
             status_text(project["status"]),
@@ -337,8 +332,7 @@ def _show_contact_briefing(briefing: dict, console: Console) -> None:
         )
         text = safe_text(str(label), 320, single_line=True)
         text.append(
-            f"\n{evidence['chat_id']}/{evidence['message_id']} · {evidence['date']}: {evidence['text'][:220]}",
-            style="dim",
+            f"\n[E] · {evidence['date']}: {evidence['text'][:220]}", style="dim"
         )
         console.print(
             Panel(text, title="Last source-backed interaction", border_style="green")
@@ -545,7 +539,7 @@ def _show_tasks(tasks: list[tuple], console: Console) -> None:
             safe_text(title, 180, single_line=True),
             safe_text(due or "—", 12),
             safe_text(
-                f"Telegram chat {chat_id} / msg {message_id}"
+                "[E]"
                 if chat_id is not None and message_id is not None
                 else "Manual/canonical",
                 80,

@@ -235,6 +235,13 @@ async def test_profile_sections_and_exact_evidence_drill_down_render() -> None:
                         "8": "evidence",
                     }[key]
                 )
+            await pilot.press("4")
+            profile_text = str(
+                app.screen.query_one("#profile-summary", Static).render()
+            )
+            assert "Profile" in profile_text
+            assert "Commitment: contract" in profile_text
+            assert "commitment" not in profile_text
             await pilot.press("4", "enter")
             assert isinstance(app.screen, RecordDetailScreen)
             await pilot.press("e")

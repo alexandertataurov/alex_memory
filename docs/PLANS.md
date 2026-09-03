@@ -24,10 +24,10 @@ fix.
 - [AM-118 application remediation](exec-plans/active/AM-118-application-remediation.md)
 - [AM-122 person profile](exec-plans/active/AM-122-person-profile.md)
 - [AM-120 semantic graph projection](exec-plans/active/AM-120-semantic-graph-projection.md)
-- [AM-124 bounded shared connections](exec-plans/active/AM-124-shared-connections.md)
 
 ## Completed
 
+- [AM-124 bounded shared connections](exec-plans/completed/AM-124-shared-connections.md)
 - [AM-078 database integrity](exec-plans/completed/AM-078-database-integrity.md)
 - [AM-074 repair](exec-plans/completed/AM-074.md)
 - [AM-106 physical provider request ownership](exec-plans/completed/AM-106-provider-request-accounting.md)

@@ -131,6 +131,27 @@ class PersonProfileTests(unittest.TestCase):
             ["capability"], [fact["predicate"] for fact in profile["facts"]]
         )
 
+    def test_profile_facts_have_human_labels_and_suppress_placeholders(self) -> None:
+        self.conn.execute(
+            """INSERT INTO context_facts(subject_type,subject_id,predicate,value_json,valid_from,observed_at,
+               confidence,source_claim_id,created_at,updated_at)
+               VALUES ('person',?,'relationship.history','"History"',?, ?,0.9,?,?,?)""",
+            (self.person_id, "now", "now", 1, "now", "now"),
+        )
+        self.conn.commit()
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+
+        capability = next(
+            fact for fact in profile["facts"] if fact["predicate"] == "capability"
+        )
+        self.assertEqual("Capabilities", capability["display_section"])
+        self.assertEqual("Capability", capability["display_label"])
+        self.assertEqual("legal", capability["display_value"])
+        self.assertNotIn(
+            "relationship.history", [fact["predicate"] for fact in profile["facts"]]
+        )
+
     def test_profile_exposes_pending_raw_conversation_evidence(self) -> None:
         self.conn.execute(
             """INSERT INTO current_conversation_context(
@@ -733,7 +754,8 @@ class PersonProfileTests(unittest.TestCase):
         )
         rendered = output.getvalue()
         self.assertIn("Actionable open loops", rendered)
-        self.assertIn("100/1", rendered)
+        self.assertIn("[E]", rendered)
+        self.assertNotIn("100/1", rendered)
         self.assertIn("Communication stats", rendered)
 
     def test_contact_briefing_is_exact_evidence_only_and_actionable(self) -> None:

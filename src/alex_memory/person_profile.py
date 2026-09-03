@@ -15,6 +15,19 @@ _ENTITY_TABLES = {
     "project": ("projects", "project_id"),
 }
 
+_PROFILE_FIELD_PRESENTATION = {
+    "capability": ("Capabilities", "Capability"),
+    "professional.role": ("Professional", "Role"),
+    "professional.company": ("Professional", "Company"),
+    "personal.interest": ("Personal", "Interest"),
+    "relationship.history": ("Relationship history", "History"),
+    "communication.style": ("Communication", "Style"),
+    "identity.phone": ("Private details", "Phone"),
+    "identity.email": ("Private details", "Email"),
+    "identity.birthday": ("Private details", "Birthday"),
+    "personal.family": ("Private details", "Family"),
+}
+
 
 def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
     """Return one bounded profile without writing derived or canonical state."""
@@ -315,7 +328,7 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
            ORDER BY confidence DESC,valid_from DESC LIMIT 12""",
         (person_id,),
     ).fetchall()
-    return [
+    facts = [
         _record(
             row,
             (
@@ -331,6 +344,11 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
             ),
         )
         for row in rows
+    ]
+    return [
+        fact
+        for fact in (_present_profile_field(item, "predicate") for item in facts)
+        if fact
     ]
 
 
@@ -351,22 +369,55 @@ def _profile_claims(conn: sqlite3.Connection, person_id: int) -> list[dict]:
         legacy = payload.get("legacy_item", {}) if isinstance(payload, dict) else {}
         title = str(legacy.get("title") or row[2])
         category, _, label = title.partition(":")
-        result.append(
-            {
-                "claim_id": int(row[0]),
-                "source_claim_id": int(row[0]),
-                "claim_type": row[1],
-                "title": label.strip() or title,
-                "details": legacy.get("details", ""),
-                "category": category.strip() or "profile.context",
-                "confidence": float(row[4]),
-                "assertion_kind": row[5],
-                "valid_from": row[6],
-                "valid_to": row[7],
-                "created_at": row[8],
-            }
-        )
+        claim = {
+            "claim_id": int(row[0]),
+            "source_claim_id": int(row[0]),
+            "claim_type": row[1],
+            "title": label.strip() or title,
+            "details": legacy.get("details", ""),
+            "category": category.strip() or "profile.context",
+            "confidence": float(row[4]),
+            "assertion_kind": row[5],
+            "valid_from": row[6],
+            "valid_to": row[7],
+            "created_at": row[8],
+        }
+        presented = _present_profile_field(claim, "category")
+        if presented:
+            result.append(presented)
     return result
+
+
+def _present_profile_field(record: dict, field: str) -> dict | None:
+    """Add bounded display fields without changing canonical profile records."""
+    key = str(record.get(field) or "")
+    section, label = _PROFILE_FIELD_PRESENTATION.get(
+        key, ("Profile", key.replace("_", " ").replace(".", " ").title())
+    )
+    value = _profile_display_value(
+        record.get("value") if field == "predicate" else record.get("title")
+    )
+    if not value or value.casefold() in {"unknown", "n/a", "none", "null"}:
+        return None
+    if _normalized_display(label) == _normalized_display(value):
+        return None
+    record["display_section"] = section
+    record["display_label"] = label
+    record["display_value"] = value
+    return record
+
+
+def _profile_display_value(value: object) -> str:
+    if isinstance(value, dict):
+        values = [str(item).strip() for item in value.values() if str(item).strip()]
+        return ", ".join(values)
+    if isinstance(value, list):
+        return ", ".join(str(item).strip() for item in value if str(item).strip())
+    return str(value or "").strip()
+
+
+def _normalized_display(value: str) -> str:
+    return " ".join(value.casefold().replace("_", " ").split())
 
 
 def _relationships(conn: sqlite3.Connection, person_id: int) -> list[dict]:

@@ -17,6 +17,17 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Person Profile presentation now maps canonical predicates/categories to
+  human labels, suppresses empty/placeholder records, and groups profile facts
+  in the Textual and Rich views. This is read-only presentation over the
+  existing bounded profile result; source evidence, claims, canonical state,
+  schema, and writers are unchanged.
+- Normal Textual and Rich Person Profile renderers now show `[E]` rather than
+  raw chat/message IDs; exact locators remain in Record Detail and Evidence
+  views.
+- AM-124 is complete by explicit owner acceptance. Its final authorized V1 is
+  the bounded read-only shared-connections query; the full repository gate
+  passed and no remaining acceptance gate or further AM-124 work is authorized.
 - Work control is now Notion-first: **Codex — Ready & Authorized** defines
   task scope, sequence, gates, authorization, and completion. Repository
   `TASKS.md`, ExecPlans, changelog, docs, and GitHub task prose are

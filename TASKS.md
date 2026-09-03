@@ -38,6 +38,40 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 30] Hide raw evidence IDs outside Evidence/debug views.
+  - Notion task: `3c7f52e9-545b-8152-b577-e59bab78a264`; completed 2026-09-03.
+  - Normal Textual and Rich Person Profile views show `[E]` when evidence is
+    available rather than chat/message IDs. Exact locators and message text
+    remain available in Record Detail and Evidence views.
+  - Verification: full repository gate passed (374 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks). No schema,
+    evidence, canonical-state, or writer behavior changed.
+
+- [x] [Notion / Sequence 30] Humanize profile records and suppress
+  empty/internal schema fields.
+  - Notion task: `3c7f52e9-545b-8104-9695-ccb61527e92e`; completed 2026-09-03.
+  - The bounded, read-only profile result now derives human-facing sections,
+    labels, and values for canonical facts/profile claims. Textual and Rich
+    views suppress empty, unknown, and label-equals-value rows and group profile
+    facts without altering raw evidence, claims, canonical state, schema, or
+    writers.
+  - Verification: full repository gate passed (374 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks).
+
+- [x] AM-124 [P2] [People and projects / Intelligence] — Deliver one bounded,
+  read-only two-hop shared-connections query for two canonical entities.
+  - Plan: `docs/exec-plans/completed/AM-124-shared-connections.md`.
+  - Completed 2026-09-03 by owner acceptance: the bounded
+    `shared_authoritative_connections()` V1 is the final authorized AM-124
+    increment. It intersects at most 80 authoritative one-hop edges per input,
+    returns at most 20 typed canonical shared entities, preserves each leg's
+    honest manual/automatic provenance, and canonicalizes aware `as_of` to UTC.
+  - Verification: the full repository gate passed (373 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks). No remaining
+    acceptance gate exists; no graph UI, ranking, recursive traversal, reader
+    cutover, schema/writer change, repair, replay, backfill, or live-state work
+    is authorized under AM-124.
+
 - [x] AM-121 [P1] [People and projects / Intelligence] — Deliver bounded,
   read-only one-hop graph intelligence for entity-scoped retrieval and Company/
   Project profiles without graph ranking, canonical mutation, or a compatibility
@@ -100,20 +134,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     same-person activity plus time proximity cannot create Review work.
 
 ## Now
-
-- [ ] AM-124 [P2] [People and projects / Intelligence] — Add one bounded,
-  read-only two-hop shared-connections query for two canonical entities.
-  - Plan: `docs/exec-plans/active/AM-124-shared-connections.md`.
-  - Authorized 2026-09-03: intersect at most 80 authoritative one-hop edges
-    per endpoint and return at most 20 shared canonical people, companies, or
-    projects. Each leg retains its existing authority/evidence contract;
-    compatibility rows, graph mutation, recursive traversal, ranking, schema
-    work, replay, repair, and live-state actions remain excluded.
-  - Progress 2026-09-03: implemented the reusable read-only intersection over
-    `current_authoritative_edges()` with UTC `as_of`, canonical typed identity,
-    per-leg provenance, deterministic ordering, and fixed edge/result bounds.
-    Focused temporary-SQLite coverage passes; no writer, schema, compatibility
-    reader, replay, repair, backfill, or live-state action ran.
 
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact

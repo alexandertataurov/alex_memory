@@ -1,5 +1,32 @@
 # Implementation Journal
 
+## 2026-09-03 — Compact evidence affordance outside evidence views
+
+Normal Person Profile Textual and Rich renderers now use `[E]` when exact
+evidence exists, instead of exposing raw chat/message storage identifiers.
+Record Detail and Evidence views retain the exact locator and source text.
+This is presentation-only; evidence, canonical state, schema, and writers are
+unchanged.
+
+## 2026-09-03 — Human-readable Person Profile fields
+
+The selected Notion Person Profile leaf now derives display-only section,
+label, and value fields from existing canonical facts and profile claims.
+Normal Textual and Rich profile views use those fields, suppressing empty,
+unknown, and label-equals-value records and grouping profile rows by meaningful
+section. It remains a bounded read-only presentation change: exact evidence,
+claims, canonical state, schema, and writers are unchanged.
+
+## 2026-09-03 — AM-124 owner acceptance and completion
+
+The owner accepted and closed AM-124. Its final authorized V1 is the bounded
+read-only shared-connections query: two independently capped authoritative
+one-hop reads, typed canonical intersection, exact leg provenance, UTC-aware
+temporal behavior, and no writes. The full repository verification gate passed.
+There is no remaining acceptance gate and no authorization for further AM-124
+implementation, traversal/ranking expansion, graph UI, reader cutover,
+schema/writer work, repair, replay, backfill, or live-state action.
+
 ## 2026-09-03 — Notion-first work-control synchronization
 
 Notion's **Codex — Ready & Authorized** view is now documented as the sole

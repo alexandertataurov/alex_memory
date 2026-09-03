@@ -40,3 +40,11 @@ No migration, conversion, replay, repair, backfill, or live action is allowed.
   reads. It returns the two original edge records for evidence/authority
   closure, deduplicates typed canonical endpoints, excludes inputs, normalizes
   aware `as_of` to UTC, and performs no writes. No product UI was added.
+
+## Final outcome
+
+- 2026-09-03: accepted and closed by owner. This bounded V1 is the final
+  authorized AM-124 increment. The full repository gate passed: 373 tests,
+  Ruff, formatting, MyPy, docs, lock/dependency/vulnerability, and SQLite
+  checks. No remaining acceptance gate exists, and no further AM-124 work is
+  authorized.
