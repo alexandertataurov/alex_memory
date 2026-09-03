@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Textual's existing People, Profile, navigation, scan, and status primitives
+  now use a small shared semantic presentation vocabulary (accent, success,
+  warning, error, evidence, muted) and one consistent focused-list treatment.
+  This is a presentation-only change with no product feature or data-path
+  behavior.
 - Person Profile direct assertions now require a selected-contact source that
   is not explicitly forwarded. Known-origin forwards remain eligible only as
   third-party context; hidden-origin forwards are rejected as unattributable.

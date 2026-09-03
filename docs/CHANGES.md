@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Minimal Textual semantic presentation contract
+
+The existing Textual screens now share semantic accent, success, warning,
+error, evidence, and muted roles, with one consistent focused-list selection
+treatment. The contract is applied only to existing navigation, people/profile,
+scan, and status primitives; no visual redesign, product feature, data write,
+schema, migration, replay, backfill, repair, or live action changed.
+
 ## 2026-09-03 — Forwarded-profile attribution correction
 
 The existing Person Profile claim validator now reads the persisted forward

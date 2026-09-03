@@ -38,6 +38,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 45] Extract minimal Textual design tokens and shared
+  focus/status rules.
+  - Notion task: `3d0f52e9-545b-81f6-b243-ed0792a519c0`; completed 2026-09-03.
+  - Existing Textual screens now share semantic accent, success, warning,
+    error, evidence, and muted roles plus one focused-list selection treatment.
+    The change is presentation-only: no product feature, writer, schema,
+    migration, replay, backfill, repair, or live action changed.
+  - Verification: focused terminal rendering tests and the full repository gate
+    passed.
+
 - [x] [Notion / Sequence 43] Fix forwarded-message misattribution only if
   proven.
   - Notion task: `3d0f52e9-545b-8120-b94d-fdd657252505`; completed 2026-09-03.

@@ -34,6 +34,20 @@ def test_textual_source_strings_render_markup_literally() -> None:
     assert message.plain == "[link=https://example.test]contract[/link]"
 
 
+def test_textual_uses_semantic_roles_and_one_focus_rule() -> None:
+    css = AlexMemoryTerminal.CSS
+    for role in (
+        "$role-accent",
+        "$role-success",
+        "$role-warning",
+        "$role-error",
+        "$role-evidence",
+        "$role-muted",
+    ):
+        assert role in css
+    assert "ListView:focus > ListItem.-highlight" in css
+
+
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:
     with tempfile.TemporaryDirectory() as directory:
         settings = make_settings(Path(directory))

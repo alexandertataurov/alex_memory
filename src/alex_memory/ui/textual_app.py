@@ -832,21 +832,28 @@ class CommandPalette(Screen[None]):
 
 class AlexMemoryTerminal(App[None]):
     CSS = """
-    #status { height: 1; color: $text-muted; padding: 0 1; }
+    $role-accent: $primary;
+    $role-success: $success;
+    $role-warning: $warning;
+    $role-error: $error;
+    $role-evidence: $secondary;
+    $role-muted: $text-muted;
+    #status { height: 1; color: $role-muted; padding: 0 1; }
     #section-title { padding: 1 1 0 1; text-style: bold; }
     #people-search { margin: 0 1 1 1; }
     #content { height: 1fr; }
     #people-results { width: 52%; border: none; }
-    #preview { width: 48%; padding: 1 2; border-left: solid $primary; }
+    #preview { width: 48%; padding: 1 2; border-left: solid $role-accent; }
     #profile-heading { padding: 1 2 0 2; text-style: bold; }
-    #profile-summary { margin: 1 2; color: $text-muted; }
-    #profile-records { height: 1fr; margin: 0 2; border-top: solid $primary; }
+    #profile-summary { margin: 1 2; color: $role-muted; }
+    #profile-records { height: 1fr; margin: 0 2; border-top: solid $role-accent; }
     #scan-title { padding: 1 2 0 2; text-style: bold; }
-    #scan-status { margin: 1 2; padding: 1; border: solid $primary; }
-    #scan-evidence-label, #scan-window-label { margin: 0 2; color: $text-muted; }
+    #scan-status { margin: 1 2; padding: 1; border: solid $role-accent; }
+    #scan-evidence-label, #scan-window-label { margin: 0 2; color: $role-muted; }
     #scan-evidence-progress, #scan-window-progress { margin: 0 2 1 2; }
-    #scan-debug { margin: 0 2 1 2; padding: 1; color: $text-muted; border: solid $secondary; }
-    #scan-help { margin: 0 2; color: $text-muted; }
+    #scan-debug { margin: 0 2 1 2; padding: 1; color: $role-muted; border: solid $role-evidence; }
+    #scan-help { margin: 0 2; color: $role-muted; }
+    ListView:focus > ListItem.-highlight { background: $role-accent; color: $text; text-style: bold; }
     """
 
     def __init__(self, owner: AlexMemoryApp) -> None:
