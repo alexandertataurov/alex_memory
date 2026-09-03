@@ -17,6 +17,11 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Historical contact timelines now resolve high-priority message membership from
+  interval-active contact segments at `as_of`, rather than the mutable current
+  conversation mapping. Current timelines retain the existing materialized
+  reader; no schema, writer, migration, replay, backfill, repair, or live
+  action changed.
 - Person Profile now renders concise **Changed** records for evidence-complete,
   directly superseded professional-role/company facts. Each transition carries
   the existing exact locators from both sides; no generalized temporal

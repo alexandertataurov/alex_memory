@@ -113,8 +113,18 @@ class ConversationContextService:
         cutoff = (
             canonical_utc_timestamp(as_of) if as_of else "9999-12-31T23:59:59+00:00"
         )
+        conversation_chats = (
+            """SELECT DISTINCT chat_id FROM conversation_contact_segments
+               WHERE person_id=? AND source_type='telegram' AND chat_id IS NOT NULL
+                 AND started_at<=? AND (ended_at IS NULL OR ended_at>?)"""
+            if as_of is not None
+            else "SELECT chat_id FROM current_conversation_context WHERE person_id=?"
+        )
+        conversation_parameters: tuple[object, ...] = (
+            (person_id, cutoff, cutoff) if as_of is not None else (person_id,)
+        )
         rows = self.conn.execute(
-            """SELECT occurred_at,title,description,source_chat_id,source_message_id,'event',event_id
+            f"""SELECT occurred_at,title,description,source_chat_id,source_message_id,'event',event_id
                FROM context_events WHERE person_id=? AND event_type != 'observation_recorded'
                  AND occurred_at<=?
                UNION ALL
@@ -126,7 +136,7 @@ class ConversationContextService:
                UNION ALL
                SELECT date,text,'',chat_id,message_id,'message',message_id
                FROM messages WHERE chat_id IN (
-                   SELECT chat_id FROM current_conversation_context WHERE person_id=?
+                   {conversation_chats}
                ) AND date<=? AND COALESCE(is_deleted,0)=0
                  AND message_id IN (
                    SELECT message_id FROM message_classifications
@@ -140,7 +150,7 @@ class ConversationContextService:
                 cutoff,
                 person_id,
                 cutoff,
-                person_id,
+                *conversation_parameters,
                 cutoff,
             ),
         ).fetchall()

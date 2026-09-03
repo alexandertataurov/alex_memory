@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 64] Temporal history — guard historical `as_of`
+  against current-state leakage.
+  - Notion task: `3d0f52e9-545b-8184-a91c-c33a9b059896`; completed 2026-09-04.
+  - Historical contact timelines now derive message membership only from
+    interval-active contact segments at the requested instant. Mutable current
+    conversation mappings cannot widen a past timeline; current timelines
+    retain their existing materialized lookup. No migration, replay, backfill,
+    repair, schema, writer, or live action changed.
+  - Verification: focused temporary-SQLite context/conversation regressions and
+    the full repository gate passed.
+
 - [x] [Notion / Sequence 62] Temporal history — add explicit Changed
   transitions.
   - Notion task: `3d0f52e9-545b-8199-a434-c0349176e46f`; completed 2026-09-04.

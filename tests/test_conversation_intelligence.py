@@ -251,6 +251,47 @@ class ConversationIntelligenceTests(unittest.TestCase):
         self.assertEqual(timelines[0], timelines[1])
         self.assertTrue(timelines[0])
 
+    def test_historical_timeline_omits_later_current_conversation_membership(
+        self,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media)
+               VALUES (20,1,'2026-06-02T09:00:00+00:00','Later mapped conversation',0,0)"""
+        )
+        self.conn.execute(
+            """INSERT INTO message_classifications(
+                   chat_id,message_id,conversation_type,content_type,actionability,
+                   importance,content_scope,information_scope,temporal_relevance,
+                   potential_state_change,is_forwarded,topic_json,classifier_type,
+                   confidence,classification_version,context_version,context_stale,classified_at
+               ) VALUES (20,1,'direct','decision','actionable','high','business','direct',
+                         'current',1,0,'[]','test',1,1,1,0,'2026-08-01T09:00:00+00:00')"""
+        )
+        self.conn.execute(
+            """INSERT INTO current_conversation_context(
+                   person_id,source_type,conversation_id,chat_id,updated_at
+               ) VALUES (?,'telegram','20',20,'2026-08-01T09:00:00+00:00')""",
+            (self.person_id,),
+        )
+        self.conn.execute(
+            """INSERT INTO conversation_contact_segments(
+                   person_id,source_type,conversation_id,chat_id,started_at,confidence,
+                   source,created_at,updated_at
+               ) VALUES (?,'telegram','20',20,'2026-08-01T09:00:00+00:00',1,
+                         'test','2026-08-01T09:00:00+00:00','2026-08-01T09:00:00+00:00')""",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        service = ConversationContextService(self.conn, self.settings)
+        historical = service.timeline(
+            self.person_id, datetime(2026, 6, 15, tzinfo=timezone.utc)
+        )
+        current = service.timeline(self.person_id)
+
+        self.assertNotIn(20, [item["source_chat_id"] for item in historical])
+        self.assertIn(20, [item["source_chat_id"] for item in current])
+
     def test_historical_package_fails_closed_outside_active_segment(self) -> None:
         service = ConversationContextService(self.conn, self.settings)
         service.refresh_person(self.person_id)

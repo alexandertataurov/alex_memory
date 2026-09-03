@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-04 — Historical timeline membership guard
+
+Historical contact timelines now select high-priority message chats only from
+contact segments active at the requested `as_of` instant. This fails closed
+when a mutable current-conversation mapping was created later, while the
+current timeline retains its existing materialized lookup. No migration,
+replay, backfill, repair, schema, writer, or live action changed.
+
 ## 2026-09-04 — Evidence-complete profile changes
 
 Person Profile now derives at most six Changed records for supported
