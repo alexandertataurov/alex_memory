@@ -48,8 +48,9 @@ def profile_scan_status(
                   SUM(CASE WHEN status='failed' THEN message_count ELSE 0 END),
                   MAX(completed_at),MAX(profile_extractor_version)
            FROM ai_jobs
-           WHERE profile_person_id=? AND profile_extractor_version=?""",
-        (person_id, PROFILE_EXTRACTOR_VERSION),
+           WHERE profile_person_id=? AND profile_extractor_version=?
+             AND analysis_version=?""",
+        (person_id, PROFILE_EXTRACTOR_VERSION, ANALYSIS_VERSION),
     ).fetchone()
     direct: bool | None = None
     eligible: int | None = None
@@ -81,18 +82,39 @@ def profile_scan_status(
         eligible = conn.execute(
             f"SELECT COUNT(*) FROM ({eligible_sql})", params
         ).fetchone()[0]
-        processed = conn.execute(
-            f"""SELECT COUNT(*) FROM ({eligible_sql}) AS eligible
-                 WHERE EXISTS (
-                    SELECT 1 FROM ai_job_messages AS membership
-                    JOIN ai_jobs AS job ON job.job_id=membership.job_id
-                    WHERE membership.chat_id=eligible.chat_id
-                      AND membership.message_id=eligible.message_id
-                      AND job.profile_person_id=? AND job.status='done'
-                      AND job.profile_extractor_version=?
-                 )""",
-            (*params, person_id, PROFILE_EXTRACTOR_VERSION),
-        ).fetchone()[0]
+
+        def coverage_count(status: str | None) -> int:
+            predicate = "1=1" if status is None else "job.status=?"
+            bindings: tuple[object, ...] = (
+                *params,
+                person_id,
+                PROFILE_EXTRACTOR_VERSION,
+                ANALYSIS_VERSION,
+                *((status,) if status is not None else ()),
+            )
+            return int(
+                conn.execute(
+                    f"""SELECT COUNT(*) FROM ({eligible_sql}) AS eligible
+                         WHERE EXISTS (
+                            SELECT 1 FROM ai_job_messages AS membership
+                            JOIN ai_jobs AS job ON job.job_id=membership.job_id
+                            WHERE membership.chat_id=eligible.chat_id
+                              AND membership.message_id=eligible.message_id
+                              AND job.profile_person_id=?
+                              AND job.profile_extractor_version=?
+                              AND job.analysis_version=? AND {predicate}
+                         )""",
+                    bindings,
+                ).fetchone()[0]
+                or 0
+            )
+
+        processed = coverage_count("done")
+        pending_messages = coverage_count("pending")
+        running_messages = coverage_count("running")
+        failed_messages = coverage_count("failed")
+        represented = coverage_count(None)
+        unqueued_messages = max(0, int(eligible or 0) - represented)
         direct = bool(direct or chat_ids)
     return {
         "done": int(row[0] or 0),
@@ -103,14 +125,39 @@ def profile_scan_status(
         # distinct eligible-evidence count rather than a sum of job windows.
         "completed_messages": int(processed or 0),
         "processed_messages": int(processed or 0),
-        "pending_messages": int(row[5] or 0),
-        "running_messages": int(row[6] or 0),
-        "failed_messages": int(row[7] or 0),
+        "pending_messages": pending_messages,
+        "running_messages": running_messages,
+        "failed_messages": failed_messages,
+        "retryable_messages": failed_messages,
+        "unqueued_messages": unqueued_messages,
         "last_completed_at": row[8],
         "extractor_version": int(row[9] or PROFILE_EXTRACTOR_VERSION),
         "direct_chat_available": direct,
         "eligible_messages": int(eligible or 0) if eligible is not None else None,
     }
+
+
+def retry_failed_profile_jobs(
+    conn: sqlite3.Connection, person_id: int, *, limit: int
+) -> int:
+    """Return a bounded selected-person failure set to the existing job queue."""
+    if limit < 1:
+        raise ValueError("profile retry limit must be positive")
+    rows = conn.execute(
+        """SELECT job_id FROM ai_jobs
+           WHERE lane='profile' AND profile_person_id=?
+             AND profile_extractor_version=? AND analysis_version=? AND status='failed'
+           ORDER BY job_id LIMIT ?""",
+        (person_id, PROFILE_EXTRACTOR_VERSION, ANALYSIS_VERSION, limit),
+    ).fetchall()
+    with conn:
+        for (job_id,) in rows:
+            conn.execute(
+                """UPDATE ai_jobs SET status='pending',retry_after_at=NULL
+                   WHERE job_id=? AND status='failed'""",
+                (job_id,),
+            )
+    return len(rows)
 
 
 def profile_scan_debug(conn: sqlite3.Connection, person_id: int) -> dict:
@@ -178,11 +225,14 @@ def _profile_rejection_label(reason: str) -> str:
 
 
 def queue_profile_scan(
-    conn: sqlite3.Connection, settings: Settings, person_id: int, *, limit: int = 2
+    conn: sqlite3.Connection, settings: Settings, person_id: int
 ) -> int:
-    """Persist bounded chronological direct-conversation and self-authored windows."""
-    if limit < 1:
-        raise ValueError("profile scan limit must be positive")
+    """Persist every eligible message as an exact bounded profile job window.
+
+    This only creates durable membership. Callers still claim and submit a
+    small number of already-bounded windows, so selection does not turn a
+    profile action into an unbounded provider run.
+    """
     person = conn.execute(
         "SELECT telegram_user_id FROM people WHERE person_id=?", (person_id,)
     ).fetchone()
@@ -206,7 +256,8 @@ def queue_profile_scan(
                  AND COALESCE(m.is_deleted,0)=0 AND {profile_scan_chat_sql()} AND {_semantic_policy_sql()} AND NOT EXISTS (
                      SELECT 1 FROM ai_job_messages jm JOIN ai_jobs j ON j.job_id=jm.job_id
                      WHERE jm.chat_id=m.chat_id AND jm.message_id=m.message_id
-                   AND j.profile_person_id=? AND j.profile_extractor_version=?)
+                   AND j.profile_person_id=? AND j.profile_extractor_version=?
+                   AND j.analysis_version=?)
            ORDER BY m.chat_id,m.date,m.message_id""",
         (
             *chat_ids,
@@ -215,6 +266,7 @@ def queue_profile_scan(
             person_id,
             person_id,
             PROFILE_EXTRACTOR_VERSION,
+            ANALYSIS_VERSION,
         ),
     ).fetchall()
     bounded = replace(
@@ -237,7 +289,7 @@ def queue_profile_scan(
             for row in rows
         ],
         bounded,
-    )[:limit]
+    )
     created = 0
     with conn:
         for batch in batches:
@@ -294,10 +346,15 @@ async def enrich_person(
     # queue-only action could leave many pending windows; adding two more on
     # every resume made that backlog appear never-ending.
     pending = status["pending"]
+    retried = (
+        retry_failed_profile_jobs(conn, person_id, limit=limit)
+        if not pending and status["failed"]
+        else 0
+    )
     created = (
         0
-        if isinstance(pending, int) and pending > 0
-        else queue_profile_scan(conn, settings, person_id, limit=limit)
+        if retried or isinstance(pending, int) and pending > 0
+        else queue_profile_scan(conn, settings, person_id)
     )
     jobs = claim_ai_jobs(
         conn,
@@ -319,6 +376,7 @@ async def enrich_person(
     )
     result = profile_scan_status(conn, person_id)
     result["queued"] = created
+    result["retried"] = retried
     result["outcome"] = (
         "No canonically owned direct conversation is available to scan."
         if not result["direct_chat_available"]

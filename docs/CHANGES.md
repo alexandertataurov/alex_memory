@@ -1,5 +1,17 @@
 # Implementation Journal
 
+## 2026-09-03 — Direct-person history coverage
+
+The explicit Person Profile Deep Scan now records every currently eligible
+direct-history message as immutable membership in the existing bounded
+`profile` job lane, then claims only the requested bounded number of windows
+for provider work. Its status is an exact current analysis/profile-version
+partition of completed, pending, running, and retryable messages. A later
+explicit scan may return bounded failed windows to pending without moving their
+membership. Temporary-SQLite tests cover complete coverage, retry, both version
+boundaries, and read-only status. No schema, scheduler, writer, replay,
+backfill, repair, or live operation changed.
+
 ## 2026-09-03 — Bounded EvidenceScreen pagination
 
 EvidenceScreen now reports `showing N / total` and renders at most 16 exact

@@ -343,7 +343,8 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
   - Progress 2026-08-24: profile formatting now uses clear bounded sections
     rather than captured terminal tables. Deep Scan has an explicit status and
     queue screen: it discloses eligible/completed/pending/failed windows and
-    queues at most two exact-evidence windows only after Enter.
+    records the full eligible set as exact bounded windows only after Enter,
+    then processes at most two windows per explicit action.
     `make check` and `make docs-check` pass (197 temporary-SQLite tests);
     `make verify` is externally blocked only at `pip-audit` because this
     environment cannot resolve `pypi.org`.
@@ -378,6 +379,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Identity, Attribution, History, Connection, Commitment, Briefing, or
     Grounding defect. Do not infer further AM-122 implementation from the
     outstanding review.
+  - Progress 2026-09-03: the authorized direct-person-history coverage leaf
+    now persists every currently eligible message as exact current-version
+    profile-job membership before claiming the bounded requested work. Status
+    partitions completed/pending/running/retryable messages precisely, and a
+    later explicit scan retries only failed membership. No schema, scheduler,
+    replay, backfill, repair, or live operation changed.
   - Owner validation gate: final acceptance requires 10–20 real contacts across
     recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
     shapes. Every displayed claim must retain exact evidence or be unknown/

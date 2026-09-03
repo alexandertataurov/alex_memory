@@ -390,7 +390,7 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
         row = self.conn.execute(
             "SELECT job_id,lane,profile_person_id,profile_extractor_version,status FROM ai_jobs WHERE profile_person_id=?",
@@ -422,8 +422,88 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             0,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
+
+    def test_profile_scan_represents_all_eligible_messages_in_bounded_windows(
+        self,
+    ) -> None:
+        self.conn.executemany(
+            "INSERT INTO messages(chat_id,message_id,sender_id,date,text,is_outgoing,has_media) VALUES (100,?,?,?,?,?,0)",
+            [
+                (index, 100, f"2026-08-2{index}T12:00:00+00:00", f"Message {index}", 0)
+                for index in range(3, 7)
+            ],
+        )
+        settings = replace(
+            self.settings,
+            history_internal_batch_messages=2,
+            history_internal_batch_chars=100,
+        )
+        self.conn.commit()
+
+        self.assertEqual(
+            6, queue_profile_scan(self.conn, settings, int(self.person_id))
+        )
+        status = profile_scan_status(self.conn, int(self.person_id))
+        self.assertEqual(6, status["eligible_messages"])
+        self.assertEqual(6, status["pending_messages"])
+        self.assertEqual(0, status["unqueued_messages"])
+
+        first_job, first_count = self.conn.execute(
+            "SELECT job_id,message_count FROM ai_jobs WHERE profile_person_id=? ORDER BY job_id LIMIT 1",
+            (self.person_id,),
+        ).fetchone()
+        self.conn.execute(
+            "UPDATE ai_jobs SET status='done' WHERE job_id=?", (first_job,)
+        )
+        self.conn.commit()
+        status = profile_scan_status(self.conn, int(self.person_id))
+        self.assertEqual(first_count, status["completed_messages"])
+        self.assertEqual(6 - first_count, status["pending_messages"])
+        self.assertEqual(0, status["unqueued_messages"])
+
+    def test_profile_scan_retries_only_explicit_failed_membership(self) -> None:
+        self.assertEqual(
+            1, queue_profile_scan(self.conn, self.settings, int(self.person_id))
+        )
+        self.conn.execute(
+            "UPDATE ai_jobs SET status='failed' WHERE profile_person_id=?",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        with patch(
+            "alex_memory.profile_enrichment._process_profile_jobs",
+            new_callable=AsyncMock,
+        ) as process:
+            result = asyncio.run(
+                enrich_person(
+                    self.conn,
+                    self.settings,
+                    Console(file=StringIO()),
+                    int(self.person_id),
+                    limit=1,
+                )
+            )
+
+        self.assertEqual(1, result["retried"])
+        self.assertEqual(1, len(process.await_args.args[4]))
+        self.assertEqual(
+            "running",
+            self.conn.execute(
+                "SELECT status FROM ai_jobs WHERE profile_person_id=?",
+                (self.person_id,),
+            ).fetchone()[0],
+        )
+
+    def test_profile_scan_status_is_read_only(self) -> None:
+        self.conn.execute("PRAGMA query_only=ON")
+        try:
+            status = profile_scan_status(self.conn, int(self.person_id))
+        finally:
+            self.conn.execute("PRAGMA query_only=OFF")
+        self.assertEqual(2, status["eligible_messages"])
 
     def test_profile_scan_debug_is_bounded_metadata_not_message_content(self) -> None:
         self.conn.execute(
@@ -433,7 +513,7 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
 
         debug = profile_scan_debug(self.conn, int(self.person_id))
@@ -450,7 +530,7 @@ class PersonProfileTests(unittest.TestCase):
     def test_profile_scan_status_uses_only_the_current_extractor_version(self) -> None:
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
         self.conn.execute(
             "UPDATE ai_jobs SET profile_extractor_version=1 WHERE profile_person_id=?",
@@ -475,6 +555,25 @@ class PersonProfileTests(unittest.TestCase):
             ),
         )
 
+    def test_profile_scan_status_requires_current_analysis_version(self) -> None:
+        self.assertEqual(
+            1, queue_profile_scan(self.conn, self.settings, int(self.person_id))
+        )
+        self.conn.execute(
+            "UPDATE ai_jobs SET analysis_version=1 WHERE profile_person_id=?",
+            (self.person_id,),
+        )
+        self.conn.commit()
+
+        status = profile_scan_status(self.conn, int(self.person_id))
+
+        self.assertEqual(0, status["pending"])
+        self.assertEqual(0, status["pending_messages"])
+        self.assertEqual(2, status["unqueued_messages"])
+        self.assertEqual(
+            1, queue_profile_scan(self.conn, self.settings, int(self.person_id))
+        )
+
     def test_profile_scan_requires_a_resolved_person_author(
         self,
     ) -> None:
@@ -488,7 +587,7 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(0, status["eligible_messages"])
         self.assertEqual(
             0,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
 
     def test_profile_scan_processes_backlog_before_queueing_more(self) -> None:
@@ -506,7 +605,7 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.conn.commit()
         self.assertEqual(
-            3, queue_profile_scan(self.conn, settings, int(self.person_id), limit=3)
+            6, queue_profile_scan(self.conn, settings, int(self.person_id))
         )
         with patch(
             "alex_memory.profile_enrichment._process_profile_jobs",
@@ -520,7 +619,7 @@ class PersonProfileTests(unittest.TestCase):
         self.assertEqual(0, result["queued"])
         self.assertEqual(2, process.await_args.args[4].__len__())
         self.assertEqual(
-            1,
+            4,
             self.conn.execute(
                 "SELECT COUNT(*) FROM ai_jobs WHERE profile_person_id=? AND status='pending'",
                 (self.person_id,),
@@ -542,7 +641,7 @@ class PersonProfileTests(unittest.TestCase):
         )
         self.conn.commit()
         self.assertEqual(
-            3, queue_profile_scan(self.conn, settings, int(self.person_id), limit=3)
+            6, queue_profile_scan(self.conn, settings, int(self.person_id))
         )
         with patch(
             "alex_memory.profile_enrichment._process_profile_jobs",
@@ -553,7 +652,7 @@ class PersonProfileTests(unittest.TestCase):
                     self.conn, settings, Console(file=StringIO()), int(self.person_id)
                 )
             )
-        self.assertEqual(3, result["processed"])
+        self.assertEqual(6, result["processed"])
         self.assertEqual(
             0,
             self.conn.execute(
@@ -575,7 +674,7 @@ class PersonProfileTests(unittest.TestCase):
 
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
         claimed = claim_ai_jobs(
             self.conn,
@@ -620,7 +719,7 @@ class PersonProfileTests(unittest.TestCase):
 
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
         job_id, work = claim_ai_jobs(
             self.conn,
@@ -650,7 +749,7 @@ class PersonProfileTests(unittest.TestCase):
 
         self.assertEqual(
             1,
-            queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1),
+            queue_profile_scan(self.conn, self.settings, int(self.person_id)),
         )
         job_id, work = claim_ai_jobs(
             self.conn,
@@ -703,7 +802,7 @@ class PersonProfileTests(unittest.TestCase):
                VALUES (100,3,999,'2026-08-25T12:00:00+00:00','Michael used to work at Bank X.',1,0)"""
         )
         self.conn.commit()
-        queue_profile_scan(self.conn, self.settings, int(self.person_id), limit=1)
+        queue_profile_scan(self.conn, self.settings, int(self.person_id))
         job_id, work = claim_ai_jobs(
             self.conn,
             "profile",
@@ -770,7 +869,7 @@ class PersonProfileTests(unittest.TestCase):
 
     def test_profile_inference_requires_exact_two_person_authored_sources(self) -> None:
         settings = replace(self.settings, history_internal_batch_messages=10)
-        queue_profile_scan(self.conn, settings, int(self.person_id), limit=1)
+        queue_profile_scan(self.conn, settings, int(self.person_id))
         job_id, work = claim_ai_jobs(
             self.conn,
             "profile",

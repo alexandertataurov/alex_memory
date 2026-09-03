@@ -17,6 +17,12 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- The selected-person Deep Scan now persists every currently eligible direct
+  history message as an exact, bounded profile-job window before claiming only
+  the requested number for provider work. Current-version status counts exact
+  completed/pending/running/retryable membership, and an explicit later scan
+  may retry failed windows without changing their source membership. No schema,
+  scheduler, replay, backfill, repair, or live operation changed.
 - Textual EvidenceScreen now shows its visible source range and total, with
   bounded keyboard pagination instead of silently discarding sources after 16.
 - The Textual Command Palette now filters and invokes the highlighted command
