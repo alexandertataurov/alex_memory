@@ -228,7 +228,9 @@ def direct_chat_person(conn: sqlite3.Connection, chat_id: int) -> int | None:
         "SELECT person_id FROM people WHERE telegram_user_id=?", (chat_id,)
     ).fetchone()
     if existing is not None:
-        return int(existing[0])
+        person_id = int(existing[0])
+        _attach_direct_chat_title_alias(conn, person_id, title)
+        return person_id
     username_key = normalize_alias(username)
     if username_key:
         matches = conn.execute(
@@ -247,6 +249,7 @@ def direct_chat_person(conn: sqlite3.Connection, chat_id: int) -> int | None:
                    WHERE person_id=?""",
                 (chat_id, username_key, utc_now(), person_id),
             )
+            _attach_direct_chat_title_alias(conn, person_id, title)
             return person_id
 
     canonical = str(title or username or f"Telegram {chat_id}").strip()
@@ -285,6 +288,34 @@ def direct_chat_person(conn: sqlite3.Connection, chat_id: int) -> int | None:
                 "direct-chat title requires manual identity review",
             )
     return person_id
+
+
+def _attach_direct_chat_title_alias(
+    conn: sqlite3.Connection, person_id: int, title: str | None
+) -> None:
+    """Attach an exact direct-chat title only when it has one identity owner."""
+    title_key = normalize_alias(title)
+    if not title_key:
+        return
+    owner_ids = {
+        int(row[0])
+        for row in conn.execute(
+            """SELECT entity_id FROM entity_aliases
+               WHERE entity_type='person' AND normalized_alias=?""",
+            (title_key,),
+        ).fetchall()
+    }
+    if owner_ids - {person_id}:
+        EntityResolver(conn)._ambiguous(
+            "person",
+            title_key,
+            sorted({person_id, *owner_ids}),
+            "direct-chat title conflicts with an existing alias",
+        )
+        return
+    EntityResolver(conn)._alias(
+        "person", person_id, str(title).strip(), "telegram_direct_chat", 1.0
+    )
 
 
 def backfill_direct_chat_identities(

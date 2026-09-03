@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Direct-chat identity reconciliation now retains a chat-title alias after a
+  unique username or peer-ID match, but only if that alias has no competing
+  owner. Conflicts preserve existing manual authority and enter review.
 - Added `make profile-review`: a deterministic, resumable local AM-122 owner
   review that reuses the existing read-only profile and structural-acceptance
   paths. It stores only local review metadata and categorical defect records,

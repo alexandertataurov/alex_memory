@@ -1050,6 +1050,47 @@ class OperationalMemoryTests(unittest.TestCase):
                     (person_id,),
                 ).fetchone()[0],
             )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    """SELECT COUNT(*) FROM entity_aliases
+                       WHERE entity_type='person' AND entity_id=? AND normalized_alias='a. c.'""",
+                    (person_id,),
+                ).fetchone()[0],
+            )
+
+    def test_direct_chat_title_conflict_preserves_manual_alias_and_requests_review(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            target = resolver.person("Alice Cooper", telegram_username="alicec")
+            manual = resolver.person("Manual Alice", source="manual")
+            assert target is not None and manual is not None
+            resolver._alias("person", manual, "A. C.", "manual", 1.0)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,username,chat_type) VALUES (79,'A. C.','alicec','user')"
+            )
+
+            self.assertEqual(target, direct_chat_person(conn, 79))
+            self.assertEqual(
+                manual,
+                conn.execute(
+                    """SELECT entity_id FROM entity_aliases WHERE entity_type='person'
+                       AND normalized_alias='a. c.'"""
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    """SELECT COUNT(*) FROM entity_merge_candidates
+                       WHERE normalized_alias='a. c.'"""
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                2, conn.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+            )
 
     def test_direct_identity_backfill_is_bounded_and_refreshes_only_processed_chats(
         self,

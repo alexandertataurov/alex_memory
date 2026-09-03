@@ -38,6 +38,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 31] AM-127 — Reconcile missing aliases into canonical
+  contacts.
+  - A direct-chat title now becomes a canonical person's alias only after an
+    exact peer-ID or unique username match and only with a single alias owner.
+    Conflicts preserve manual aliases and enter the existing review path; no
+    automatic merge occurs.
+  - Verification: focused operational identity regressions and `make check`
+    passed. No schema, live repair, migration, replay, backfill, provider, or
+    graph work changed.
+
 - [x] [Notion / Sequence 30] AM-126 — Make AM-122 owner acceptance runnable
   through one bounded read-only review harness.
   - `make profile-review` now selects a deterministic 10–20-contact sample,

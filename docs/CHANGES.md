@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-04 — AM-127 direct-chat alias reconciliation
+
+When Telegram's direct-chat peer ID or a unique username already identifies a
+canonical person, the direct-chat title is retained as an alias only if no
+other person owns its normalized value. A competing alias—manual or otherwise—is
+left untouched and produces the existing ambiguity/review signal; people are
+not merged. No schema, live repair, provider, graph, replay, or backfill ran.
+
 ## 2026-09-04 — AM-126 guided owner review
 
 `make profile-review` now selects a stable bounded sample from existing Person
