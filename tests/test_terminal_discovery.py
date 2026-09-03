@@ -4,6 +4,8 @@ import tempfile
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +14,7 @@ from textual.widgets import ListView, ProgressBar, Static
 
 from alex_memory.app import AlexMemoryApp
 from alex_memory.database import connect
+from alex_memory.runtime_status import RuntimeStatus
 from alex_memory.ui.discovery import (
     PersonSearchResult,
     relative_datetime,
@@ -25,6 +28,7 @@ from alex_memory.ui.textual_app import (
     ProfileScreen,
     RecordDetailScreen,
     ScanScreen,
+    _background_work_label,
     _home_preview_text,
     _literal_text,
 )
@@ -97,6 +101,37 @@ def test_home_preview_uses_existing_context_and_explains_non_name_matches() -> N
         "CURRENT\nPreparing the Cifra Markets launch.\n\n"
         "NEEDS ATTENTION\n• Send launch brief\n• Confirm legal review"
     )
+
+
+@pytest.mark.parametrize(
+    ("phase", "queue_size", "pending_jobs", "running_jobs", "writer_state", "label"),
+    [
+        ("HEALTHY", 0, 0, 0, "idle", "Idle"),
+        ("HEALTHY", 2, 0, 0, "idle", "Syncing · 2 queued"),
+        ("HEALTHY", 0, 3, 1, "idle", "Analyzing · 3 queued"),
+        ("RETRYING", 2, 3, 1, "running", "Retrying"),
+        ("DEGRADED", 0, 0, 0, "idle", "Degraded"),
+    ],
+)
+def test_background_work_label_prioritizes_truthful_runtime_state(
+    phase: str,
+    queue_size: int,
+    pending_jobs: int,
+    running_jobs: int,
+    writer_state: str,
+    label: str,
+) -> None:
+    status = cast(
+        RuntimeStatus,
+        SimpleNamespace(
+            phase=phase,
+            telegram=SimpleNamespace(queue_size=queue_size),
+            ai=SimpleNamespace(pending_jobs=pending_jobs, running_jobs=running_jobs),
+            writer=SimpleNamespace(state=writer_state),
+        ),
+    )
+
+    assert _background_work_label(status) == label
 
 
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:

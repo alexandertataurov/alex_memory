@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- HomeScreen now presents one compact, truthful background-work label from the
+  existing runtime snapshot: retry/degraded phase first, otherwise syncing,
+  analyzing, writing, queued work, or idle. It changes neither job nor sync
+  ownership.
 - HomeScreen's People preview now shows the existing username, localized last
   contact, concise current summary, and bounded needs-attention items. It also
   explains project, company, or context-based search matches without adding a

@@ -41,6 +41,7 @@ from .discovery import (
 
 if TYPE_CHECKING:
     from ..app import AlexMemoryApp
+    from ..runtime_status import RuntimeStatus
 
 
 class PersonItem(ListItem):
@@ -77,6 +78,23 @@ def _home_preview_text(
         f"{matched}CURRENT\n{overview['summary']}\n\n"
         f"NEEDS ATTENTION\n{attention}"
     )
+
+
+def _background_work_label(status: RuntimeStatus) -> str:
+    """Present one truthful background-work state from the runtime snapshot."""
+    phase = status.phase.title()
+    if status.phase in {"RETRYING", "DEGRADED", "FAILED", "OFFLINE", "STARTING"}:
+        return phase
+    if status.telegram.queue_size:
+        return f"Syncing · {status.telegram.queue_size} queued"
+    if status.ai.running_jobs:
+        queued = f" · {status.ai.pending_jobs} queued" if status.ai.pending_jobs else ""
+        return f"Analyzing{queued}"
+    if status.ai.pending_jobs:
+        return f"AI · {status.ai.pending_jobs} queued"
+    if status.writer.state == "running":
+        return "Writing"
+    return "Idle"
 
 
 class HomeScreen(Screen[None]):
@@ -116,9 +134,9 @@ class HomeScreen(Screen[None]):
         if self.owner.runtime_status is None:
             return
         status = self.owner.runtime_status.snapshot(self.owner.live_sync)
-        telegram = "connected" if status.telegram.connected else status.phase.lower()
-        text = f"Telegram {telegram} · AI {status.ai.pending_jobs} queued"
-        self.query_one("#status", Static).update(_literal_text(text))
+        self.query_one("#status", Static).update(
+            _literal_text(_background_work_label(status))
+        )
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "people-search":

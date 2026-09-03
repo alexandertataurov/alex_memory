@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Compact global background-work label
+
+HomeScreen now presents a single background-work label from the existing
+runtime-status snapshot. Retry/degraded phases take precedence; otherwise the
+label reports syncing, analyzing, writing, queued work, or idle without
+inventing a denominator. No scheduler, job, sync, writer, startup, schema, or
+data behavior changed.
+
 ## 2026-09-03 — Existing-data People preview context
 
 HomeScreen now composes its People preview from the existing search result and

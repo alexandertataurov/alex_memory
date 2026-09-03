@@ -38,6 +38,15 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 52] Show one compact global background-work status.
+  - Notion task: `3d0f52e9-545b-8104-bd72-f9406c480ddd`; completed 2026-09-03.
+  - The existing runtime snapshot now drives one compact Home status label:
+    retry/degraded state takes precedence, otherwise syncing, analyzing,
+    writing, queued work, or idle. It shows no invented denominator and does
+    not change scheduler, job, sync, or writer ownership.
+  - Verification: focused terminal status tests and the full repository gate
+    passed.
+
 - [x] [Notion / Sequence 49] Improve People preview and explain search
   matches.
   - Notion task: `3c7f52e9-545b-8144-8a4f-d586eee48180`; completed 2026-09-03.
