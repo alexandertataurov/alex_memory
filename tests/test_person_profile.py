@@ -164,6 +164,19 @@ class PersonProfileTests(unittest.TestCase):
             "new raw evidence pending", profile["context_freshness"]["state"]
         )
 
+    def test_profile_topics_reject_generic_materialized_tokens(self) -> None:
+        self.conn.execute(
+            """INSERT INTO current_conversation_context(
+                   person_id,source_type,conversation_id,chat_id,topic_json,updated_at
+               ) VALUES (?, 'telegram', '100', 100, ?, 'now')""",
+            (self.person_id, '["sender", "details", "for", "Contract renewal"]'),
+        )
+        self.conn.commit()
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+
+        self.assertEqual(["contract renewal"], profile["topics"])
+
     def test_relationship_other_endpoint_uses_type_and_id(self) -> None:
         now = "2026-08-24T12:00:00+00:00"
         company_id = self.conn.execute(

@@ -868,7 +868,7 @@ def _project_ai_batch(
     referenced_project_names = {
         normalize_task_title(str(row[11]))
         for row in rows
-        if row[1] != "project" and row[11]
+        if row[1] in TASK_KINDS | {"payment", "commitment"} and row[11]
     }
     for (
         item_id,

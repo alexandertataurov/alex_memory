@@ -1407,6 +1407,82 @@ class OperationalMemoryTests(unittest.TestCase):
             )
             conn.close()
 
+    def test_event_project_reference_cannot_create_a_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                "INSERT INTO chats(chat_id,title,chat_type) VALUES (105,'Friends','group')"
+            )
+            conn.execute(
+                "INSERT INTO messages(chat_id,message_id,date,text,is_outgoing,has_media) VALUES (105,1,'2026-08-22','Birthday plans',0,0)"
+            )
+            batch = AIBatch(
+                105,
+                "Friends",
+                [
+                    AIMessage(
+                        105,
+                        1,
+                        None,
+                        "2026-08-22",
+                        "Birthday plans",
+                        False,
+                        "Friends",
+                        "group",
+                    )
+                ],
+                "prompt",
+            )
+            saved = save_ai_success(
+                conn,
+                batch,
+                {
+                    "summary": "Birthday plan.",
+                    "items": [
+                        {
+                            "kind": "project",
+                            "title": "Birthday",
+                            "details": "Personal event.",
+                            "status": "informational",
+                            "owner": "unknown",
+                            "due_date": None,
+                            "person": None,
+                            "company": None,
+                            "project_name": None,
+                            "amount": None,
+                            "currency": None,
+                            "confidence": 0.99,
+                            "source_chat_id": 105,
+                            "source_message_id": 1,
+                        },
+                        {
+                            "kind": "event",
+                            "title": "Birthday",
+                            "details": "A birthday is planned.",
+                            "status": "informational",
+                            "owner": "unknown",
+                            "due_date": None,
+                            "person": None,
+                            "company": None,
+                            "project_name": "Birthday",
+                            "amount": None,
+                            "currency": None,
+                            "confidence": 0.99,
+                            "source_chat_id": 105,
+                            "source_message_id": 1,
+                        },
+                    ],
+                },
+                settings,
+            )
+
+            self.assertTrue(process_ai_batch(conn, saved.batch_id, settings))
+            self.assertEqual(
+                0, conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+            )
+            conn.close()
+
     def test_near_duplicate_project_requires_manual_review(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))

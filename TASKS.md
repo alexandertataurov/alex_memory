@@ -38,6 +38,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 30] Filter topic noise and reject invalid project
+  classifications.
+  - Notion task: `3c7f52e9-545b-81f3-a06e-fd15721e677b`; completed 2026-09-03.
+  - Generic materialized topics are rejected at the Profile/Overview boundary.
+    Automatic project creation requires task, payment, or commitment context;
+    ordinary events and personal facts cannot create canonical projects.
+  - Verification: full repository gate passed (376 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks). No schema,
+    replay, backfill, repair, or live-state action ran.
+
 - [x] [Notion / Sequence 30] Hide raw evidence IDs outside Evidence/debug views.
   - Notion task: `3c7f52e9-545b-8152-b577-e59bab78a264`; completed 2026-09-03.
   - Normal Textual and Rich Person Profile views show `[E]` when evidence is

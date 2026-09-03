@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Topic-noise and project-context guardrails
+
+The final Person Profile/Overview topic boundary rejects generic materialized
+tokens. Automatic project creation now requires an operational task reference;
+events and personal facts cannot qualify a project item for canonical creation.
+This is bounded projection/presentation logic with synthetic tests only; no
+schema, replay, backfill, repair, or live-state action ran.
+
 ## 2026-09-03 — Compact evidence affordance outside evidence views
 
 Normal Person Profile Textual and Rich renderers now use `[E]` when exact

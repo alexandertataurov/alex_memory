@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Profile/Overview topic presentation now rejects generic materialized tokens,
+  and automatic project creation requires an operational task reference rather
+  than an event or personal-fact reference. No schema, replay, backfill, or
+  live-state work ran.
 - Person Profile presentation now maps canonical predicates/categories to
   human labels, suppresses empty/placeholder records, and groups profile facts
   in the Textual and Rich views. This is read-only presentation over the
