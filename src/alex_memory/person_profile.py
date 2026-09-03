@@ -900,6 +900,7 @@ def _operational_overview(profile: dict) -> dict:
             "completed_messages": int(scan.get("completed_messages") or 0),
             "eligible_messages": int(scan.get("eligible_messages") or 0),
             "pending_messages": int(scan.get("pending_messages") or 0),
+            "running_messages": int(scan.get("running_messages") or 0),
             "failed_messages": int(scan.get("failed_messages") or 0),
         },
     }

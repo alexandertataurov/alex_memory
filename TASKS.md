@@ -38,6 +38,16 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 54] Show person-scoped scan/history status only when
+  relevant.
+  - Notion task: `3d0f52e9-545b-817f-bb7c-fe52a2402a10`; completed 2026-09-03.
+  - Person Profile now presents selected-person durable profile work as compact
+    queued, analyzing, retryable, and completed message counts. It uses the
+    existing profile-job read model only; no scheduler state, cancellation,
+    diagnostics surface, status store, writer, schema, or live action changed.
+  - Verification: focused Profile/Textual regressions and the full repository
+    gate passed.
+
 - [x] [Notion / Sequence 52] Show one compact global background-work status.
   - Notion task: `3d0f52e9-545b-8104-bd72-f9406c480ddd`; completed 2026-09-03.
   - The existing runtime snapshot now drives one compact Home status label:

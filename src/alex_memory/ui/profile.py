@@ -313,11 +313,9 @@ def _show_operational_overview(data: dict, console: Console) -> None:
         lines.append(
             f"Profile coverage: {health.get('completed_messages', 0)} / {eligible} analyzed"
         )
-    if health.get("pending_messages") or health.get("failed_messages"):
-        lines.append(
-            f"Unfinished: {health.get('pending_messages', 0)} pending · "
-            f"{health.get('failed_messages', 0)} retryable"
-        )
+    profile_work = _profile_work_status(health)
+    if profile_work:
+        lines.append(f"Profile work: {profile_work}")
     console.print(
         Panel(
             safe_text("\n".join(lines), 700),
@@ -325,6 +323,17 @@ def _show_operational_overview(data: dict, console: Console) -> None:
             border_style="green",
         )
     )
+
+
+def _profile_work_status(health: dict) -> str:
+    """Summarize only durable work attached to the selected person."""
+    states = (
+        ("queued", health.get("pending_messages", 0)),
+        ("analyzing", health.get("running_messages", 0)),
+        ("retryable", health.get("failed_messages", 0)),
+        ("completed", health.get("completed_messages", 0)),
+    )
+    return " · ".join(f"{int(count)} {label}" for label, count in states if count)
 
 
 def _show_overview_records(records: list[dict], title: str, console: Console) -> None:

@@ -31,6 +31,7 @@ from alex_memory.ui.textual_app import (
     _background_work_label,
     _home_preview_text,
     _literal_text,
+    _profile_work_status,
 )
 from test_ai_pipeline import make_settings
 
@@ -132,6 +133,21 @@ def test_background_work_label_prioritizes_truthful_runtime_state(
     )
 
     assert _background_work_label(status) == label
+
+
+def test_profile_work_status_reports_only_selected_person_durable_state() -> None:
+    assert _profile_work_status({}) == ""
+    assert (
+        _profile_work_status(
+            {
+                "pending_messages": 2,
+                "running_messages": 1,
+                "failed_messages": 3,
+                "completed_messages": 4,
+            }
+        )
+        == "2 queued · 1 analyzing · 3 retryable · 4 completed"
+    )
 
 
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:

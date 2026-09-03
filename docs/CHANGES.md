@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Selected-person profile work status
+
+Textual and Rich Person Profile health views now compactly report durable work
+for the selected person only: queued, analyzing, retryable, and completed
+message counts. The existing profile-job read model remains the sole source;
+no scheduler state, cancellation, global diagnostics, status store, writer,
+schema, or live action changed.
+
 ## 2026-09-03 — Compact global background-work label
 
 HomeScreen now presents a single background-work label from the existing

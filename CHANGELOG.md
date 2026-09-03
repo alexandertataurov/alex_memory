@@ -17,6 +17,9 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Selected Person Profile views now compactly report only their own durable
+  profile-job work (queued, analyzing, retryable, completed). No global
+  diagnostics, scheduler state, or execution behavior is exposed or changed.
 - HomeScreen now presents one compact, truthful background-work label from the
   existing runtime snapshot: retry/degraded phase first, otherwise syncing,
   analyzing, writing, queued work, or idle. It changes neither job nor sync

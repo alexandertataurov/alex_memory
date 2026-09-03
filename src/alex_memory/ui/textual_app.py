@@ -938,11 +938,9 @@ def _operational_overview_text(detail: dict) -> str:
         relationship_lines.append(
             f"Profile coverage: {health.get('completed_messages', 0)} / {eligible} analyzed"
         )
-    if health.get("pending_messages") or health.get("failed_messages"):
-        relationship_lines.append(
-            f"Unfinished: {health.get('pending_messages', 0)} pending · "
-            f"{health.get('failed_messages', 0)} retryable"
-        )
+    profile_work = _profile_work_status(health)
+    if profile_work:
+        relationship_lines.append(f"Profile work: {profile_work}")
     return "\n\n".join(
         (
             "IDENTITY / STATUS\n" + "\n".join(identity_lines),
@@ -966,6 +964,17 @@ def _operational_overview_text(detail: dict) -> str:
             "RELATIONSHIP + MEMORY HEALTH\n" + "\n".join(relationship_lines),
         )
     )
+
+
+def _profile_work_status(health: dict) -> str:
+    """Summarize only durable work attached to the selected person."""
+    states = (
+        ("queued", health.get("pending_messages", 0)),
+        ("analyzing", health.get("running_messages", 0)),
+        ("retryable", health.get("failed_messages", 0)),
+        ("completed", health.get("completed_messages", 0)),
+    )
+    return " · ".join(f"{int(count)} {label}" for label, count in states if count)
 
 
 def _section(title: str, records: list[dict], left: str, right: str) -> str:
