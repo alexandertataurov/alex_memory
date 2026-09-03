@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Person resolution no longer collapses a supplied, unmatched Telegram peer ID
+  onto a same-name alias; distinct peers remain distinct canonical contacts.
 - Direct-chat identity reconciliation now retains a chat-title alias after a
   unique username or peer-ID match, but only if that alias has no competing
   owner. Conflicts preserve existing manual authority and enter review.

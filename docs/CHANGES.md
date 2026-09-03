@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-04 — AM-128 same-name identity separation
+
+Person resolution now treats an unmatched supplied Telegram peer ID as stronger
+identity evidence than a display-name alias. Two distinct account IDs named
+David therefore produce distinct canonical people rather than being silently
+collapsed. Existing exact peer-ID and unique-username resolution are unchanged;
+no schema, destructive split, live repair, provider, graph, replay, or backfill
+ran.
+
 ## 2026-09-04 — AM-127 direct-chat alias reconciliation
 
 When Telegram's direct-chat peer ID or a unique username already identifies a

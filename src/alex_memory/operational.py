@@ -105,7 +105,10 @@ class EntityResolver:
                 )
                 return None
         alias = normalize_alias(name)
-        if alias:
+        # A supplied Telegram peer ID is stronger identity evidence than a
+        # display name. If it did not match above, never collapse it onto an
+        # existing same-name alias; create a separate contact instead.
+        if alias and telegram_user_id is None:
             rows = self.conn.execute(
                 "SELECT entity_id FROM entity_aliases WHERE entity_type = 'person' AND normalized_alias = ?",
                 (alias,),

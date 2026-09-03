@@ -1002,6 +1002,27 @@ class OperationalMemoryTests(unittest.TestCase):
                 ],
             )
 
+    def test_distinct_telegram_peers_with_the_same_name_remain_separate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+
+            first = resolver.person("David", telegram_user_id=101)
+            second = resolver.person("David", telegram_user_id=202)
+
+            self.assertIsNotNone(first)
+            self.assertIsNotNone(second)
+            self.assertNotEqual(first, second)
+            self.assertEqual(
+                [101, 202],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT telegram_user_id FROM people ORDER BY telegram_user_id"
+                    )
+                ],
+            )
+
     def test_direct_chat_peer_id_is_canonical_and_title_matches_are_reviewed(
         self,
     ) -> None:
