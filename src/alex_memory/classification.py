@@ -221,7 +221,7 @@ def _topics(conn: sqlite3.Connection, chat_id: int, text: str) -> list[str]:
     rows = conn.execute(
         """SELECT p.canonical_name FROM tasks AS t
            JOIN projects AS p ON p.project_id=t.related_project_id
-           WHERE t.source_chat_id=? AND t.status IN ('open','waiting')
+           WHERE t.source_chat_id=? AND t.status IN ('open','waiting','blocked')
            LIMIT 8""",
         (chat_id,),
     ).fetchall()
@@ -258,7 +258,7 @@ def _context_signals(
         """SELECT
                SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END),
                SUM(CASE WHEN related_project_id IS NOT NULL OR related_company_id IS NOT NULL THEN 1 ELSE 0 END)
-           FROM tasks WHERE source_chat_id=? AND status IN ('open','waiting')""",
+           FROM tasks WHERE source_chat_id=? AND status IN ('open','waiting','blocked')""",
         (chat_id,),
     ).fetchone()
     recent_high = conn.execute(

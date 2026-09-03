@@ -234,22 +234,26 @@ def show_tasks(
 ) -> None:
     views = {
         "current": (
-            "t.status IN ('open','waiting') "
+            "t.status IN ('open','waiting','blocked') "
             "AND (t.due_date IS NOT NULL OR t.updated_at >= datetime('now','-30 days'))",
             "current actionable work (due work or updated in the last 30 days)",
         ),
         "all": ("1=1", "all canonical tasks"),
         "waiting": ("t.status='waiting'", "waiting tasks"),
+        "blocked": ("t.status='blocked'", "blocked tasks"),
         "done": ("t.status IN ('done','canceled')", "completed and canceled tasks"),
     }
     if view not in views:
-        raise ValueError("task view must be current, all, waiting, or done")
+        raise ValueError("task view must be current, all, waiting, blocked, or done")
     predicate, description = views[view]
     rows = conn.execute(
         f"""SELECT t.task_id, t.status, t.due_date, t.owner, t.title, COALESCE(p.canonical_name, ''), COALESCE(c.canonical_name, ''), t.confidence, t.manual_status_locked
            FROM tasks t LEFT JOIN people p ON p.person_id=t.related_person_id LEFT JOIN companies c ON c.company_id=t.related_company_id
            WHERE {predicate}
-           ORDER BY CASE WHEN t.status IN ('open','waiting') THEN 0 ELSE 1 END, CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date, t.updated_at DESC LIMIT ?""",
+           ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'waiting' THEN 1
+                                WHEN 'blocked' THEN 2 ELSE 3 END,
+                    CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END,
+                    t.due_date, t.updated_at DESC LIMIT ?""",
         (limit,),
     ).fetchall()
     if not rows:
@@ -298,7 +302,7 @@ def show_tasks(
         table.add_row(*cells)
     console.print(table)
     console.print(
-        "[dim]Views: current, all, waiting, done  ·  Actions: ID open|waiting|done|canceled  ·  ID dive for source-backed investigation[/dim]\n"
+        "[dim]Views: current, all, waiting, blocked, done  ·  Actions: ID open|waiting|blocked|done|canceled  ·  ID dive for source-backed investigation[/dim]\n"
     )
 
 

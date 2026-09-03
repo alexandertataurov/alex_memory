@@ -4,13 +4,18 @@ import asyncio
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import UTC, datetime
 from io import StringIO
 from rich.console import Console
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from alex_memory.models import AIAnalysisResult
-from alex_memory.person_profile import build_person_profile, profile_summary_package
+from alex_memory.person_profile import (
+    _action_items,
+    build_person_profile,
+    profile_summary_package,
+)
 from alex_memory.ai.repository import claim_ai_jobs, save_ai_success
 from alex_memory.profile_enrichment import (
     drain_queued_profile_scan,
@@ -176,6 +181,84 @@ class PersonProfileTests(unittest.TestCase):
         profile = build_person_profile(self.conn, int(self.person_id))
 
         self.assertEqual(["contract renewal"], profile["topics"])
+
+    def test_actions_keep_workflow_staleness_and_uncertainty_separate(self) -> None:
+        self.conn.executemany(
+            """INSERT INTO tasks(
+                   title,normalized_title,status,owner,related_person_id,source_chat_id,
+                   confidence,manual_status_locked,created_at,updated_at
+               ) VALUES (?,?,?,?,?,?,?,1,?,?)""",
+            [
+                (
+                    "Act now",
+                    "act now",
+                    "open",
+                    "me",
+                    self.person_id,
+                    100,
+                    1.0,
+                    "2026-09-03",
+                    "2026-09-03",
+                ),
+                (
+                    "Waiting old",
+                    "waiting old",
+                    "waiting",
+                    "other",
+                    self.person_id,
+                    100,
+                    0.1,
+                    "2026-07-01",
+                    "2026-07-01",
+                ),
+                (
+                    "Blocked old",
+                    "blocked old",
+                    "blocked",
+                    "me",
+                    self.person_id,
+                    100,
+                    0.1,
+                    "2026-07-01",
+                    "2026-07-01",
+                ),
+                (
+                    "Stale open",
+                    "stale open",
+                    "open",
+                    "me",
+                    self.person_id,
+                    100,
+                    1.0,
+                    "2026-07-01",
+                    "2026-07-01",
+                ),
+            ],
+        )
+        self.conn.commit()
+        changes_before = self.conn.total_changes
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+        actions = _action_items(profile, as_of=datetime(2026, 9, 3, tzinfo=UTC))
+
+        self.assertEqual(changes_before, self.conn.total_changes)
+        by_title = {item["title"]: item for item in actions}
+        self.assertEqual("blocked", by_title["Blocked old"]["workflow_state"])
+        self.assertTrue(by_title["Blocked old"]["is_stale"])
+        self.assertEqual("uncertain", by_title["Blocked old"]["certainty"])
+        self.assertEqual("BLOCKED", by_title["Blocked old"]["action_state"])
+        self.assertTrue(by_title["Waiting old"]["is_stale"])
+        self.assertEqual("uncertain", by_title["Waiting old"]["certainty"])
+        self.assertEqual("WAITING", by_title["Waiting old"]["action_state"])
+        self.assertEqual(
+            ["Act now", "Waiting old", "Blocked old", "Stale open"],
+            [
+                item["title"]
+                for item in actions
+                if item["title"]
+                in {"Act now", "Waiting old", "Blocked old", "Stale open"}
+            ],
+        )
 
     def test_relationship_other_endpoint_uses_type_and_id(self) -> None:
         now = "2026-08-24T12:00:00+00:00"

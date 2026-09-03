@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     normalized_title TEXT NOT NULL,
     details TEXT,
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'waiting', 'done', 'canceled')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'waiting', 'blocked', 'done', 'canceled')),
     owner TEXT NOT NULL DEFAULT 'me',
     related_person_id INTEGER,
     related_company_id INTEGER,
@@ -1472,6 +1472,56 @@ def _add_global_snapshot_payload(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "global_state_snapshots", "rendered_state TEXT")
 
 
+def _upgrade_task_lifecycle(conn: sqlite3.Connection) -> None:
+    """Allow blocked canonical tasks without changing existing task rows."""
+    conn.execute("DROP INDEX IF EXISTS idx_tasks_status_due")
+    conn.execute("DROP INDEX IF EXISTS idx_tasks_match")
+    conn.execute("ALTER TABLE tasks RENAME TO tasks_pre_lifecycle")
+    conn.executescript(
+        """
+        CREATE TABLE tasks (
+            task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            normalized_title TEXT NOT NULL,
+            details TEXT,
+            status TEXT NOT NULL DEFAULT 'open'
+                CHECK (status IN ('open', 'waiting', 'blocked', 'done', 'canceled')),
+            owner TEXT NOT NULL DEFAULT 'me',
+            related_person_id INTEGER,
+            related_company_id INTEGER,
+            related_project_id INTEGER,
+            source_chat_id INTEGER,
+            due_date TEXT,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            source_item_id INTEGER,
+            source_claim_id INTEGER,
+            manual_updated_at TEXT,
+            manual_status_locked INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_tasks_status_due ON tasks(status, due_date);
+        CREATE INDEX idx_tasks_match
+        ON tasks(normalized_title, source_chat_id, related_person_id);
+        """
+    )
+    conn.execute(
+        """INSERT INTO tasks(
+               task_id,title,normalized_title,details,status,owner,related_person_id,
+               related_company_id,related_project_id,source_chat_id,due_date,confidence,
+               source_item_id,source_claim_id,manual_updated_at,manual_status_locked,
+               created_at,updated_at
+           )
+           SELECT task_id,title,normalized_title,details,status,owner,related_person_id,
+                  related_company_id,related_project_id,source_chat_id,due_date,confidence,
+                  source_item_id,source_claim_id,manual_updated_at,manual_status_locked,
+                  created_at,updated_at
+           FROM tasks_pre_lifecycle"""
+    )
+    conn.execute("DROP TABLE tasks_pre_lifecycle")
+    rebuild_fts(conn)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "bootstrap_schema", _bootstrap_schema),
     Migration(2, "compatibility_columns", _apply_compatibility_columns),
@@ -1508,6 +1558,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     ),
     Migration(22, "deep_dive_session_metadata", _add_deep_dive_session_metadata),
     Migration(23, "global_snapshot_payload", _add_global_snapshot_payload),
+    Migration(24, "task_lifecycle_blocked", _upgrade_task_lifecycle),
 )
 SCHEMA_VERSION = MIGRATIONS[-1].version
 

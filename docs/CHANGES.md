@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-03 — Canonical blocked task lifecycle
+
+Canonical task workflow now supports `open`, `waiting`, `blocked`, `done`, and
+`canceled`, while due/scheduling, staleness, and certainty stay independent in
+the bounded action read model. Migration 24 preserves every task row, manual
+lock, source-claim lineage, and index, then restores the existing FTS-derived
+task index from authoritative rows. No replay, backfill, repair, or live
+migration ran.
+
 ## 2026-09-03 — Literal Textual source/model rendering
 
 Dynamic Textual Labels, Statics, and profile/status updates now receive literal

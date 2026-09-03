@@ -25,7 +25,7 @@ ITEM_KINDS = frozenset(
 TASK_KINDS = frozenset(
     {"task", "follow_up", "deadline", "promise_by_me", "promise_to_me"}
 )
-TASK_STATUSES = frozenset({"open", "waiting", "done", "canceled"})
+TASK_STATUSES = frozenset({"open", "waiting", "blocked", "done", "canceled"})
 INFORMATIONAL_KINDS = ITEM_KINDS - TASK_KINDS
 OWNERS = frozenset({"me", "other", "shared", "unknown"})
 ITEM_FIELDS = frozenset(

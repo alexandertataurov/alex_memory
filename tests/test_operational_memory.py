@@ -1852,6 +1852,63 @@ class OperationalMemoryTests(unittest.TestCase):
                 ).fetchone(),
             )
 
+    def test_blocked_task_lifecycle_preserves_manual_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            conn = connect(settings)
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,owner,source_chat_id,
+                   confidence,created_at,updated_at)
+                   VALUES ('Await regulator','await regulator','open','me',100,1,'now','now')"""
+            )
+
+            self.assertTrue(manually_update_task(conn, 1, "blocked"))
+            TaskReconciler(conn, settings).process_item(
+                (1, "task", "Await regulator", "", "open", "me", None, 0.96, 100),
+                None,
+                None,
+                None,
+            )
+
+            self.assertEqual(
+                ("blocked", 1),
+                conn.execute(
+                    "SELECT status,manual_status_locked FROM tasks WHERE task_id=1"
+                ).fetchone(),
+            )
+            self.assertEqual(
+                1,
+                conn.execute(
+                    "SELECT COUNT(*) FROM task_events WHERE task_id=1 AND event_type='manual_update'"
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                1, conn.execute("SELECT COUNT(*) FROM review_queue").fetchone()[0]
+            )
+            TaskReconciler(conn, settings).process_item(
+                (
+                    2,
+                    "task",
+                    "Supplier unavailable",
+                    "",
+                    "blocked",
+                    "me",
+                    None,
+                    0.96,
+                    101,
+                ),
+                None,
+                None,
+                None,
+            )
+            self.assertEqual(
+                "blocked",
+                conn.execute(
+                    "SELECT status FROM tasks WHERE normalized_title='supplier unavailable'"
+                ).fetchone()[0],
+            )
+            conn.close()
+
     def test_unanchored_similar_tasks_do_not_merge(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             settings = make_settings(Path(directory))

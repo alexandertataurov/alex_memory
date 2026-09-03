@@ -460,10 +460,12 @@ def _relationships(conn: sqlite3.Connection, person_id: int) -> list[dict]:
 
 def _tasks(conn: sqlite3.Connection, person_id: int) -> list[dict]:
     rows = conn.execute(
-        """SELECT task_id,title,details,status,owner,due_date,updated_at,related_company_id,
-                  related_project_id,source_claim_id,source_chat_id,source_item_id
-           FROM tasks WHERE related_person_id=? AND status IN ('open','waiting')
-           ORDER BY CASE status WHEN 'waiting' THEN 0 ELSE 1 END,due_date,updated_at DESC LIMIT 16""",
+        """SELECT task_id,title,details,status,owner,due_date,updated_at,confidence,
+                  related_company_id,related_project_id,source_claim_id,source_chat_id,
+                  source_item_id
+           FROM tasks WHERE related_person_id=? AND status IN ('open','waiting','blocked')
+           ORDER BY CASE status WHEN 'waiting' THEN 0 WHEN 'blocked' THEN 1 ELSE 2 END,
+                    due_date,updated_at DESC LIMIT 16""",
         (person_id,),
     ).fetchall()
     return [
@@ -477,6 +479,7 @@ def _tasks(conn: sqlite3.Connection, person_id: int) -> list[dict]:
                 "owner",
                 "due_date",
                 "updated_at",
+                "confidence",
                 "company_id",
                 "project_id",
                 "source_claim_id",
@@ -911,7 +914,10 @@ def _action_items(profile: dict, *, as_of: datetime | None = None) -> list[dict]
             record["due"] = value.get("due_date") or value.get("due_at")
             record["project_status"] = project_status.get(value.get("project_id"))
             record["certainty"] = _certainty(record)
-            record["action_state"] = _action_state(record, now)
+            record["workflow_state"] = _workflow_state(record)
+            record["is_scheduled"] = _future_date(record.get("due"), now)
+            record["is_stale"] = _is_stale(record, now)
+            record["action_state"] = _presentation_state(record)
             records.append(record)
     order = {
         "ACTION": 0,
@@ -944,24 +950,36 @@ def _certainty(record: dict) -> str:
     return "uncertain"
 
 
-def _action_state(record: dict, now: datetime) -> str:
-    status, owner = (
-        str(record.get("status") or "open"),
-        str(record.get("owner") or "unknown"),
-    )
+def _workflow_state(record: dict) -> str:
+    """Normalize lifecycle values without turning due/stale/certainty into state."""
+    status = str(record.get("status") or "open")
     if status in {"done", "canceled", "cancelled", "resolved"}:
-        return "DONE"
-    if status == "blocked" or record.get("project_status") == "blocked":
-        return "BLOCKED"
-    if status == "waiting" or owner == "other":
-        return "WAITING"
-    if status == "snoozed" or _future_date(record.get("due"), now):
-        return "SCHEDULED"
-    if owner == "unknown" or float(record.get("confidence") or 0) < 0.75:
-        return "UNCERTAIN"
+        return "done" if status in {"done", "resolved"} else "canceled"
+    if status in {"open", "waiting", "blocked"}:
+        return status
+    return "open"
+
+
+def _is_stale(record: dict, now: datetime) -> bool:
     last = _parse_datetime(record.get("last_activity_at"))
-    if last is not None and now - last >= timedelta(days=30):
+    return bool(last is not None and now - last >= timedelta(days=30))
+
+
+def _presentation_state(record: dict) -> str:
+    """Choose one deterministic display group from independently retained signals."""
+    workflow = str(record["workflow_state"])
+    if workflow in {"done", "canceled"}:
+        return "DONE"
+    if workflow == "blocked" or record.get("project_status") == "blocked":
+        return "BLOCKED"
+    if workflow == "waiting" or record.get("owner") == "other":
+        return "WAITING"
+    if record.get("is_stale"):
         return "STALE"
+    if record.get("is_scheduled"):
+        return "SCHEDULED"
+    if record.get("certainty") == "uncertain":
+        return "UNCERTAIN"
     return "ACTION"
 
 

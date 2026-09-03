@@ -88,7 +88,7 @@ def fetch_findings(conn: sqlite3.Connection, limit: int = 60) -> list[tuple]:
               AND LOWER(i.title) NOT LIKE '%one-time code%'
           ))
         ORDER BY
-            CASE WHEN i.status IN ('open', 'waiting') THEN 0 ELSE 1 END,
+            CASE WHEN i.status IN ('open', 'waiting', 'blocked') THEN 0 ELSE 1 END,
             CASE WHEN i.due_date IS NULL THEN 1 ELSE 0 END,
             i.due_date, COALESCE(i.source_date, '') DESC, i.item_id DESC
         LIMIT ?

@@ -15,6 +15,7 @@ from alex_memory.database import (
     _add_ai_job_retry_schedule,
     _add_deep_dive_session_metadata,
     _add_global_snapshot_payload,
+    _upgrade_task_lifecycle,
     connect,
     migration_history,
     schema_version,
@@ -54,6 +55,54 @@ class MigrationLedgerTests(unittest.TestCase):
                 conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_model_usage'"
                 ).fetchone()
+            )
+        finally:
+            conn.close()
+
+    def test_task_lifecycle_upgrade_preserves_rows_and_allows_blocked(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE tasks (
+                    task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL, normalized_title TEXT NOT NULL, details TEXT,
+                    status TEXT NOT NULL DEFAULT 'open'
+                        CHECK (status IN ('open', 'waiting', 'done', 'canceled')),
+                    owner TEXT NOT NULL DEFAULT 'me', related_person_id INTEGER,
+                    related_company_id INTEGER, related_project_id INTEGER,
+                    source_chat_id INTEGER, due_date TEXT,
+                    confidence REAL NOT NULL DEFAULT 1.0, source_item_id INTEGER,
+                    source_claim_id INTEGER,
+                    manual_updated_at TEXT, manual_status_locked INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+                CREATE INDEX idx_tasks_status_due ON tasks(status, due_date);
+                CREATE INDEX idx_tasks_match
+                ON tasks(normalized_title, source_chat_id, related_person_id);
+                INSERT INTO tasks(
+                    title,normalized_title,status,owner,manual_status_locked,created_at,updated_at
+                ) VALUES ('Preserve me','preserve me','waiting','other',1,'then','now');
+                """
+            )
+
+            with patch("alex_memory.database.rebuild_fts"):
+                with conn:
+                    _upgrade_task_lifecycle(conn)
+
+            self.assertEqual(
+                ("Preserve me", "waiting", "other", 1),
+                conn.execute(
+                    "SELECT title,status,owner,manual_status_locked FROM tasks"
+                ).fetchone(),
+            )
+            conn.execute(
+                """INSERT INTO tasks(title,normalized_title,status,created_at,updated_at)
+                   VALUES ('Blocked','blocked','blocked','now','now')"""
+            )
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(tasks)")}
+            self.assertTrue(
+                {"idx_tasks_status_due", "idx_tasks_match"}.issubset(indexes)
             )
         finally:
             conn.close()

@@ -38,7 +38,7 @@ secret in a summary or item.
 6. "I will", "I'll", "я сделаю", "отправлю", "проверю", etc. from ME should normally become promise_by_me or task when operationally useful.
 7. If ME is waiting for another person, use status=waiting where appropriate.
 8. If a task is clearly completed inside the same batch, mark status=done.
-9. For project, payment, person, company, and important_fact items use status=informational. Task-like items use open, waiting, done, or canceled.
+9. For project, payment, person, company, and important_fact items use status=informational. Task-like items use open, waiting, blocked, done, or canceled. Use blocked only when the source explicitly states an external dependency prevents progress.
 10. due_date must be YYYY-MM-DD only when it can be resolved unambiguously from the text and message date; otherwise null.
 11. Keep title concise and action-oriented. Put necessary context in details.
 12. Preserve the natural language of the conversation for title/details when practical.

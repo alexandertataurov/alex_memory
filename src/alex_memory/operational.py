@@ -454,7 +454,7 @@ class TaskReconciler:
                     title,
                     normalized,
                     details,
-                    status if status in {"open", "waiting"} else "open",
+                    status if status in {"open", "waiting", "blocked"} else "open",
                     owner,
                     person_id,
                     company_id,
@@ -482,7 +482,9 @@ class TaskReconciler:
             )
             return task_id
         next_status = (
-            status if status in {"open", "waiting", "done", "canceled"} else "open"
+            status
+            if status in {"open", "waiting", "blocked", "done", "canceled"}
+            else "open"
         )
         self.conn.execute(
             """UPDATE tasks SET title=?,details=?,status=?,due_date=COALESCE(?,due_date),
@@ -568,7 +570,10 @@ class TaskReconciler:
             ("tasks.related_project_id", project_id),
         ]
         known = [(column, value) for column, value in anchors if value is not None]
-        predicates = ["tasks.source_chat_id=?", "tasks.status IN ('open','waiting')"]
+        predicates = [
+            "tasks.source_chat_id=?",
+            "tasks.status IN ('open','waiting','blocked')",
+        ]
         params: list[object] = [chat_id]
         if known:
             predicates.append(
@@ -1236,8 +1241,8 @@ def _task_dicts(rows: list[tuple]) -> list[dict]:
 
 def manually_update_task(conn: sqlite3.Connection, task_id: int, status: str) -> bool:
     """User actions are authoritative and prevent later AI state flips."""
-    if status not in {"open", "waiting", "done", "canceled"}:
-        raise ValueError("status must be open, waiting, done, or canceled")
+    if status not in {"open", "waiting", "blocked", "done", "canceled"}:
+        raise ValueError("status must be open, waiting, blocked, done, or canceled")
     row = conn.execute(
         "SELECT status,manual_status_locked FROM tasks WHERE task_id = ?", (task_id,)
     ).fetchone()

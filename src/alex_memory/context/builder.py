@@ -132,7 +132,7 @@ class ContextBuilder:
         if request.chat_id is not None:
             rows = self.conn.execute(
                 """SELECT related_person_id,related_company_id,related_project_id
-                   FROM tasks WHERE source_chat_id=? AND updated_at<=? AND status IN ('open','waiting')
+                   FROM tasks WHERE source_chat_id=? AND updated_at<=? AND status IN ('open','waiting','blocked')
                    UNION ALL
                    SELECT person_id,company_id,project_id FROM ai_items
                    WHERE source_chat_id=? AND source_date<=?""",
@@ -299,7 +299,7 @@ class ContextBuilder:
     ) -> list[dict]:
         if historical:
             return []
-        predicates = ["status IN ('open','waiting')", "updated_at<=?"]
+        predicates = ["status IN ('open','waiting','blocked')", "updated_at<=?"]
         params: list[object] = [as_of]
         ids_by_type = {
             kind: [
@@ -717,8 +717,11 @@ class ContextBuilder:
                 "as_of": as_of,
                 "historical_fidelity": "partial: task, project, and open-loop lifecycle state is unavailable",
             }
-        open_tasks, waiting = self.conn.execute(
-            "SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END),SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) FROM tasks WHERE status IN ('open','waiting') AND updated_at<=?",
+        open_tasks, waiting, blocked = self.conn.execute(
+            "SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END),"
+            "SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END),"
+            "SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) "
+            "FROM tasks WHERE status IN ('open','waiting','blocked') AND updated_at<=?",
             (as_of,),
         ).fetchone()
         projects = self.conn.execute(
@@ -735,6 +738,7 @@ class ContextBuilder:
             "as_of": as_of,
             "open_tasks": int(open_tasks or 0),
             "waiting_tasks": int(waiting or 0),
+            "blocked_tasks": int(blocked or 0),
             "active_projects": int(projects[0] or 0),
             "at_risk_projects": int(projects[1] or 0),
             "people_requiring_attention": [

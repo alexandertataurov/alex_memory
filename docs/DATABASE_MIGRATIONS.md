@@ -49,6 +49,11 @@ Run `make db-check` to see the active schema version without inspecting tables.
 22. `deep_dive_session_metadata` adds reproducible Task Deep Dive parameters.
 23. `global_snapshot_payload` adds structured and rendered snapshot fields
     without rewriting older `state_json` text rows.
+24. `task_lifecycle_blocked` rebuilds only `tasks` to extend its canonical
+    lifecycle CHECK constraint with `blocked`, preserving existing task rows,
+    manual locks, source-claim lineage, and task indexes. It rebuilds the
+    existing FTS-derived task index from authoritative rows; it creates no task
+    history and does not replay evidence.
 
 Existing installations that predate this ledger are adopted safely: their next
 database open runs the idempotent sequence and records it. This is a baseline

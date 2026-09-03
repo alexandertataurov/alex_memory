@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 50] Normalize action lifecycle and derived action
+  state.
+  - Notion task: `3c7f52e9-545b-8178-91c0-f9a4efd80efa`; completed 2026-09-03.
+  - Canonical tasks now support `open` / `waiting` / `blocked` / `done` /
+    `canceled`; manual locks remain authoritative. Due/scheduling, stale age,
+    and certainty are independent bounded presentation signals.
+  - Migration 24 preserves task rows, source-claim lineage, indexes, and FTS
+    parity; no replay, backfill, repair, or live migration ran.
+  - Verification: full repository gate passed (380 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks).
+
 - [x] [Notion / Sequence 30] Harden Textual rendering against markup in
   source/model text.
   - Notion task: `3c7f52e9-545b-8173-93dc-df2063760567`; completed 2026-09-03.

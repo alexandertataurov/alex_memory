@@ -309,7 +309,15 @@ class AlexMemoryApp:
                     continue
                 status = Prompt.ask(
                     "Task action",
-                    choices=["open", "waiting", "done", "canceled", "dive", "back"],
+                    choices=[
+                        "open",
+                        "waiting",
+                        "blocked",
+                        "done",
+                        "canceled",
+                        "dive",
+                        "back",
+                    ],
                     default="back",
                 )
                 if status == "back":
@@ -1087,7 +1095,7 @@ class AlexMemoryApp:
 
     def _confirm_task_update(self, task_id: int, status: str) -> bool:
         assert self.conn is not None
-        if status not in {"open", "waiting", "done", "canceled"}:
+        if status not in {"open", "waiting", "blocked", "done", "canceled"}:
             return True
         row = self.conn.execute(
             """SELECT t.title,t.details,t.status,t.manual_status_locked,t.due_date,

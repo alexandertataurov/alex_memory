@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Canonical task workflow now includes `blocked`; due/scheduling, stale age,
+  and certainty remain independent bounded presentation signals. Migration 24
+  preserves existing task rows and source-claim lineage while rebuilding the
+  existing FTS task index from authoritative rows.
 - Textual dynamic Labels/Statics now render source/model strings as literal
   Rich `Text`, preventing markup-like contact and message content from being
   interpreted.

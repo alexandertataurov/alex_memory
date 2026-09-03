@@ -222,7 +222,7 @@ def fetch_action_items(conn: sqlite3.Connection, limit: int = 60) -> list[tuple]
             'task', 'follow_up', 'deadline',
             'promise_by_me', 'promise_to_me'
         )
-          AND i.status IN ('open', 'waiting')
+          AND i.status IN ('open', 'waiting', 'blocked')
           AND COALESCE(c.is_bot, 0) = 0
         ORDER BY
             CASE WHEN i.status = 'waiting' THEN 0 ELSE 1 END,
@@ -262,7 +262,7 @@ def get_ai_counts(
             'task', 'follow_up', 'deadline',
             'promise_by_me', 'promise_to_me'
         )
-          AND i.status IN ('open', 'waiting')
+          AND i.status IN ('open', 'waiting', 'blocked')
           AND COALESCE(c.is_bot, 0) = 0
           AND {visible}
         """
