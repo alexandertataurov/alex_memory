@@ -159,6 +159,14 @@ incompleteness honestly.
 
 ## Decisions and progress
 
+- 2026-09-03: AM-120 completed the smallest authorized graph-reader increment:
+  `ContextBuilder` now consumes the bounded accepted/manual graph contract with
+  its existing limits and temporal semantics. No further reader cutover is
+  authorized here. AM-122's qualitative representative-contact review remains
+  a parked, non-blocking owner gate; it can reopen only a demonstrated bounded
+  profile defect. With AM-118 remaining a coordination umbrella, no
+  independently authorized repository leaf is currently queued under this
+  plan.
 - 2026-08-26: a current-source control-plane audit confirms the historical
   baseline remains a historical review, not a statement of present runtime.
   `make check` passes 223 temporary-SQLite tests with Ruff, formatting, and

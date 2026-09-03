@@ -190,6 +190,12 @@ or any observed profile write. It deliberately does not decide identity truth,
 historical coherence, connection usefulness, or briefing usefulness; those are
 the owner's private review. The report contains no names, IDs, or source text.
 
+The qualitative owner review is an acceptance gate for AM-122 alone, not a
+blocker for another repository task. Keep it parked until the owner supplies
+the representative-contact review. A demonstrated Identity, Attribution,
+History, Connection, Commitment, Briefing, or Grounding defect may reopen only
+that bounded fix; otherwise no further AM-122 implementation is authorized.
+
 ## Attribution correctness increment — 2026-08-30
 
 Claim-backed profile records with no remaining cited source are omitted from the

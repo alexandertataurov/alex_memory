@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from typing import cast
 
-from ..utils import utc_now
+from ..utils import canonical_utc_timestamp, utc_now
 from .ranking import highest, rank_item
 
 
@@ -586,6 +587,65 @@ def current_authoritative_edges(
         ),
         reverse=True,
     )[:bounded_limit]
+
+
+def shared_authoritative_connections(
+    conn: sqlite3.Connection,
+    first: tuple[str, int],
+    second: tuple[str, int],
+    as_of: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Return bounded authoritative shared neighbors for exactly two endpoints.
+
+    This is an intersection of two existing one-hop graph reads, never a graph
+    traversal. Each returned leg is the original authoritative edge, preserving
+    its manual or exact-evidence provenance.
+    """
+    if first == second:
+        return []
+    instant = canonical_utc_timestamp(as_of) if as_of is not None else utc_now()
+
+    def neighbors(seed: tuple[str, int]) -> dict[tuple[str, int], dict[str, object]]:
+        selected: dict[tuple[str, int], dict[str, object]] = {}
+        for edge in current_authoritative_edges(conn, [seed], instant, limit=80):
+            from_endpoint = (str(edge["from_type"]), cast(int, edge["from_id"]))
+            to_endpoint = (str(edge["to_type"]), cast(int, edge["to_id"]))
+            if from_endpoint == seed:
+                other = to_endpoint
+            elif to_endpoint == seed:
+                other = from_endpoint
+            else:
+                continue
+            if other in {first, second}:
+                continue
+            selected.setdefault(other, edge)
+        return selected
+
+    first_neighbors = neighbors(first)
+    second_neighbors = neighbors(second)
+    results = [
+        {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "first_edge": first_neighbors[(entity_type, entity_id)],
+            "second_edge": second_neighbors[(entity_type, entity_id)],
+        }
+        for entity_type, entity_id in first_neighbors.keys() & second_neighbors.keys()
+    ]
+    results.sort(
+        key=lambda result: (
+            str(result["entity_type"]),
+            int(cast(int, result["entity_id"])),
+        )
+    )
+    results.sort(
+        key=lambda result: max(
+            str(cast(dict[str, object], result["first_edge"])["valid_from"]),
+            str(cast(dict[str, object], result["second_edge"])["valid_from"]),
+        ),
+        reverse=True,
+    )
+    return results[:20]
 
 
 def _current_task_context_edges(

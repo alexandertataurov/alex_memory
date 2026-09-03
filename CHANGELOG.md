@@ -17,6 +17,18 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- AM-124 adds one reusable, read-only shared-connections graph query for exactly
+  `A -> C <- B`. It intersects two bounded authoritative one-hop reads, returns
+  at most 20 typed canonical shared endpoints with both leg records, and keeps
+  manual/automatic provenance honest. No recursive traversal, ranking, writer,
+  schema, compatibility conversion, replay, repair, backfill, or live action
+  changed.
+- AM-122's 10--20-contact qualitative acceptance requirement remains unchanged,
+  but is now explicitly a parked, non-blocking owner gate. The structural,
+  read-only acceptance harness remains the only automated portion; a later owner
+  review can reopen only a demonstrated bounded profile defect. No runtime,
+  schema, source-data, replay, backfill, repair, graph-reader, or live operation
+  changed.
 - AM-120 now routes `ContextBuilder` relationship expansion through the bounded
   authoritative graph query, preserving its existing depth/frontier/result
   limits, endpoint traversal, and temporal `as_of` behavior. Automatic edges

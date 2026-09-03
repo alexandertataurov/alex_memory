@@ -92,6 +92,20 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Now
 
+- [ ] AM-124 [P2] [People and projects / Intelligence] — Add one bounded,
+  read-only two-hop shared-connections query for two canonical entities.
+  - Plan: `docs/exec-plans/active/AM-124-shared-connections.md`.
+  - Authorized 2026-09-03: intersect at most 80 authoritative one-hop edges
+    per endpoint and return at most 20 shared canonical people, companies, or
+    projects. Each leg retains its existing authority/evidence contract;
+    compatibility rows, graph mutation, recursive traversal, ranking, schema
+    work, replay, repair, and live-state actions remain excluded.
+  - Progress 2026-09-03: implemented the reusable read-only intersection over
+    `current_authoritative_edges()` with UTC `as_of`, canonical typed identity,
+    per-leg provenance, deterministic ordering, and fixed edge/result bounds.
+    Focused temporary-SQLite coverage passes; no writer, schema, compatibility
+    reader, replay, repair, backfill, or live-state action ran.
+
 - [ ] AM-120 [P0] [Temporal knowledge graph / Projection] — Project resolved
   semantic claims into one temporal graph with explicit authority and exact
   edge evidence; derive canonical operational state only through allowlisted
@@ -284,6 +298,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     qualitative owner review is limited to demonstrated identity, attribution,
     historical coherence, useful connections, commitments, and briefing value;
     do not resume implementation without such a defect.
+  - Owner gate 2026-09-03: this acceptance requirement is parked and
+    non-blocking for the repository execution queue. The owner selects and
+    reviews 10--20 representative contacts later; reopen only a demonstrated
+    Identity, Attribution, History, Connection, Commitment, Briefing, or
+    Grounding defect. Do not infer further AM-122 implementation from the
+    outstanding review.
   - Owner validation gate: final acceptance requires 10–20 real contacts across
     recent, dormant, group-only, multi-project, ambiguous, and sparse-evidence
     shapes. Every displayed claim must retain exact evidence or be unknown/
@@ -371,20 +391,6 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
     Deep Scan coverage by scoping visible counts, audit rows, and profile-job
     claims to the current extractor version. Legacy profile jobs remain durable
     history but cannot silently run or inflate v2 status. No live action ran.
-
-## Next
-
-- [ ] AM-124 [P2] [People and projects / Intelligence] — Define and implement
-  multi-hop/shared-counterparty intelligence only as a separate, bounded graph
-  product increment.
-  - Deferred 2026-09-03 from completed AM-121 by explicit owner decision.
-  - Before implementation, define the product question, hop and result limits,
-    temporal `as_of` behavior, endpoint/deduplication semantics, exact evidence
-    requirements for automatic paths, manual-authority handling, and focused
-    acceptance coverage. Do not infer this work from one-hop AM-121.
-  - Excludes graph ranking/recommendations, canonical mutation, relationship
-    conversion, writer/schema changes, replay/backfill/repair, and live-state
-    mutation unless separately authorized.
 
 ## Completed
 

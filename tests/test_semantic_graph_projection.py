@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from alex_memory.ai.repository import save_ai_success
@@ -11,6 +11,7 @@ from alex_memory.context.graph import (
     SemanticGraphProjector,
     context_builder_relationship_parity_gaps,
     current_authoritative_edges,
+    shared_authoritative_connections,
 )
 from alex_memory.context.improver import ContextGraphImprover
 from alex_memory.context.repository import ensure_relationship
@@ -1150,6 +1151,49 @@ class SemanticGraphProjectionTests(unittest.TestCase):
         )
 
         self.assertTrue(report["truncated"])
+
+    def test_shared_connections_intersects_manual_authoritative_legs(self) -> None:
+        resolver = EntityResolver(self.conn)
+        first = resolver.entity("person", "Ari", source="manual")
+        second = resolver.entity("project", "Amber", source="manual")
+        shared = resolver.entity("company", "Acme", source="manual")
+        assert first is not None and second is not None and shared is not None
+        for from_type, from_id, to_type, to_id, relationship_type in (
+            ("person", first, "company", shared, "works_for"),
+            ("project", second, "company", shared, "delivers_for"),
+        ):
+            ensure_relationship(
+                self.conn,
+                from_type,
+                from_id,
+                to_type,
+                to_id,
+                relationship_type,
+                0.95,
+                100,
+                1,
+                "2026-08-24T10:00:00+00:00",
+            )
+            SemanticGraphProjector(self.conn).project_manual_relationship(
+                from_type=from_type,
+                from_id=from_id,
+                to_type=to_type,
+                to_id=to_id,
+                relationship_type=relationship_type,
+                valid_from="2026-08-24T10:00:00+00:00",
+            )
+        results = shared_authoritative_connections(
+            self.conn,
+            ("person", first),
+            ("project", second),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            [("company", shared)],
+            [(result["entity_type"], result["entity_id"]) for result in results],
+        )
+        self.assertEqual("manual", results[0]["first_edge"]["authority_status"])
+        self.assertEqual("manual", results[0]["second_edge"]["authority_status"])
 
     def test_parity_diagnostic_classifies_unproven_task_context_without_ids(
         self,
