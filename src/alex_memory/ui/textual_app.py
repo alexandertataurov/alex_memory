@@ -55,6 +55,30 @@ def _literal_text(value: object) -> Text:
     return Text(str(value))
 
 
+def _home_preview_text(
+    overview: dict[str, object], result: PersonSearchResult, last_contact: str
+) -> str:
+    """Compose the existing-data Home preview for one canonical person."""
+    username = result.username or overview.get("username")
+    account = f" @{username}" if username else ""
+    matched = (
+        f"Matched via {result.matched_by} context.\n"
+        if result.matched_by in {"project", "company", "context"}
+        else ""
+    )
+    items = cast(list[str], overview["open_items"])
+    attention = (
+        "\n".join(f"• {item}" for item in items)
+        if items
+        else "unknown / insufficient evidence"
+    )
+    return (
+        f"{overview['name']}{account} · last {last_contact}\n"
+        f"{matched}CURRENT\n{overview['summary']}\n\n"
+        f"NEEDS ATTENTION\n{attention}"
+    )
+
+
 class HomeScreen(Screen[None]):
     BINDINGS = [
         Binding("ctrl+k", "palette", "Commands"),
@@ -139,7 +163,7 @@ class HomeScreen(Screen[None]):
             )
         if self.rows:
             view.index = 0
-            self._preview(self.rows[0].person_id)
+            self._preview(self.rows[0])
         else:
             self.query_one("#preview", Static).update(
                 _literal_text("No canonical people match this search.")
@@ -147,7 +171,7 @@ class HomeScreen(Screen[None]):
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if isinstance(event.item, PersonItem):
-            self._preview(event.item.result.person_id)
+            self._preview(event.item.result)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if isinstance(event.item, PersonItem):
@@ -163,21 +187,21 @@ class HomeScreen(Screen[None]):
     def action_palette(self) -> None:
         self.app.push_screen(CommandPalette(self.owner))
 
-    def _preview(self, value: int) -> None:
+    def _preview(self, result: PersonSearchResult) -> None:
         if self.owner.conn is None:
             return
-        overview = person_overview(self.owner.conn, value)
+        overview = person_overview(self.owner.conn, result.person_id)
         if not overview:
             return
-        items = cast(list[str], overview["open_items"])
-        detail = (
-            "\n".join(f"• {item}" for item in items)
-            if items
-            else "unknown / insufficient evidence"
-        )
         self.query_one("#preview", Static).update(
             _literal_text(
-                f"{overview['name']}\n{overview['summary']}\n\nOpen items\n{detail}"
+                _home_preview_text(
+                    overview,
+                    result,
+                    relative_datetime(
+                        result.last_contact_at, self.owner.settings.app_timezone
+                    ),
+                )
             )
         )
 

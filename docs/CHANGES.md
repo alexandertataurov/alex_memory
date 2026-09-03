@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-03 — Existing-data People preview context
+
+HomeScreen now composes its People preview from the existing search result and
+`person_overview` read model: username, localized last contact, current
+summary, bounded needs-attention items, and an honest project/company/context
+match explanation. This is read-only presentation with no new retrieval,
+writer, schema, migration, replay, backfill, repair, or live action.
+
 ## 2026-09-03 — Compact Profile primary navigation
 
 The Profile footer now reserves primary navigation for the eight existing

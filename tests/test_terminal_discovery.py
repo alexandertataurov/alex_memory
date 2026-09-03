@@ -12,7 +12,11 @@ from textual.widgets import ListView, ProgressBar, Static
 
 from alex_memory.app import AlexMemoryApp
 from alex_memory.database import connect
-from alex_memory.ui.discovery import relative_datetime, search_people
+from alex_memory.ui.discovery import (
+    PersonSearchResult,
+    relative_datetime,
+    search_people,
+)
 from alex_memory.ui.textual_app import (
     AlexMemoryTerminal,
     CommandPalette,
@@ -21,6 +25,7 @@ from alex_memory.ui.textual_app import (
     ProfileScreen,
     RecordDetailScreen,
     ScanScreen,
+    _home_preview_text,
     _literal_text,
 )
 from test_ai_pipeline import make_settings
@@ -64,6 +69,34 @@ def test_profile_navigation_keeps_only_eight_primary_destinations() -> None:
     assert bindings["d"].action == "scan"
     assert bindings["d"].show is False
     assert bindings["u"].action == "uncertain"
+
+
+def test_home_preview_uses_existing_context_and_explains_non_name_matches() -> None:
+    preview = _home_preview_text(
+        {
+            "name": "George",
+            "username": "george",
+            "summary": "Preparing the Cifra Markets launch.",
+            "open_items": ["Send launch brief", "Confirm legal review"],
+        },
+        PersonSearchResult(
+            person_id=7,
+            name="George",
+            username="george",
+            status="active",
+            last_contact_at="2026-08-24T08:40:00+00:00",
+            matched_by="project",
+            score=100,
+        ),
+        "today 12:40",
+    )
+
+    assert preview == (
+        "George @george · last today 12:40\n"
+        "Matched via project context.\n"
+        "CURRENT\nPreparing the Cifra Markets launch.\n\n"
+        "NEEDS ATTENTION\n• Send launch brief\n• Confirm legal review"
+    )
 
 
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:

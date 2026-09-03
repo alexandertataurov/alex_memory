@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 49] Improve People preview and explain search
+  matches.
+  - Notion task: `3c7f52e9-545b-8144-8a4f-d586eee48180`; completed 2026-09-03.
+  - Home previews now compose the existing username, localized last-contact
+    label, current summary, and bounded open-item list, and honestly explain
+    project/company/context search matches. No retrieval infrastructure, data
+    model, writer, schema, migration, replay, backfill, repair, or live action
+    changed.
+  - Verification: focused terminal preview tests and the full repository gate
+    passed.
+
 - [x] [Notion / Sequence 47] Consolidate person navigation and demote
   debug-only surfaces.
   - Notion task: `3c7f52e9-545b-8171-aff2-c0cb175a41e9`; completed 2026-09-03.

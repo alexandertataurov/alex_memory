@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- HomeScreen's People preview now shows the existing username, localized last
+  contact, concise current summary, and bounded needs-attention items. It also
+  explains project, company, or context-based search matches without adding a
+  retrieval path or changing data behavior.
 - Profile navigation now presents only Overview, Actions, Projects, Profile,
   Connections, Timeline, Messages, and Evidence as primary destinations. Deep
   Scan remains accessible by its existing shortcut and Command Palette command,
