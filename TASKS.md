@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 62] Temporal history — add explicit Changed
+  transitions.
+  - Notion task: `3d0f52e9-545b-8199-a434-c0349176e46f`; completed 2026-09-04.
+  - Person Profile now derives bounded Changed records only for direct,
+    interval-closed, evidence-complete professional role/company fact pairs.
+    Each record carries the exact evidence from both existing facts. No
+    generalized temporal engine, persistence, inference, migration, replay,
+    backfill, repair, or live action changed.
+  - Verification: focused temporary-SQLite Profile/Textual regressions and the
+    full repository gate passed.
+
 - [x] [Notion / Sequence 60] Temporal history — render supported current vs
   previous facts.
   - Notion task: `3d0f52e9-545b-8105-85b2-daf30c194a2d`; completed 2026-09-03.

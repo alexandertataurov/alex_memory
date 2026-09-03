@@ -271,6 +271,61 @@ class PersonProfileTests(unittest.TestCase):
 
         self.assertEqual(["Now"], [fact["temporal_state"] for fact in facts])
 
+    def test_profile_derives_an_evidence_complete_role_change(self) -> None:
+        claim_id = self.conn.execute(
+            "SELECT source_claim_id FROM context_facts WHERE predicate='capability'"
+        ).fetchone()[0]
+        current_id = self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,observed_at,
+                   confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'professional.role','"Legal lead"',?,?,0.9,?,?,?)""",
+            (
+                self.person_id,
+                "2026-08-24T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+                claim_id,
+                "2026-08-24T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+            ),
+        ).lastrowid
+        self.conn.execute(
+            """INSERT INTO context_facts(
+                   subject_type,subject_id,predicate,value_json,valid_from,valid_to,is_current,
+                   superseded_by_fact_id,observed_at,confidence,source_claim_id,created_at,updated_at
+               ) VALUES ('person',?,'professional.role','"Counsel"',?, ?,0,?,?,0.9,?,?,?)""",
+            (
+                self.person_id,
+                "2026-07-01T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+                current_id,
+                "2026-08-24T12:00:00+00:00",
+                claim_id,
+                "2026-08-24T12:00:00+00:00",
+                "2026-08-24T12:00:00+00:00",
+            ),
+        )
+        self.conn.commit()
+
+        profile = build_person_profile(self.conn, int(self.person_id))
+
+        self.assertEqual(
+            ["Counsel → Legal lead"],
+            [change["display_value"] for change in profile["changes"]],
+        )
+        self.assertEqual("Changed", profile["changes"][0]["temporal_state"])
+        self.assertTrue(profile["changes"][0]["evidence"])
+        self.assertIn("Changed — Changes", _profile_sections(profile["changes"]))
+        output = StringIO()
+        show_profile(
+            profile,
+            "person",
+            Console(file=output, force_terminal=False, width=160),
+            section="context",
+        )
+        self.assertIn("Changed — Changes", output.getvalue())
+        self.assertIn("Counsel → Legal lead", output.getvalue())
+
     def test_profile_exposes_pending_raw_conversation_evidence(self) -> None:
         self.conn.execute(
             """INSERT INTO current_conversation_context(

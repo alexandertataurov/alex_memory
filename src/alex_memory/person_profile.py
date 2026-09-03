@@ -28,6 +28,8 @@ _PROFILE_FIELD_PRESENTATION = {
     "personal.family": ("Private details", "Family"),
 }
 
+_TRANSITION_PREDICATES = frozenset({"professional.role", "professional.company"})
+
 
 def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
     """Return one bounded profile without writing derived or canonical state."""
@@ -83,6 +85,7 @@ def build_person_profile(conn: sqlite3.Connection, person_id: int) -> dict:
             for record in profile[section]
             if record.get("source_claim_id") is None or record.get("evidence")
         ]
+    profile["changes"] = _fact_transitions(profile["facts"])
     profile["summary_evidence"] = _collect_evidence(profile)[:6]
     profile["private_details"] = [
         item
@@ -354,7 +357,7 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
             continue
         row = conn.execute(
             """SELECT fact_id,predicate,value_json,valid_from,confidence,source_claim_id,
-                      source_chat_id,source_message_id,source_ai_item_id
+                      source_chat_id,source_message_id,source_ai_item_id,superseded_by_fact_id
                FROM context_facts WHERE superseded_by_fact_id=? AND is_current=0
                  AND valid_from IS NOT NULL AND valid_to IS NOT NULL
                ORDER BY valid_to DESC,fact_id DESC LIMIT 1""",
@@ -373,6 +376,7 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
                     "source_chat_id",
                     "source_message_id",
                     "source_ai_item_id",
+                    "superseded_by_fact_id",
                 ),
             )
             prior["temporal_state"] = "Previously"
@@ -384,6 +388,44 @@ def _facts(conn: sqlite3.Connection, person_id: int) -> list[dict]:
         )
         if fact
     ]
+
+
+def _fact_transitions(facts: list[dict]) -> list[dict]:
+    """Derive bounded, evidence-complete transitions from direct fact pairs."""
+    current = {
+        int(fact["fact_id"]): fact
+        for fact in facts
+        if fact.get("temporal_state") == "Now"
+    }
+    transitions = []
+    for previous in facts:
+        if previous.get("temporal_state") != "Previously":
+            continue
+        # The prior record is selected only through its direct supersession link.
+        successor = current.get(int(previous.get("superseded_by_fact_id") or 0))
+        if (
+            successor is None
+            or successor.get("predicate") not in _TRANSITION_PREDICATES
+        ):
+            continue
+        if not previous.get("evidence") or not successor.get("evidence"):
+            continue
+        evidence = {
+            (item["chat_id"], item["message_id"]): item
+            for item in [*previous["evidence"], *successor["evidence"]]
+        }
+        transition = dict(successor)
+        transition.update(
+            temporal_state="Changed",
+            display_section="Changes",
+            display_label=str(successor.get("display_label") or "Changed"),
+            display_value=(
+                f"{previous.get('display_value')} → {successor.get('display_value')}"
+            ),
+            evidence=list(evidence.values()),
+        )
+        transitions.append(transition)
+    return transitions[:6]
 
 
 def _profile_claims(conn: sqlite3.Connection, person_id: int) -> list[dict]:

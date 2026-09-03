@@ -1009,6 +1009,7 @@ def _section_records(detail: dict, section: str, show_uncertain: bool) -> list[d
         "actions": detail.get("actions", []),
         "projects": detail.get("projects", []),
         "profile": detail.get("facts", [])
+        + detail.get("changes", [])
         + [
             claim
             for claim in detail.get("profile_claims", [])

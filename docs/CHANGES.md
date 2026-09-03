@@ -1,5 +1,14 @@
 # Implementation Journal
 
+## 2026-09-04 — Evidence-complete profile changes
+
+Person Profile now derives at most six Changed records for supported
+professional-role/company facts only when a direct supersession link, closed
+interval, and exact evidence for both sides exist. The rendered transition is
+read-only and preserves the union of those existing locators. No generalized
+temporal engine, new persistence, inference, migration, replay, backfill,
+repair, or live action changed.
+
 ## 2026-09-03 — Interval-backed Person Profile history
 
 Person Profile now renders supported canonical facts as Now and only their

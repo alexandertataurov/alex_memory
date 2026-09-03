@@ -5,7 +5,7 @@ import json
 import tempfile
 import unittest
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -325,7 +325,7 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             conn.execute(
                 """UPDATE ai_model_usage SET cooldown_until='2000-01-01T00:00:00+00:00'
                    WHERE usage_date=? AND model_key=?""",
-                (date.today().isoformat(), profile.key),
+                (datetime.now(UTC).date().isoformat(), profile.key),
             )
             conn.commit()
 
@@ -333,7 +333,7 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(
                 conn.execute(
                     "SELECT cooldown_until FROM ai_model_usage WHERE usage_date=? AND model_key=?",
-                    (date.today().isoformat(), profile.key),
+                    (datetime.now(UTC).date().isoformat(), profile.key),
                 ).fetchone()[0]
             )
 
@@ -522,7 +522,7 @@ class RouterAndJobTests(unittest.IsolatedAsyncioTestCase):
                        usage_date,model_key,provider,model,estimated_input_tokens,output_tokens
                    ) VALUES(?,?,?,?,?,?)""",
                 (
-                    date.today().isoformat(),
+                    datetime.now(UTC).date().isoformat(),
                     profile.key,
                     profile.provider,
                     profile.model,

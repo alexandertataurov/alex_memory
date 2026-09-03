@@ -17,6 +17,10 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Person Profile now renders concise **Changed** records for evidence-complete,
+  directly superseded professional-role/company facts. Each transition carries
+  the existing exact locators from both sides; no generalized temporal
+  inference or persistence was added.
 - Person Profile now distinguishes supported interval-backed facts that are
   true **Now** from their directly superseded, closed-interval **Previously**
   values. Facts without a complete historical interval remain omitted; exact

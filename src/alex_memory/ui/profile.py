@@ -193,7 +193,7 @@ def _show_person_profile(data: dict, console: Console, section: str) -> None:
     elif section == "projects":
         _show_projects(data.get("projects", []), console)
     elif section == "context":
-        _show_profile_facts(data.get("facts", []), console)
+        _show_profile_facts(data.get("facts", []) + data.get("changes", []), console)
         _show_records(
             [
                 item
