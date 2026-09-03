@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added `make profile-review`: a deterministic, resumable local AM-122 owner
+  review that reuses the existing read-only profile and structural-acceptance
+  paths. It stores only local review metadata and categorical defect records,
+  never accepts AM-122 without the owner's final explicit decision, and never
+  writes archive or product state.
+
 ## 2026-08-26 — Repository control-plane reconciliation
 
 - Reconciled current source, task ledger, active remediation plan, and the

@@ -38,6 +38,17 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 30] AM-126 — Make AM-122 owner acceptance runnable
+  through one bounded read-only review harness.
+  - `make profile-review` now selects a deterministic 10–20-contact sample,
+    runs existing aggregate structural checks, presents the existing profile
+    view, persists only local review metadata, resumes unfinished work, and
+    records fail-only defect categories. An explicit final owner decision is
+    required; it cannot auto-accept AM-122.
+  - Verification: focused dev-tool regressions and the Standard `make check`
+    gate passed. No schema, archive/product write, migration, replay, backfill,
+    repair, scan, refresh, or provider operation changed.
+
 - [x] [Notion / Sequence 74] Define final automated regression thresholds for
   core Person Intelligence.
   - Notion task: `3d0f52e9-545b-8108-9f45-c61f604906fc`; completed 2026-09-04.

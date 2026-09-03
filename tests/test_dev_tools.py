@@ -279,6 +279,89 @@ class LogicalReferenceDiagnosticsTests(unittest.TestCase):
 
         self.assertIn("missing_shapes", output.getvalue())
 
+    def test_guided_profile_review_selects_a_stable_sample_and_resumes_read_only(
+        self,
+    ) -> None:
+        for index in range(12):
+            self.conn.execute(
+                "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
+                (f"Person {index}", "now", "now"),
+            )
+        self.conn.commit()
+        state_path = Path(self.directory.name) / "review.json"
+        changes_before = self.conn.total_changes
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            patch("alex_memory.ui.profile.show_profile"),
+            patch("builtins.input", side_effect=["p"] * 12 + ["a"]),
+        ):
+            self.assertEqual(0, dev_tools.guided_profile_review(state_path))
+
+        state = json.loads(state_path.read_text())
+        self.assertEqual(12, len(state["sample"]))
+        self.assertEqual(12, len(state["reviews"]))
+        self.assertEqual("accept", state["final_decision"])
+        self.assertEqual(changes_before, self.conn.total_changes)
+
+    def test_guided_profile_review_records_only_fail_category(self) -> None:
+        for index in range(10):
+            self.conn.execute(
+                "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
+                (f"Person {index}", "now", "now"),
+            )
+        self.conn.commit()
+        state_path = Path(self.directory.name) / "review.json"
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            patch("alex_memory.ui.profile.show_profile"),
+            patch("builtins.input", side_effect=["f", "history"] + ["s"] * 9),
+        ):
+            self.assertEqual(1, dev_tools.guided_profile_review(state_path))
+
+        review = json.loads(state_path.read_text())["reviews"][0]
+        self.assertEqual("f", review["verdict"])
+        self.assertEqual("history", review["category"])
+        self.assertNotIn("note", review)
+
+    def test_guided_profile_review_cannot_auto_accept_completed_passes(self) -> None:
+        for index in range(10):
+            self.conn.execute(
+                "INSERT INTO people(canonical_name,created_at,updated_at) VALUES (?,?,?)",
+                (f"Person {index}", "now", "now"),
+            )
+        self.conn.commit()
+        state_path = Path(self.directory.name) / "review.json"
+        sample = [("sparse-evidence", index + 1) for index in range(10)]
+        with patch.object(dev_tools, "readonly_connection", return_value=self.conn):
+            report = dev_tools._profile_acceptance_report(self.conn, sample)
+        state_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sample": [
+                        {"shape": shape, "person_id": person_id}
+                        for shape, person_id in sample
+                    ],
+                    "mechanical": report,
+                    "reviews": [
+                        {"shape": shape, "person_id": person_id, "verdict": "p"}
+                        for shape, person_id in sample
+                    ],
+                    "final_decision": None,
+                }
+            )
+        )
+
+        with (
+            patch.object(dev_tools, "readonly_connection", return_value=self.conn),
+            patch("builtins.input", return_value="x"),
+        ):
+            self.assertEqual(1, dev_tools.guided_profile_review(state_path))
+
+        self.assertIsNone(json.loads(state_path.read_text())["final_decision"])
+
     def test_task_consistency_reports_exact_queue_and_plan_conflicts(self) -> None:
         text = """# Tasks
 

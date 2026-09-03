@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 DOCS = ROOT / "docs"
 DB_PATH = ROOT / "data" / "telegram.sqlite"
+PROFILE_REVIEW_STATE_PATH = ROOT / "data" / "profile-acceptance-review.json"
 ENV_EXAMPLE = ROOT / ".env.example"
 CONFIG_PATH = SRC / "alex_memory" / "config.py"
 DATABASE_PATH = SRC / "alex_memory" / "database.py"
@@ -549,24 +550,85 @@ _PROFILE_ACCEPTANCE_SHAPES = frozenset(
 )
 
 
-def person_profile_acceptance(contacts: list[str]) -> int:
-    """Check the owner-selected AM-122 profile sample without exposing its content."""
+def _parse_profile_contacts(contacts: list[str]) -> list[tuple[str, int]] | None:
+    """Validate bounded labelled contacts without opening the archive."""
     parsed_contacts: list[tuple[str, int]] = []
     seen_person_ids: set[int] = set()
     for contact in contacts:
         match = re.fullmatch(r"([a-z-]+):([1-9][0-9]*)", contact)
         if match is None or match.group(1) not in _PROFILE_ACCEPTANCE_SHAPES:
-            print(
-                "Profile acceptance contacts must use "
-                "recent|dormant|group-only|multi-project|ambiguous|sparse-evidence:positive-id."
-            )
-            return 1
+            return None
         person_id = int(match.group(2))
         if person_id in seen_person_ids:
-            print("Profile acceptance contacts must name each person only once.")
-            return 1
+            return None
         seen_person_ids.add(person_id)
         parsed_contacts.append((match.group(1), person_id))
+    return parsed_contacts
+
+
+def _profile_acceptance_report(
+    conn: sqlite3.Connection, parsed_contacts: list[tuple[str, int]]
+) -> dict:
+    """Run the existing mechanical profile checks on a supplied bounded sample."""
+    sys.path.insert(0, str(SRC))
+    from alex_memory.person_profile import build_person_profile
+
+    shapes = {
+        shape: {"requested": 0, "found": 0, "passed": 0}
+        for shape in sorted(_PROFILE_ACCEPTANCE_SHAPES)
+    }
+    for shape, _person_id in parsed_contacts:
+        shapes[shape]["requested"] += 1
+    violations = {
+        "missing_profile": 0,
+        "records_without_evidence": 0,
+        "uncertain_canonical_records": 0,
+        "profile_writes": 0,
+        "briefing_without_evidence": 0,
+    }
+    pending_identity_reviews = 0
+    for shape, person_id in parsed_contacts:
+        changes_before = conn.total_changes
+        profile = build_person_profile(conn, person_id)
+        if conn.total_changes != changes_before:
+            violations["profile_writes"] += 1
+        if not profile:
+            violations["missing_profile"] += 1
+            continue
+        shapes[shape]["found"] += 1
+        pending_identity_reviews += int(
+            profile.get("identity", {}).get("pending_reviews", 0)
+        )
+        missing_evidence, uncertain_canonical, briefing_missing = (
+            _profile_acceptance_violations(profile)
+        )
+        violations["records_without_evidence"] += missing_evidence
+        violations["uncertain_canonical_records"] += uncertain_canonical
+        violations["briefing_without_evidence"] += briefing_missing
+        if not (missing_evidence or uncertain_canonical or briefing_missing):
+            shapes[shape]["passed"] += 1
+    ready = not any(violations.values()) and all(
+        counts["passed"] == counts["requested"] for counts in shapes.values()
+    )
+    return {
+        "contacts": len(parsed_contacts),
+        "identity_review_signals": pending_identity_reviews,
+        "read_only": True,
+        "ready": ready,
+        "shapes": shapes,
+        "violations": violations,
+    }
+
+
+def person_profile_acceptance(contacts: list[str]) -> int:
+    """Check the owner-selected AM-122 profile sample without exposing its content."""
+    parsed_contacts = _parse_profile_contacts(contacts)
+    if parsed_contacts is None:
+        print(
+            "Profile acceptance contacts must use distinct "
+            "recent|dormant|group-only|multi-project|ambiguous|sparse-evidence:positive-id."
+        )
+        return 1
     if not 10 <= len(parsed_contacts) <= 20:
         print("Profile acceptance requires 10 to 20 distinct --contact values.")
         return 1
@@ -588,60 +650,14 @@ def person_profile_acceptance(contacts: list[str]) -> int:
         )
         return 1
 
-    sys.path.insert(0, str(SRC))
-    from alex_memory.person_profile import build_person_profile
-
-    violations = {
-        "missing_profile": 0,
-        "records_without_evidence": 0,
-        "uncertain_canonical_records": 0,
-        "profile_writes": 0,
-        "briefing_without_evidence": 0,
-    }
-    pending_identity_reviews = 0
     try:
         with readonly_connection() as conn:
-            for shape, person_id in parsed_contacts:
-                changes_before = conn.total_changes
-                profile = build_person_profile(conn, person_id)
-                if conn.total_changes != changes_before:
-                    violations["profile_writes"] += 1
-                if not profile:
-                    violations["missing_profile"] += 1
-                    continue
-                shapes[shape]["found"] += 1
-                pending_identity_reviews += int(
-                    profile.get("identity", {}).get("pending_reviews", 0)
-                )
-                missing_evidence, uncertain_canonical, briefing_missing = (
-                    _profile_acceptance_violations(profile)
-                )
-                violations["records_without_evidence"] += missing_evidence
-                violations["uncertain_canonical_records"] += uncertain_canonical
-                violations["briefing_without_evidence"] += briefing_missing
-                if not (missing_evidence or uncertain_canonical or briefing_missing):
-                    shapes[shape]["passed"] += 1
+            report = _profile_acceptance_report(conn, parsed_contacts)
     except (OSError, sqlite3.Error, ValueError) as error:
         print(f"Profile acceptance failed: {error}")
         return 1
-
-    ready = not any(violations.values()) and all(
-        counts["passed"] == counts["requested"] for counts in shapes.values()
-    )
-    print(
-        json.dumps(
-            {
-                "contacts": len(parsed_contacts),
-                "identity_review_signals": pending_identity_reviews,
-                "read_only": True,
-                "ready": ready,
-                "shapes": shapes,
-                "violations": violations,
-            },
-            sort_keys=True,
-        )
-    )
-    return 0 if ready else 1
+    print(json.dumps(report, sort_keys=True))
+    return 0 if report["ready"] else 1
 
 
 def _profile_acceptance_violations(profile: dict) -> tuple[int, int, int]:
@@ -679,6 +695,211 @@ def _profile_acceptance_violations(profile: dict) -> tuple[int, int, int]:
         last_interaction is not None and not last_interaction.get("evidence")
     )
     return missing_evidence, uncertain_canonical, briefing_missing
+
+
+def _profile_review_shape(profile: dict) -> str:
+    """Assign one deterministic, presentation-derived review shape."""
+    identity = profile.get("identity", {})
+    if int(identity.get("pending_reviews", 0)):
+        return "ambiguous"
+    if len(profile.get("projects", [])) > 1:
+        return "multi-project"
+    if not identity.get("direct_chat_owned"):
+        return "group-only"
+    if not any(
+        profile.get(section) for section in ("facts", "relationships", "events")
+    ):
+        return "sparse-evidence"
+    if profile.get("contact", {}).get("last_contact_at"):
+        return "recent"
+    return "dormant"
+
+
+def select_profile_review_sample(
+    conn: sqlite3.Connection, *, target: int = 12
+) -> list[tuple[str, int]]:
+    """Select a stable, de-duplicated 10--20 contact sample from read models."""
+    if not 10 <= target <= 20:
+        raise ValueError("Profile review target must be between 10 and 20.")
+    sys.path.insert(0, str(SRC))
+    from alex_memory.person_profile import build_person_profile
+
+    candidates: dict[str, list[int]] = {
+        shape: [] for shape in _PROFILE_ACCEPTANCE_SHAPES
+    }
+    for (person_id,) in conn.execute(
+        "SELECT person_id FROM people WHERE status!='merged' ORDER BY person_id LIMIT 80"
+    ):
+        changes_before = conn.total_changes
+        profile = build_person_profile(conn, int(person_id))
+        if conn.total_changes != changes_before:
+            raise RuntimeError(
+                "Profile review sampling attempted to write archive state."
+            )
+        if profile:
+            candidates[_profile_review_shape(profile)].append(int(person_id))
+    selected: list[tuple[str, int]] = []
+    used: set[int] = set()
+    for shape in sorted(_PROFILE_ACCEPTANCE_SHAPES):
+        if candidates[shape]:
+            person_id = candidates[shape][0]
+            selected.append((shape, person_id))
+            used.add(person_id)
+    for shape in sorted(_PROFILE_ACCEPTANCE_SHAPES):
+        for person_id in candidates[shape]:
+            if len(selected) >= target:
+                return selected
+            if person_id not in used:
+                selected.append((shape, person_id))
+                used.add(person_id)
+    return selected
+
+
+def _load_profile_review_state(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("Profile review state is invalid.")
+    return payload
+
+
+def _save_profile_review_state(path: Path, state: dict) -> None:
+    """Persist review metadata only; never write the archive or product state."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
+def guided_profile_review(state_path: Path = PROFILE_REVIEW_STATE_PATH) -> int:
+    """Run the owner-only semantic review over the existing production profile view."""
+    sys.path.insert(0, str(SRC))
+    from rich.console import Console
+    from alex_memory.person_profile import build_person_profile
+    from alex_memory.ui.profile import show_profile
+
+    try:
+        with readonly_connection() as conn:
+            state = _load_profile_review_state(state_path)
+            if state is None:
+                sample = select_profile_review_sample(conn)
+                if len(sample) < 10:
+                    print(
+                        json.dumps(
+                            {
+                                "ready": False,
+                                "reason": "fewer than 10 canonical contacts",
+                            }
+                        )
+                    )
+                    return 1
+                report = _profile_acceptance_report(conn, sample)
+                state = {
+                    "version": 1,
+                    "sample": [
+                        {"shape": shape, "person_id": person_id}
+                        for shape, person_id in sample
+                    ],
+                    "mechanical": report,
+                    "reviews": [],
+                    "final_decision": None,
+                }
+                _save_profile_review_state(state_path, state)
+            if not state["mechanical"]["ready"]:
+                print(
+                    json.dumps(
+                        {"ready": False, "mechanical": state["mechanical"]},
+                        sort_keys=True,
+                    )
+                )
+                return 1
+            reviewed = {item["person_id"] for item in state["reviews"]}
+            console = Console()
+            for item in state["sample"]:
+                person_id = item["person_id"]
+                if person_id in reviewed:
+                    continue
+                changes_before = conn.total_changes
+                profile = build_person_profile(conn, person_id)
+                if conn.total_changes != changes_before:
+                    raise RuntimeError(
+                        "Profile review attempted to write archive state."
+                    )
+                show_profile(profile, "person", console, section="overview")
+                verdict = input("Review [p]ass/[f]ail/[s]kip: ").strip().lower()[:1]
+                if verdict not in {"p", "f", "s"}:
+                    print("Enter p, f, or s.")
+                    return 1
+                review = {
+                    "person_id": person_id,
+                    "shape": item["shape"],
+                    "verdict": verdict,
+                }
+                if verdict == "f":
+                    category = (
+                        input(
+                            "Defect category (identity/attribution/history/connection/commitment/briefing/grounding): "
+                        )
+                        .strip()
+                        .lower()
+                    )
+                    if category not in {
+                        "identity",
+                        "attribution",
+                        "history",
+                        "connection",
+                        "commitment",
+                        "briefing",
+                        "grounding",
+                    }:
+                        print("Invalid defect category.")
+                        return 1
+                    review["category"] = category
+                state["reviews"].append(review)
+                _save_profile_review_state(state_path, state)
+    except (OSError, sqlite3.Error, ValueError, json.JSONDecodeError) as error:
+        print(f"Profile review failed: {error}")
+        return 1
+    pending = len(state["sample"]) - len(state["reviews"])
+    failures = [item for item in state["reviews"] if item["verdict"] == "f"]
+    skipped = sum(item["verdict"] == "s" for item in state["reviews"])
+    if pending:
+        return 0
+    if failures or skipped:
+        state["final_decision"] = "reopen_defects"
+        state["defects"] = [
+            {"person_id": item["person_id"], "category": item["category"]}
+            for item in failures
+        ]
+    else:
+        decision = (
+            input("Final AM-122 decision [a]ccept/[r]eopen defects: ")
+            .strip()
+            .lower()[:1]
+        )
+        if decision not in {"a", "r"}:
+            print("Enter a or r.")
+            return 1
+        state["final_decision"] = "accept" if decision == "a" else "reopen_defects"
+        state["defects"] = []
+    _save_profile_review_state(state_path, state)
+    print(
+        json.dumps(
+            {
+                "ready": state["final_decision"] == "accept",
+                "contacts": len(state["sample"]),
+                "semantic_failures": len(failures),
+                "skipped": skipped,
+                "defects": state["defects"],
+                "final_decision": state["final_decision"],
+            },
+            sort_keys=True,
+        )
+    )
+    return 0 if state["final_decision"] == "accept" else 1
 
 
 def env_names(path: Path) -> set[str]:
@@ -1162,6 +1383,7 @@ def main() -> int:
             "repair-dry-run",
             "graph-parity",
             "profile-acceptance",
+            "profile-review",
             "health",
             "changes",
             "tasks",
@@ -1196,6 +1418,11 @@ def main() -> int:
         help="AM-122 sample contact in shape:positive-person-id form.",
     )
     parser.add_argument(
+        "--review-state",
+        type=Path,
+        help="Local metadata-only state file for the guided profile review.",
+    )
+    parser.add_argument(
         "--as-of",
         help="ISO-8601 reader timestamp; defaults to the current UTC instant.",
     )
@@ -1222,6 +1449,9 @@ def main() -> int:
             args.seed or [], args.as_of, args.max_depth
         ),
         "profile-acceptance": lambda: person_profile_acceptance(args.contact or []),
+        "profile-review": lambda: guided_profile_review(
+            args.review_state or PROFILE_REVIEW_STATE_PATH
+        ),
         "health": health,
         "changes": changes,
         "tasks": lambda: task_summary(args.notion_tasks_json),

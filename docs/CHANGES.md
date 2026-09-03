@@ -1,5 +1,16 @@
 # Implementation Journal
 
+## 2026-09-04 — AM-126 guided owner review
+
+`make profile-review` now selects a stable bounded sample from existing Person
+Profile read models, runs the existing structural/evidence checks first, and
+then presents the existing production profile view for one-key pass/fail/skip
+review. It resumes from a local metadata-only state file, records a defect
+category only for failures, aggregates reproducible person IDs/categories, and
+requires a final explicit ACCEPT or REOPEN DEFECTS decision. It does not write
+source evidence, profiles, graph state, derived state, or the live archive; no
+scan, refresh, repair, replay, migration, backfill, or provider work runs.
+
 ## 2026-09-04 — Person Intelligence regression threshold
 
 The normal engineering verification gate now explicitly requires all six
