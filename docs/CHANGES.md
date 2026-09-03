@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-03 — Literal Textual source/model rendering
+
+Dynamic Textual Labels, Statics, and profile/status updates now receive literal
+Rich `Text`. Bracketed contact and message content therefore renders literally;
+no source/model string can activate markup. This is presentation-only with no
+schema, evidence, canonical-state, or writer change.
+
 ## 2026-09-03 — Topic-noise and project-context guardrails
 
 The final Person Profile/Overview topic boundary rejects generic materialized

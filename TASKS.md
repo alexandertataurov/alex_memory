@@ -38,6 +38,14 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 30] Harden Textual rendering against markup in
+  source/model text.
+  - Notion task: `3c7f52e9-545b-8173-93dc-df2063760567`; completed 2026-09-03.
+  - Dynamic Textual labels/statics now receive literal Rich `Text`; bracketed
+    contact/message content renders literally rather than as markup.
+  - Verification: full repository gate passed (377 tests, Ruff, formatting,
+    MyPy, docs, lock/dependency/vulnerability, and SQLite checks).
+
 - [x] [Notion / Sequence 30] Filter topic noise and reject invalid project
   classifications.
   - Notion task: `3c7f52e9-545b-81f3-a06e-fd15721e677b`; completed 2026-09-03.

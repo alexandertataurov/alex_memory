@@ -17,6 +17,9 @@ grounded in reviewed local files, Git history, and verification output.
 
 ### Changed
 
+- Textual dynamic Labels/Statics now render source/model strings as literal
+  Rich `Text`, preventing markup-like contact and message content from being
+  interpreted.
 - Profile/Overview topic presentation now rejects generic materialized tokens,
   and automatic project creation requires an operational task reference rather
   than an event or personal-fact reference. No schema, replay, backfill, or

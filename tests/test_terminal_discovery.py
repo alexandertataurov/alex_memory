@@ -21,8 +21,17 @@ from alex_memory.ui.textual_app import (
     ProfileScreen,
     RecordDetailScreen,
     ScanScreen,
+    _literal_text,
 )
 from test_ai_pipeline import make_settings
+
+
+def test_textual_source_strings_render_markup_literally() -> None:
+    contact = _literal_text("[bold red]Ari[/bold red]")
+    message = _literal_text("[link=https://example.test]contract[/link]")
+
+    assert contact.plain == "[bold red]Ari[/bold red]"
+    assert message.plain == "[link=https://example.test]contract[/link]"
 
 
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:

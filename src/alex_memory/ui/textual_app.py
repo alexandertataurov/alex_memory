@@ -21,6 +21,7 @@ from textual.widgets import (
     ProgressBar,
     Static,
 )
+from rich.text import Text
 
 from ..operational import manually_update_task
 from ..person_profile import build_person_profile
@@ -45,8 +46,13 @@ if TYPE_CHECKING:
 class PersonItem(ListItem):
     def __init__(self, result: PersonSearchResult, date_label: str) -> None:
         label = f"{result.name}  {('@' + result.username) if result.username else ''}  {date_label}"
-        super().__init__(Label(label))
+        super().__init__(Label(_literal_text(label)))
         self.result = result
+
+
+def _literal_text(value: object) -> Text:
+    """Pass source/model strings to Textual without Rich markup parsing."""
+    return Text(str(value))
 
 
 class HomeScreen(Screen[None]):
@@ -88,7 +94,7 @@ class HomeScreen(Screen[None]):
         status = self.owner.runtime_status.snapshot(self.owner.live_sync)
         telegram = "connected" if status.telegram.connected else status.phase.lower()
         text = f"Telegram {telegram} · AI {status.ai.pending_jobs} queued"
-        self.query_one("#status", Static).update(text)
+        self.query_one("#status", Static).update(_literal_text(text))
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "people-search":
@@ -136,7 +142,7 @@ class HomeScreen(Screen[None]):
             self._preview(self.rows[0].person_id)
         else:
             self.query_one("#preview", Static).update(
-                "No canonical people match this search."
+                _literal_text("No canonical people match this search.")
             )
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
@@ -170,14 +176,16 @@ class HomeScreen(Screen[None]):
             else "unknown / insufficient evidence"
         )
         self.query_one("#preview", Static).update(
-            f"{overview['name']}\n{overview['summary']}\n\nOpen items\n{detail}"
+            _literal_text(
+                f"{overview['name']}\n{overview['summary']}\n\nOpen items\n{detail}"
+            )
         )
 
 
 class ProfileRecordItem(ListItem):
     def __init__(self, record: dict) -> None:
         self.record = record
-        super().__init__(Label(_record_label(record)))
+        super().__init__(Label(_literal_text(_record_label(record))))
 
 
 class ProfileScreen(Screen[None]):
@@ -235,9 +243,11 @@ class ProfileScreen(Screen[None]):
         entity = detail["entity"]
         account = f" @{entity[3]}" if entity[3] else ""
         self.query_one("#profile-heading", Static).update(
-            f"{entity[1]}{account}  ·  {section.upper()}"
+            _literal_text(f"{entity[1]}{account}  ·  {section.upper()}")
         )
-        self.query_one("#profile-summary", Static).update(self.section_text)
+        self.query_one("#profile-summary", Static).update(
+            _literal_text(self.section_text)
+        )
         view = self.query_one("#profile-records", ListView)
         view.clear()
         for record in self.records:
@@ -325,7 +335,7 @@ class RecordDetailScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
-        yield Static(_record_detail(self.record), id="record-detail")
+        yield Static(_literal_text(_record_detail(self.record)), id="record-detail")
         yield Footer()
 
     def action_back(self) -> None:
@@ -358,7 +368,9 @@ class EvidenceScreen(Screen[None]):
             )
             or "No supporting evidence is available."
         )
-        yield Static(f"EVIDENCE · {self.title}\n\n{body}", id="evidence-body")
+        yield Static(
+            _literal_text(f"EVIDENCE · {self.title}\n\n{body}"), id="evidence-body"
+        )
         yield Footer()
 
     def action_back(self) -> None:
@@ -391,7 +403,9 @@ class TaskConfirmScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Static(
-            f"Set {self.title} to {self.status.upper()}?  Y confirm · N cancel",
+            _literal_text(
+                f"Set {self.title} to {self.status.upper()}?  Y confirm · N cancel"
+            ),
             id="task-confirm",
         )
 
@@ -410,7 +424,9 @@ class TaskConfirmScreen(Screen[None]):
 class SearchResultItem(ListItem):
     def __init__(self, result: SearchResult) -> None:
         self.result = result
-        super().__init__(Label(f"{result.result_type.upper():10} {result.title}"))
+        super().__init__(
+            Label(_literal_text(f"{result.result_type.upper():10} {result.title}"))
+        )
 
 
 class SearchScreen(Screen[None]):
@@ -718,7 +734,7 @@ class CommandPalette(Screen[None]):
         cls, commands: tuple[tuple[str, str], ...] | list[tuple[str, str]] | None = None
     ) -> list[ListItem]:
         return [
-            ListItem(Label(label), id=item_id)
+            ListItem(Label(_literal_text(label)), id=item_id)
             for label, item_id in commands or cls._COMMANDS
         ]
 
