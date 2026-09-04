@@ -27,6 +27,7 @@ fix.
 
 ## Completed
 
+- [AM-129 contact reconciliation](exec-plans/completed/AM-129-contact-reconciliation.md)
 - [AM-124 bounded shared connections](exec-plans/completed/AM-124-shared-connections.md)
 - [AM-078 database integrity](exec-plans/completed/AM-078-database-integrity.md)
 - [AM-074 repair](exec-plans/completed/AM-074.md)

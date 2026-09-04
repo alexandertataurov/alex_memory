@@ -21,6 +21,7 @@ from alex_memory.operational import (
     backfill_task_project_links,
     direct_chat_person,
     generate_daily_brief,
+    identity_reconciliation_preview,
     load_daily_brief,
     manually_update_task,
     normalize_alias,
@@ -2273,6 +2274,168 @@ class OperationalMemoryTests(unittest.TestCase):
                 ],
             )
             conn.close()
+
+    def test_identity_reconciliation_preview_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            first = resolver.person("David", telegram_user_id=11)
+            second = resolver.person("David", telegram_user_id=22)
+            assert first is not None and second is not None
+            review_id = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                   VALUES ('entity_merge','person',?,'now')""",
+                (
+                    json.dumps(
+                        {
+                            "alias": "david",
+                            "entity_ids": [first, second],
+                            "reason": "test",
+                        }
+                    ),
+                ),
+            ).lastrowid
+            assert review_id is not None
+            before = conn.total_changes
+
+            preview = identity_reconciliation_preview(conn, int(review_id))
+
+            self.assertEqual(before, conn.total_changes)
+            self.assertEqual(
+                [first, second], [row["person_id"] for row in preview["candidates"]]
+            )
+            self.assertEqual(
+                [11, 22], [row["telegram_user_id"] for row in preview["candidates"]]
+            )
+
+    def test_identity_review_can_link_alias_only_to_a_reviewed_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            first = resolver.person("David One", telegram_user_id=11)
+            second = resolver.person("David Two", telegram_user_id=22)
+            assert first is not None and second is not None
+            resolver._alias("person", first, "David", "test", 1.0)
+            resolver._alias("person", second, "David", "test", 1.0)
+            review_id = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                   VALUES ('entity_merge','person',?,'now')""",
+                (
+                    json.dumps(
+                        {
+                            "alias": "david",
+                            "entity_ids": [first, second],
+                            "reason": "test",
+                        }
+                    ),
+                ),
+            ).lastrowid
+            assert review_id is not None
+
+            resolve_review_item(
+                conn,
+                int(review_id),
+                "link_alias",
+                edited_payload={"target_entity_id": second},
+            )
+
+            self.assertEqual(
+                [second],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT entity_id FROM entity_aliases WHERE entity_type='person' AND normalized_alias='david'"
+                    )
+                ],
+            )
+            self.assertEqual(
+                "approved",
+                conn.execute("SELECT status FROM review_queue").fetchone()[0],
+            )
+
+    def test_identity_review_does_not_replace_manual_alias_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            first = resolver.person("David One", telegram_user_id=11)
+            second = resolver.person("David Two", telegram_user_id=22)
+            assert first is not None and second is not None
+            resolver._alias("person", first, "David", "manual", 1.0)
+            resolver._alias("person", second, "David", "test", 1.0)
+            review_id = conn.execute(
+                """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                   VALUES ('entity_merge','person',?,'now')""",
+                (json.dumps({"alias": "david", "entity_ids": [first, second]}),),
+            ).lastrowid
+            assert review_id is not None
+            conn.commit()
+
+            with self.assertRaisesRegex(ValueError, "manually owned"):
+                resolve_review_item(
+                    conn,
+                    int(review_id),
+                    "link_alias",
+                    edited_payload={"target_entity_id": second},
+                )
+
+            self.assertEqual(
+                [first, second],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT entity_id FROM entity_aliases WHERE entity_type='person' AND normalized_alias='david' ORDER BY entity_id"
+                    )
+                ],
+            )
+            self.assertEqual(
+                "pending",
+                conn.execute("SELECT status FROM review_queue").fetchone()[0],
+            )
+
+    def test_identity_review_separate_and_unresolved_preserve_contacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            conn = connect(make_settings(Path(directory)))
+            resolver = EntityResolver(conn)
+            first = resolver.person("David One", telegram_user_id=11)
+            second = resolver.person("David Two", telegram_user_id=22)
+            assert first is not None and second is not None
+            resolver._alias("person", first, "David", "test", 1.0)
+            resolver._alias("person", second, "David", "test", 1.0)
+            for action in ("reject", "ignore"):
+                review_id = conn.execute(
+                    """INSERT INTO review_queue(review_type,subject_type,payload_json,created_at)
+                       VALUES ('entity_merge','person',?,'now')""",
+                    (json.dumps({"alias": "david", "entity_ids": [first, second]}),),
+                ).lastrowid
+                assert review_id is not None
+
+                resolve_review_item(conn, int(review_id), action)
+
+            self.assertEqual(
+                [first, second],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT entity_id FROM entity_aliases WHERE entity_type='person' AND normalized_alias='david' ORDER BY entity_id"
+                    )
+                ],
+            )
+            self.assertEqual(
+                ["active", "active"],
+                [
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT status FROM people WHERE person_id IN (?, ?) ORDER BY person_id",
+                        (first, second),
+                    )
+                ],
+            )
+            self.assertEqual(
+                2,
+                conn.execute(
+                    "SELECT COUNT(*) FROM user_feedback WHERE feedback_type='review:entity_merge'"
+                ).fetchone()[0],
+            )
 
     def test_project_merge_review_preserves_source_observation_reference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

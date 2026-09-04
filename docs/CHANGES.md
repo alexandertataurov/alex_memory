@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-04 — AM-129 identity reconciliation controls
+
+Identity merge reviews now show a bounded, read-only preview of candidate
+identifiers and aliases before a confirmed manual choice. Operators can merge,
+link the reviewed alias to one candidate, separate, or leave unresolved; every
+choice becomes durable manual feedback. No automatic or live reconciliation ran.
+
 ## 2026-09-04 — AM-128 same-name identity separation
 
 Person resolution now treats an unmatched supplied Telegram peer ID as stronger

@@ -18,6 +18,7 @@ from .chat_policy import set_chat_policy
 from .database import connect, set_app_meta, update_known_chat_metadata
 from .operational import (
     generate_daily_brief,
+    identity_reconciliation_preview,
     load_daily_brief,
     manually_update_task,
     resolve_review_item,
@@ -443,17 +444,48 @@ class AlexMemoryApp:
                         ):
                             continue
                         choices = review_actions(review_type)
+                        action_map: dict[str, str] = {}
+                        if review_type == "entity_merge":
+                            preview = identity_reconciliation_preview(
+                                self.conn, int(review_id)
+                            )
+                            self.console.print(
+                                notice(
+                                    json.dumps(preview, ensure_ascii=False, indent=2),
+                                    title="Identity reconciliation preview",
+                                    tone="info",
+                                )
+                            )
+                            choices = ("merge", "link_alias", "separate", "unresolved")
+                            action_map = {
+                                "merge": "accept",
+                                "link_alias": "link_alias",
+                                "separate": "reject",
+                                "unresolved": "ignore",
+                            }
                         action = Prompt.ask(
                             "Decision", choices=[*choices, "back"], default="back"
                         )
                         if action == "back":
                             continue
+                        resolved_action = action_map.get(action, action)
                         edited_payload: dict[str, object] | None = None
-                        if review_type == "entity_merge" and action == "accept":
+                        if (
+                            review_type == "entity_merge"
+                            and resolved_action == "accept"
+                        ):
                             keep_entity_id = Prompt.ask(
                                 "Canonical entity ID to keep"
                             ).strip()
                             edited_payload = {"keep_entity_id": int(keep_entity_id)}
+                        elif (
+                            review_type == "entity_merge"
+                            and resolved_action == "link_alias"
+                        ):
+                            target_entity_id = Prompt.ask(
+                                "Canonical entity ID to receive alias"
+                            ).strip()
+                            edited_payload = {"target_entity_id": int(target_entity_id)}
                         elif (
                             review_type == "message_classification" and action == "edit"
                         ):
@@ -490,7 +522,7 @@ class AlexMemoryApp:
                         resolve_review_item(
                             self.conn,
                             int(review_id),
-                            action,
+                            resolved_action,
                             edited_payload=edited_payload,
                             settings=self.settings,
                         )

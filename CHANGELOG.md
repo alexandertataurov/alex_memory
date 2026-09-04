@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Identity reconciliation reviews now provide a bounded read-only candidate
+  preview before a confirmed manual merge, alias link, separation, or unresolved
+  decision. Alias links reject unreviewed and conflicting manual ownership; no
+  automatic or bulk reconciliation was added.
 - Person resolution no longer collapses a supplied, unmatched Telegram peer ID
   onto a same-name alias; distinct peers remain distinct canonical contacts.
 - Direct-chat identity reconciliation now retains a chat-title alias after a

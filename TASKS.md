@@ -38,6 +38,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 33] AM-129 — Provide a safe contact reconciliation
+  workflow.
+  - Identity candidates now have preview-first manual merge/link/separate/
+    unresolved decisions with durable feedback; no bulk reconciliation exists.
+  - Verification: `make verify` passed. No live identity action ran.
+
 - [x] [Notion / Sequence 32] AM-128 — Split conflated same-name people into
   distinct canonical contacts.
   - An unmatched supplied Telegram peer ID no longer resolves through a

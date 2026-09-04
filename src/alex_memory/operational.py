@@ -1300,7 +1300,65 @@ def review_actions(review_type: str) -> tuple[str, ...]:
     """Return only decisions which have a deterministic local effect."""
     if review_type == "message_classification":
         return ("accept", "edit", "reject", "ignore")
+    if review_type == "entity_merge":
+        return ("accept", "link_alias", "reject", "ignore")
     return ("accept", "reject", "ignore")
+
+
+def identity_reconciliation_preview(conn: sqlite3.Connection, review_id: int) -> dict:
+    """Return bounded, read-only identity-candidate metadata before an action."""
+    row = conn.execute(
+        """SELECT subject_type,payload_json FROM review_queue
+           WHERE review_id=? AND review_type='entity_merge' AND status='pending'""",
+        (review_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("Pending identity review was not found.")
+    entity_type, payload_json = row
+    try:
+        payload = json.loads(payload_json)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Identity review payload is invalid.") from error
+    entity_ids = payload.get("entity_ids") if isinstance(payload, dict) else None
+    if (
+        entity_type != "person"
+        or not isinstance(entity_ids, list)
+        or not entity_ids
+        or not all(isinstance(value, int) for value in entity_ids)
+    ):
+        raise ValueError("Identity review lacks valid person candidates.")
+    placeholders = ",".join("?" for _ in entity_ids)
+    people = conn.execute(
+        f"""SELECT person_id,telegram_user_id,telegram_username,status
+            FROM people WHERE person_id IN ({placeholders}) ORDER BY person_id""",
+        entity_ids,
+    ).fetchall()
+    if len(people) != len(set(entity_ids)):
+        raise ValueError("An identity candidate is no longer available.")
+    aliases = conn.execute(
+        f"""SELECT entity_id,normalized_alias FROM entity_aliases
+            WHERE entity_type='person' AND entity_id IN ({placeholders})
+            ORDER BY entity_id,normalized_alias LIMIT 32""",
+        entity_ids,
+    ).fetchall()
+    aliases_by_id: dict[int, list[str]] = {int(value): [] for value in entity_ids}
+    for entity_id, alias in aliases:
+        aliases_by_id[int(entity_id)].append(str(alias))
+    return {
+        "review_id": review_id,
+        "alias": payload.get("alias"),
+        "reason": payload.get("reason"),
+        "candidates": [
+            {
+                "person_id": int(person_id),
+                "telegram_user_id": telegram_user_id,
+                "telegram_username": telegram_username,
+                "status": status,
+                "aliases": aliases_by_id[int(person_id)],
+            }
+            for person_id, telegram_user_id, telegram_username, status in people
+        ],
+    }
 
 
 def resolve_review_item(
@@ -1486,6 +1544,43 @@ def resolve_review_item(
                    WHERE entity_type=? AND normalized_alias=? AND status='pending'""",
                 (now, subject_type, payload.get("alias")),
             )
+        if action == "link_alias" and review_type == "entity_merge":
+            target = (edited_payload or {}).get("target_entity_id")
+            entity_ids, alias = payload.get("entity_ids"), payload.get("alias")
+            if (
+                not isinstance(target, int)
+                or not isinstance(entity_ids, list)
+                or target not in entity_ids
+                or not isinstance(alias, str)
+            ):
+                raise ValueError("The selected alias target is not a review candidate.")
+            owners = conn.execute(
+                """SELECT entity_id,source FROM entity_aliases
+                   WHERE entity_type='person' AND normalized_alias=?""",
+                (alias,),
+            ).fetchall()
+            owner_ids = {int(entity_id) for entity_id, _source in owners}
+            if not owner_ids.issubset(set(entity_ids)):
+                raise ValueError("The alias has an owner outside this review.")
+            if any(
+                int(entity_id) != target and source in {"manual", "manual_review"}
+                for entity_id, source in owners
+            ):
+                raise ValueError("The alias is manually owned by another candidate.")
+            conn.execute(
+                """DELETE FROM entity_aliases
+                   WHERE entity_type='person' AND normalized_alias=? AND entity_id<>?""",
+                (alias, target),
+            )
+            if target not in owner_ids:
+                EntityResolver(conn)._alias(
+                    "person", target, alias, "manual_review", 1.0
+                )
+            conn.execute(
+                """UPDATE entity_merge_candidates SET status='resolved',resolved_at=?
+                   WHERE entity_type='person' AND normalized_alias=? AND status='pending'""",
+                (now, alias),
+            )
         if action == "accept" and review_type in {"task_change", "task_completion"}:
             if settings is None:
                 raise ValueError("Task-review acceptance requires runtime settings.")
@@ -1542,7 +1637,9 @@ def resolve_review_item(
                             message_id,
                         ),
                     )
-        status = "approved" if action in {"accept", "edit"} else "rejected"
+        status = (
+            "approved" if action in {"accept", "edit", "link_alias"} else "rejected"
+        )
         conn.execute(
             "UPDATE review_queue SET status=?,resolved_at=? WHERE review_id=?",
             (status, now, review_id),
