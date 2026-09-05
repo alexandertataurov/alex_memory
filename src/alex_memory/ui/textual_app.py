@@ -83,7 +83,9 @@ def _home_preview_text(
 def _background_work_label(status: RuntimeStatus) -> str:
     """Present one truthful background-work state from the runtime snapshot."""
     phase = status.phase.title()
-    if status.phase in {"RETRYING", "DEGRADED", "FAILED", "OFFLINE", "STARTING"}:
+    if status.phase == "STARTING":
+        return f"Starting sync · {status.telegram.messages_saved:,} saved"
+    if status.phase in {"RETRYING", "DEGRADED", "FAILED", "OFFLINE"}:
         return phase
     if status.telegram.queue_size:
         return f"Syncing · {status.telegram.queue_size} queued"

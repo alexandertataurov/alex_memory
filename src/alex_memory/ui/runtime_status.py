@@ -59,6 +59,7 @@ def show_status(status: RuntimeStatus, console: Console) -> None:
     )
     telegram_table.add_row("Writer", safe_text(status.writer.state))
     telegram_table.add_row("Writer queue", f"{status.telegram.queue_size:,}")
+    telegram_table.add_row("Messages saved", f"{status.telegram.messages_saved:,}")
     telegram_table.add_row(
         "Last reconciliation", safe_text(status.telegram.last_reconciliation_at or "—")
     )

@@ -82,6 +82,7 @@ class AlexMemoryApp:
         self.client: TelegramClient | None = None
         self.dialogs_cache: list[DialogInfo] | None = None
         self.live_sync: TelegramSyncService | None = None
+        self.startup_sync_task: asyncio.Task[None] | None = None
         self.runtime_status: RuntimeStatusService | None = None
         self.background_scheduler: BackgroundIntelligenceScheduler | None = None
         self.session_lock = SessionLock(settings.root / "alex_memory.session.lock")
@@ -123,14 +124,27 @@ class AlexMemoryApp:
         self.runtime_status.mark_starting()
         self.console.clear()
         self._show_header()
-        self.console.print(Text("\n● Connecting to Telegram…", style="cyan"))
-
-        client = TelegramClient(
+        self.client = TelegramClient(
             str(self.settings.session_path),
             self.settings.telegram_api_id,
             self.settings.telegram_api_hash,
         )
-        self.client = client
+        self.startup_sync_task = asyncio.create_task(
+            self._start_telegram_sync(), name="telegram-startup-sync"
+        )
+        self.console.print(
+            Text(
+                "\n● Telegram synchronization is starting in the background…",
+                style="cyan",
+            )
+        )
+
+    async def _start_telegram_sync(self) -> None:
+        """Own one Telegram lifecycle without blocking local product reads."""
+        assert self.client is not None
+        assert self.conn is not None
+        assert self.runtime_status is not None
+        client, conn = self.client, self.conn
         try:
             await client.start()
             me = await client.get_me()
@@ -193,6 +207,8 @@ class AlexMemoryApp:
         exit_code = 0
         try:
             await self.start()
+            if self.startup_sync_task is not None:
+                await self.startup_sync_task
             if self.live_sync is None:
                 return 1
             self.console.print(
@@ -804,6 +820,9 @@ class AlexMemoryApp:
         assert self.conn is not None
         # The live service owns the writer and listener. Running the legacy
         # multi-worker full-sync alongside it can overload one MTProto session.
+        if self._startup_sync_in_progress():
+            self._show_startup_sync_notice("Sync")
+            return
         if self.live_sync is not None:
             self.console.print(Text("● Synchronizing Telegram…", style="cyan"))
             await self.refresh_inventory()
@@ -814,6 +833,9 @@ class AlexMemoryApp:
 
     async def analyze_daily(self) -> None:
         assert self.conn is not None
+        if self._startup_sync_in_progress():
+            self._show_startup_sync_notice("Daily analysis")
+            return
         if self.live_sync is None:
             self._show_local_mode_notice("Daily analysis")
             return
@@ -824,6 +846,9 @@ class AlexMemoryApp:
 
     async def analyze_history(self) -> None:
         assert self.conn is not None
+        if self._startup_sync_in_progress():
+            self._show_startup_sync_notice("History analysis")
+            return
         if self.live_sync is None:
             self._show_local_mode_notice("History analysis")
             return
@@ -836,6 +861,9 @@ class AlexMemoryApp:
     async def resync_all_data_and_refresh_profiles(self) -> None:
         """Run the explicit recovery path for current archive and profiles."""
         assert self.conn is not None
+        if self._startup_sync_in_progress():
+            self._show_startup_sync_notice("Full resync")
+            return
         if self.live_sync is None:
             self._show_local_mode_notice("Full resync")
             return
@@ -884,6 +912,10 @@ class AlexMemoryApp:
 
     async def close(self) -> Exception | None:
         errors: list[Exception] = []
+        if self.startup_sync_task is not None and not self.startup_sync_task.done():
+            self.startup_sync_task.cancel()
+            await asyncio.gather(self.startup_sync_task, return_exceptions=True)
+        self.startup_sync_task = None
         if self.live_sync is not None:
             try:
                 await self.live_sync.close()
@@ -930,6 +962,18 @@ class AlexMemoryApp:
     def _show_menu(self) -> None:
         assert self.runtime_status is not None
         show_main_menu(self.console, self.runtime_status.snapshot(self.live_sync))
+
+    def _startup_sync_in_progress(self) -> bool:
+        return bool(self.startup_sync_task and not self.startup_sync_task.done())
+
+    def _show_startup_sync_notice(self, action: str) -> None:
+        self.console.print(
+            notice(
+                f"{action} needs current Telegram data and will be available after the initial synchronization finishes. Local reads and navigation remain available now.",
+                title="Telegram sync in progress",
+                tone="info",
+            )
+        )
 
     def _command_search(self) -> str | None:
         """Search the small action palette; command text is never normal navigation."""

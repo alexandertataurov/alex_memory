@@ -155,7 +155,7 @@ def _live_status_panel(status: RuntimeStatus) -> RenderableType:
         safe_text(
             "supervised retry scheduled"
             if status.telegram.retry_scheduled
-            else f"last sync {status.telegram.last_reconciliation_at or '—'}"
+            else f"{status.telegram.messages_saved:,} saved · last sync {status.telegram.last_reconciliation_at or '—'}"
         ),
     )
     return Panel(values, border_style=_phase_border(status.phase))

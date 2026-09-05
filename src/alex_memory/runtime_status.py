@@ -26,6 +26,7 @@ class TelegramRuntimeStatus:
     connected: bool
     archive_lag_seconds: int | None
     queue_size: int
+    messages_saved: int
     last_reconciliation_at: str | None
     retry_scheduled: bool
 
@@ -173,7 +174,7 @@ class RuntimeStatusService:
         archive_lag = _age_seconds(latest_message, now)
         if live_sync is None:
             return (
-                TelegramRuntimeStatus(False, archive_lag, 0, None, False),
+                TelegramRuntimeStatus(False, archive_lag, 0, 0, None, False),
                 WriterRuntimeStatus("unavailable", None),
             )
 
@@ -186,6 +187,7 @@ class RuntimeStatusService:
                 connected=bool(state.connected),
                 archive_lag_seconds=archive_lag,
                 queue_size=queue.qsize() if queue is not None else 0,
+                messages_saved=int(state.messages_saved),
                 last_reconciliation_at=state.last_reconciliation_at,
                 retry_scheduled=bool(state.retry_scheduled),
             ),

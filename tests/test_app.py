@@ -188,18 +188,23 @@ class AppLifecycleTests(unittest.TestCase):
             def is_connected(self) -> bool:
                 return False
 
-        with tempfile.TemporaryDirectory() as directory:
-            output = StringIO()
-            app = AlexMemoryApp(
-                make_settings(Path(directory)),
-                Console(file=output, force_terminal=False, width=100),
-            )
-            with patch("alex_memory.app.TelegramClient", FailingClient):
-                asyncio.run(app.start())
-            self.assertIsNotNone(app.conn)
-            self.assertEqual("FAILED", app.runtime_status.snapshot(None).phase)
-            app._show_menu()
-            asyncio.run(app.close())
-        rendered = output.getvalue()
+        async def verify() -> str:
+            with tempfile.TemporaryDirectory() as directory:
+                output = StringIO()
+                app = AlexMemoryApp(
+                    make_settings(Path(directory)),
+                    Console(file=output, force_terminal=False, width=100),
+                )
+                with patch("alex_memory.app.TelegramClient", FailingClient):
+                    await app.start()
+                    assert app.startup_sync_task is not None
+                    await app.startup_sync_task
+                self.assertIsNotNone(app.conn)
+                self.assertEqual("FAILED", app.runtime_status.snapshot(None).phase)
+                app._show_menu()
+                await app.close()
+                return output.getvalue()
+
+        rendered = asyncio.run(verify())
         self.assertIn("Telegram unavailable", rendered)
         self.assertIn("People", rendered)

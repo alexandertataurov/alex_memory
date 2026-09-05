@@ -38,6 +38,12 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 34] AM-130 — Allow the app to open and remain usable
+  while Telegram sync runs.
+  - Local reads/navigation start immediately; initial sync remains the sole
+    cancellable Telegram writer/listener lifecycle with truthful progress.
+  - Verification: `make check` passed. No live archive operation ran.
+
 - [x] [Notion / Sequence 33] AM-129 — Provide a safe contact reconciliation
   workflow.
   - Identity candidates now have preview-first manual merge/link/separate/

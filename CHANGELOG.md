@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Alex Memory now opens local reads and navigation immediately while its single
+  Telegram lifecycle performs initial synchronization in the background. Shared
+  runtime status reports startup and saved-message progress; freshness-dependent
+  operations are explicitly deferred until catch-up completes.
 - Identity reconciliation reviews now provide a bounded read-only candidate
   preview before a confirmed manual merge, alias link, separation, or unresolved
   decision. Alias links reject unreviewed and conflicting manual ownership; no

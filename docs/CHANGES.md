@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-09-05 — AM-130 non-blocking Telegram startup
+
+The application now exposes local reads and navigation while the existing
+Telegram lifecycle connects, inventories dialogs, and catches up in the
+background. Startup state and saved-message progress are visible through the
+shared runtime snapshot; current-data operations defer rather than creating a
+second worker. Startup failure remains explicit local mode.
+
 ## 2026-09-04 — AM-129 identity reconciliation controls
 
 Identity merge reviews now show a bounded, read-only preview of candidate

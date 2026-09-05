@@ -178,5 +178,6 @@ class RuntimeStatusTests(unittest.TestCase):
         show_status(status, console)
         rendered = output.getvalue()
         self.assertIn("STARTING", rendered)
+        self.assertIn("Messages saved", rendered)
         self.assertIn("Data quality", rendered)
         self.assertIn("Source contact identity", rendered)

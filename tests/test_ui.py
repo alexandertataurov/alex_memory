@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import time
 import unittest
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from rich.console import Console
 from test_ai_pipeline import make_settings
 
 from alex_memory.database import connect
 from alex_memory.app import AlexMemoryApp
+from alex_memory.models import LiveSyncState
+from alex_memory.operational import EntityResolver
 from alex_memory.retrieval import SearchResult
 from alex_memory.tasks.deep_dive.models import EvidenceItem, TaskDeepDiveReport
 from alex_memory.tasks.deep_dive.renderer import render_report
@@ -456,9 +460,82 @@ class LocalModeTests(unittest.IsolatedAsyncioTestCase):
             app = AlexMemoryApp(settings, console)
             with patch("alex_memory.app.TelegramClient", return_value=FailedClient()):
                 await app.start()
+                assert app.startup_sync_task is not None
+                await app.startup_sync_task
             try:
                 self.assertIsNotNone(app.conn)
                 self.assertIsNone(app.live_sync)
                 self.assertIn("Local reads remain available", output.getvalue())
             finally:
                 await app.close()
+
+    async def test_startup_sync_does_not_block_local_navigation_or_start_a_second_sync(
+        self,
+    ) -> None:
+        sync_started = asyncio.Event()
+        release_sync = asyncio.Event()
+
+        class ConnectedClient:
+            async def start(self) -> None:
+                return None
+
+            async def get_me(self):
+                return SimpleNamespace(id=1, username="owner", first_name="Owner")
+
+            def is_connected(self) -> bool:
+                return True
+
+            async def disconnect(self) -> None:
+                return None
+
+        class BlockingSync:
+            def __init__(self, *args, **kwargs) -> None:
+                self.state = LiveSyncState(connected=True)
+                self.write_queue = None
+                self.writer_task = None
+                self.start_calls = 0
+
+            async def start(self, dialogs) -> int:
+                self.start_calls += 1
+                sync_started.set()
+                await release_sync.wait()
+                self.state.phase = "HEALTHY"
+                return 0
+
+            async def close(self) -> None:
+                release_sync.set()
+
+        with tempfile.TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory))
+            seed = connect(settings)
+            person_id = EntityResolver(seed).person("Existing local contact")
+            assert person_id is not None
+            seed.commit()
+            seed.close()
+            console, output = capture_console()
+            app = AlexMemoryApp(settings, console)
+            with (
+                patch("alex_memory.app.TelegramClient", return_value=ConnectedClient()),
+                patch("alex_memory.app.TelegramSyncService", BlockingSync),
+                patch(
+                    "alex_memory.app.load_dialog_inventory",
+                    new=AsyncMock(return_value=[]),
+                ),
+            ):
+                await app.start()
+                self.assertIsNotNone(app.conn)
+                assert app.startup_sync_task is not None
+                await sync_started.wait()
+
+                app._show_menu()
+                self.assertEqual([person_id], show_people(app.conn, console))
+                await app.sync_telegram()
+                self.assertEqual(1, app.live_sync.start_calls)
+                self.assertEqual(
+                    "STARTING", app.runtime_status.snapshot(app.live_sync).phase
+                )
+            await app.close()
+
+        rendered = output.getvalue()
+        self.assertIn("People", rendered)
+        self.assertIn("Telegram sync in progress", rendered)
