@@ -38,6 +38,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 36] AM-132 — Responsive everyday UI cleanup.
+  - Narrow People layout, scrollable Profile summaries, and useful sync/empty
+    state text reuse the current components and read models.
+  - Standard verification: `make check` passed (424 tests). No migration.
+
 - [x] [Notion / Sequence 35] AM-131 — Reduce Profile footer clutter.
   - Secondary actions use the contextual palette; eight sections, shortcuts,
     and global operations routes remain available.

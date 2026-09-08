@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from textual.app import App, ComposeResult, ScreenStackError
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.events import Key
+from textual.containers import Horizontal, VerticalScroll
+from textual.events import Key, Resize
 from textual.screen import Screen
 from textual.widgets import (
     Footer,
@@ -82,11 +82,12 @@ def _home_preview_text(
 
 def _background_work_label(status: RuntimeStatus) -> str:
     """Present one truthful background-work state from the runtime snapshot."""
-    phase = status.phase.title()
     if status.phase == "STARTING":
-        return f"Starting sync · {status.telegram.messages_saved:,} saved"
-    if status.phase in {"RETRYING", "DEGRADED", "FAILED", "OFFLINE"}:
-        return phase
+        return f"Starting sync · {status.telegram.messages_saved:,} saved · Local data available"
+    if status.phase in {"FAILED", "OFFLINE"}:
+        return f"{status.phase.title()} · Local data available · See System Status"
+    if status.phase in {"RETRYING", "DEGRADED"}:
+        return f"{status.phase.title()} · Data may be out of date · See System Status"
     if status.telegram.queue_size:
         return f"Syncing · {status.telegram.queue_size} queued"
     if status.ai.running_jobs:
@@ -114,7 +115,7 @@ class HomeScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
-        yield Static("Telegram connecting · Sync — · AI — · Writer —", id="status")
+        yield Static("Local data available · Checking sync status…", id="status")
         yield Label("PEOPLE", id="section-title")
         yield Input(
             placeholder="Search people, companies, projects, context…",
@@ -130,7 +131,11 @@ class HomeScreen(Screen[None]):
     def on_mount(self) -> None:
         self.query_one(Input).focus()
         self._refresh("")
+        self._refresh_status()
         self.set_interval(10, self._refresh_status)
+
+    def on_resize(self, event: Resize) -> None:
+        self.set_class(event.size.width < 90, "narrow")
 
     def _refresh_status(self) -> None:
         if self.owner.runtime_status is None:
@@ -186,7 +191,11 @@ class HomeScreen(Screen[None]):
             self._preview(self.rows[0])
         else:
             self.query_one("#preview", Static).update(
-                _literal_text("No canonical people match this search.")
+                _literal_text(
+                    "No people match this search. Try a shorter name or clear the search."
+                    if query.strip()
+                    else "No contacts available yet. Check synchronization in System Status."
+                )
             )
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
@@ -268,7 +277,8 @@ class ProfileScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static(id="profile-heading")
-        yield Static(id="profile-summary")
+        with VerticalScroll(id="profile-summary-scroll"):
+            yield Static(id="profile-summary")
         yield ListView(id="profile-records")
         yield Footer()
 
@@ -907,15 +917,19 @@ class AlexMemoryTerminal(App[None]):
     $role-error: $error;
     $role-evidence: $secondary;
     $role-muted: $text-muted;
-    #status { height: 1; color: $role-muted; padding: 0 1; }
+    #status { height: auto; max-height: 3; color: $role-muted; padding: 0 1; }
     #section-title { padding: 1 1 0 1; text-style: bold; }
     #people-search { margin: 0 1 1 1; }
     #content { height: 1fr; }
     #people-results { width: 52%; border: none; }
-    #preview { width: 48%; padding: 1 2; border-left: solid $role-accent; }
+    #preview { width: 48%; padding: 1 2; border-left: solid $role-accent; overflow-y: auto; }
+    HomeScreen.narrow #content { layout: vertical; }
+    HomeScreen.narrow #people-results { width: 100%; height: 1fr; min-height: 3; }
+    HomeScreen.narrow #preview { width: 100%; height: 1fr; padding: 0 1; border-left: none; border-top: solid $role-accent; }
     #profile-heading { padding: 1 2 0 2; text-style: bold; }
-    #profile-summary { margin: 1 2; color: $role-muted; }
-    #profile-records { height: 1fr; margin: 0 2; border-top: solid $role-accent; }
+    #profile-summary-scroll { height: auto; max-height: 45%; margin: 0 1; }
+    #profile-summary { margin: 0 1; }
+    #profile-records { height: 1fr; min-height: 3; margin: 0 1; border-top: solid $role-accent; }
     #scan-title { padding: 1 2 0 2; text-style: bold; }
     #scan-status { margin: 1 2; padding: 1; border: solid $role-accent; }
     #scan-evidence-label, #scan-window-label { margin: 0 2; color: $role-muted; }

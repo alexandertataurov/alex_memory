@@ -140,8 +140,30 @@ def test_home_preview_uses_existing_context_and_explains_non_name_matches() -> N
         ("HEALTHY", 0, 0, 0, "idle", "Idle"),
         ("HEALTHY", 2, 0, 0, "idle", "Syncing · 2 queued"),
         ("HEALTHY", 0, 3, 1, "idle", "Analyzing · 3 queued"),
-        ("RETRYING", 2, 3, 1, "running", "Retrying"),
-        ("DEGRADED", 0, 0, 0, "idle", "Degraded"),
+        (
+            "RETRYING",
+            2,
+            3,
+            1,
+            "running",
+            "Retrying · Data may be out of date · See System Status",
+        ),
+        (
+            "DEGRADED",
+            0,
+            0,
+            0,
+            "idle",
+            "Degraded · Data may be out of date · See System Status",
+        ),
+        (
+            "FAILED",
+            0,
+            0,
+            0,
+            "idle",
+            "Failed · Local data available · See System Status",
+        ),
     ],
 )
 def test_background_work_label_prioritizes_truthful_runtime_state(
@@ -178,6 +200,43 @@ def test_profile_work_status_reports_only_selected_person_durable_state() -> Non
         )
         == "2 queued · 1 analyzing · 3 retryable · 4 completed"
     )
+
+
+@pytest.mark.asyncio
+async def test_home_resize_and_profile_summary_keep_content_accessible() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        settings = make_settings(Path(directory))
+        owner = AlexMemoryApp(settings, Console())
+        owner.conn = connect(settings)
+        owner.conn.execute(
+            "INSERT INTO people(canonical_name,created_at,updated_at) VALUES ('Test Contact','now','now')"
+        )
+        owner.conn.commit()
+        app = AlexMemoryTerminal(owner)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            results = app.screen.query_one("#people-results")
+            preview = app.screen.query_one("#preview")
+            assert results.region.right <= preview.region.x
+            await pilot.resize_terminal(60, 24)
+            await pilot.pause()
+            assert results.region.bottom <= preview.region.y
+            assert results.region.width == preview.region.width
+            assert results.size.height >= 3 and preview.size.height >= 3
+            await pilot.press("enter")
+            assert isinstance(app.screen, ProfileScreen)
+            app.screen.query_one("#profile-summary", Static).update("Detail\n" * 80)
+            await pilot.pause()
+            summary = app.screen.query_one("#profile-summary-scroll")
+            records = app.screen.query_one("#profile-records")
+            assert summary.max_scroll_y > 0
+            assert records.size.height >= 3
+            await pilot.press("escape")
+            app.screen.query_one("#people-search").focus()
+            await pilot.press(*"missing")
+            await pilot.pause(0.2)
+            assert "Try a shorter name" in str(preview.render())
+        owner.conn.close()
 
 
 def test_people_discovery_ranks_exact_prefix_and_fuzzy_matches() -> None:

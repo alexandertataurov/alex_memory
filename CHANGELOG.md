@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- People search now stacks its list and preview in narrow terminals. Profile
+  summaries scroll while leaving records accessible, and sync/empty states
+  explain local availability and where to look next.
 - Profile secondary actions now live in the contextual command palette, reducing
   footer clutter while keeping all eight sections and existing shortcuts.
   Task decisions continue through the existing confirmation screen.

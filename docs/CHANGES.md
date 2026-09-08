@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-08 — AM-132 responsive everyday screens
+
+People list/preview now stack below 90 columns. Long Profile summaries scroll
+within a bounded area so the record list remains accessible. Startup, degraded,
+offline, and empty-search text explains availability and recovery destinations.
+The existing profile composition and runtime ownership are unchanged.
+
 ## 2026-09-08 — AM-131 contextual Profile actions
 
 Reduced the Profile footer by moving redundant and secondary action hints into
