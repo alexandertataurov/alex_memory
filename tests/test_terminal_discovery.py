@@ -28,6 +28,7 @@ from alex_memory.ui.textual_app import (
     ProfileScreen,
     RecordDetailScreen,
     ScanScreen,
+    TaskConfirmScreen,
     _background_work_label,
     _home_preview_text,
     _literal_text,
@@ -42,6 +43,35 @@ def test_textual_source_strings_render_markup_literally() -> None:
 
     assert contact.plain == "[bold red]Ari[/bold red]"
     assert message.plain == "[link=https://example.test]contract[/link]"
+
+
+def test_command_palette_preserves_global_operations_access() -> None:
+    palette = CommandPalette(cast(AlexMemoryApp, None))
+
+    assert [label for label, _command in palette._commands()] == [
+        "People",
+        "Search",
+        "Review",
+        "System Status",
+        "Maintenance",
+    ]
+
+
+def test_profile_footer_keeps_navigation_and_demotes_secondary_actions() -> None:
+    assert [binding.key for binding in ProfileScreen.BINDINGS if binding.show] == [
+        "escape",
+        "slash",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "p",
+        "enter",
+    ]
 
 
 def test_textual_uses_semantic_roles_and_one_focus_rule() -> None:
@@ -299,6 +329,41 @@ async def test_profile_palette_routes_profile_actions_directly() -> None:
             await pilot.press(*"profile", "enter")
             assert isinstance(app.screen, ProfileScreen)
             assert app.screen.section == "actions"
+            profile_screen = app.screen
+            await pilot.press("p")
+            assert "profile-resolve" not in {
+                item.id for item in app.screen.query_one("#commands", ListView).children
+            }
+            await pilot.press(*"uncertain", "enter")
+            assert app.screen is profile_screen
+            assert profile_screen.show_uncertain
+            with patch.object(
+                profile_screen,
+                "_selected",
+                return_value={
+                    "record_type": "task",
+                    "task_id": 1,
+                    "title": "Call back",
+                    "evidence": [],
+                },
+            ):
+                await pilot.press("p")
+                assert {
+                    "profile-evidence",
+                    "profile-resolve",
+                    "profile-waiting",
+                }.issubset(
+                    {
+                        item.id
+                        for item in app.screen.query_one("#commands", ListView).children
+                    }
+                )
+                await pilot.press(*"resolve", "enter")
+                assert isinstance(app.screen, TaskConfirmScreen)
+                await pilot.press("escape")
+                assert app.screen is profile_screen
+            await pilot.press("escape")
+            assert isinstance(app.screen, HomeScreen)
         app_owner.conn.close()
 
 

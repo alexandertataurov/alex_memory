@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Profile secondary actions now live in the contextual command palette, reducing
+  footer clutter while keeping all eight sections and existing shortcuts.
+  Task decisions continue through the existing confirmation screen.
 - Alex Memory now opens local reads and navigation immediately while its single
   Telegram lifecycle performs initial synchronization in the background. Shared
   runtime status reports startup and saved-message progress; freshness-dependent

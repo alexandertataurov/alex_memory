@@ -1,5 +1,12 @@
 # Implementation Journal
 
+## 2026-09-08 — AM-131 contextual Profile actions
+
+Reduced the Profile footer by moving redundant and secondary action hints into
+the existing command palette. Task decisions appear only for a selected task;
+record evidence and uncertainty controls remain discoverable. All shortcuts,
+eight sections, and global operations routes remain available.
+
 ## 2026-09-05 — AM-130 non-blocking Telegram startup
 
 The application now exposes local reads and navigation while the existing

@@ -38,6 +38,11 @@ Alias-only AM-080–AM-083 and AM-066 were folded into their parent tasks AM-069
 
 ## Completed
 
+- [x] [Notion / Sequence 35] AM-131 — Reduce Profile footer clutter.
+  - Secondary actions use the contextual palette; eight sections, shortcuts,
+    and global operations routes remain available.
+  - Standard verification: `make check` passed (422 tests). No migration.
+
 - [x] [Notion / Sequence 34] AM-130 — Allow the app to open and remain usable
   while Telegram sync runs.
   - Local reads/navigation start immediately; initial sync remains the sole

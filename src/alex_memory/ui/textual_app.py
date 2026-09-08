@@ -246,12 +246,12 @@ class ProfileScreen(Screen[None]):
         Binding("8", "section('evidence')", "Evidence"),
         Binding("d", "scan", "Scan", show=False),
         Binding("p", "palette", "Commands"),
-        Binding("at", "contacts", "Contacts"),
-        Binding("a", "actions", "Action"),
-        Binding("r", "resolve", "Resolve"),
-        Binding("w", "waiting", "Waiting"),
-        Binding("u", "uncertain", "Uncertain"),
-        Binding("e", "evidence", "Evidence"),
+        Binding("at", "contacts", "Contacts", show=False),
+        Binding("a", "actions", "Action", show=False),
+        Binding("r", "resolve", "Resolve", show=False),
+        Binding("w", "waiting", "Waiting", show=False),
+        Binding("u", "uncertain", "Uncertain", show=False),
+        Binding("e", "evidence", "Evidence", show=False),
         Binding("enter", "inspect", "Inspect"),
         Binding("j", "down", "Down", show=False),
         Binding("k", "up", "Up", show=False),
@@ -825,11 +825,24 @@ class CommandPalette(Screen[None]):
     def _commands(self) -> tuple[tuple[str, str], ...]:
         if self.profile is None:
             return self._GLOBAL_COMMANDS
-        return (
+        commands: tuple[tuple[str, str], ...] = (
             *self._GLOBAL_COMMANDS,
             ("Profile Actions", "profile-actions"),
             ("Deep Scan", "profile-scan"),
+            (
+                "Hide uncertain" if self.profile.show_uncertain else "Show uncertain",
+                "profile-uncertain",
+            ),
         )
+        record = self.profile._selected()
+        if record:
+            commands += (("Selected record evidence", "profile-evidence"),)
+            if record.get("record_type") == "task" and record.get("task_id"):
+                commands += (
+                    ("Resolve selected task", "profile-resolve"),
+                    ("Mark selected task waiting", "profile-waiting"),
+                )
+        return commands
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.item is None:
@@ -852,6 +865,18 @@ class CommandPalette(Screen[None]):
         elif command == "profile-scan" and self.profile is not None:
             self.app.pop_screen()
             self.profile.action_scan()
+        elif command == "profile-uncertain" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_uncertain()
+        elif command == "profile-evidence" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_evidence()
+        elif command == "profile-resolve" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_resolve()
+        elif command == "profile-waiting" and self.profile is not None:
+            self.app.pop_screen()
+            self.profile.action_waiting()
         elif command == "review":
             self._request_operation("review")
         elif command == "status":
